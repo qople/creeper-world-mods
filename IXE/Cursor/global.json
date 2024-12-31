@@ -1,0 +1,9 @@
+{
+    "type": "global",
+    "scripts":
+        [
+            {"name": "ui.irpl", "run_when_paused": true, "execute_post": false},
+            {"name": "accursor.irpl", "run_when_paused" : false},
+            {"name": "sandcursor.irpl", "run_when_paused" : false}
+        ]
+}

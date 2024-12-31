@@ -1,0 +1,96 @@
+
+# Production formula is powerPerTile * (actiles ^ cellExponent)
+$powerPerTile:-0.0005
+$cellExponent:1.1
+
+$blockSize:64 #Power of 2 here please.
+$cursorSize:3
+# Production is averaged over this many frames. This value does not affect performance, it is a tradeoff between responsiveness and noise.
+$averageTime:180
+
+
+@CountTiles >acTiles 
+
+<acTiles @GetProduction ->*cursorPower
+<-*cursorPower 30 div >creepAmt
+
+SetUIText("uicursorpower" "power" "Power: " <-*cursorPower abs dup 10 lt round concat)
+GetMouseCell >mouseCell
+
+<mouseCell EV2 GetSand GetSandDefData >data
+
+
+# Add the AC
+<mouseCell.y <cursorSize sub <mouseCell.y <cursorSize add 1 add do
+    <mouseCell.x <cursorSize sub <mouseCell.x <cursorSize add 1 add do
+        if(i 1 sub j 1 sub i 1 add j 1 add V4 true true GetCreeperInArea lt0 i j GetSand GetSandDefData{"creeperFlowHeight"} -1 neq &&)
+            i j <creepAmt #Wait until later to prevent the creeper we add from affecting future GetCreeper... checks
+        endif
+    loop
+loop
+
+StackSize 3 div 0 do
+    AddCreeper
+loop
+
+#<mouseCell dup2 V2(1 1) add true true GetCreeperInArea trace
+
+:GetProduction
+    <cellExponent pow <powerPerTile mul
+
+:Once
+    0 >offsetX
+    0 >offsetY
+    1 >deltaX
+    3 >deltaY
+    <averageTime 0 do
+        0
+    loop
+    List >averageList
+    0 >lastTiles
+    0 >currentIndex
+
+:GameLoaded
+    true ->*useACCursor
+
+# Counts the AC tiles on the map.
+# IXE maps are always 512x512, which is simply too large to iterate over every cell.
+# So instead, we're going to count one cell in every N by N area, then multiply the cells by N^2 to get an approximation.
+# We can use a large block size, so we can actually do this over the whole map every frame.
+# This makes a fair margin of error, but we can fix that.
+# We randomize the offset of the cells we check and then time-average this value.
+# This helps increase accuracy and reduce the randomness we get from the sampling.
+:CountTiles
+    # Count the cells
+    0 >tiles
+    512 <blockSize div 0 do
+        i <blockSize mul <offsetX add >x
+        512 <blockSize div 0 do
+            i <blockSize mul <offsetY add >y
+            <x <y dup2 V4 true true GetCreeperInArea
+            # Count AC cells
+            if(lt0)
+                <tiles 1 add >tiles
+            endif
+        loop
+    loop
+
+    #Correct for NxN sampling
+    <tiles <blockSize dup mul mul >tiles
+
+    # Increment offset for next frame, so eventually we check every cell (hopefully)
+    <offsetX <deltaX add <blockSize mod >offsetX
+    <offsetY <deltaY add <blockSize mod >offsetY
+
+
+    # Handle the time averaging to smooth the result
+    # We could calculate the whole average every frame, but we don't have to.
+    # The difference between last frame's average and this frame's average is the difference between
+    # the value we just got and the value we're replacing it with (the oldest value), divided by the size of the list. 
+
+    <averageList[<currentIndex] >oldValue
+    <tiles >averageList[<currentIndex]
+    <tiles <oldValue sub <averageTime AsFloat div <lastTiles add >newAverage
+    <currentIndex 1 add <averageTime mod >currentIndex
+    <newAverage >lastTiles
+    <newAverage return

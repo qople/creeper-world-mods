@@ -1,0 +1,12 @@
+# This is Cursor mode for Creeper World IXE. If you've extracted the script you already know what it is, so I'll spare you that.
+# This is mod version 1.1. The most up-to-date version can be found at https://github.com/qople/creeper-world-mods .
+# These files are IRPL files so they are recovered when extracting directly from a colonies level. Sorry for any viewing difficulties.
+#
+# This mod is a simple drag-and-drop into your level. The sand and AC functions of the cursor are separate: The AC cursor is contained entirely in accursor.irpl, 
+# and the sand cursor is contained in sandcursor.irpl.
+# If you don't want to use one of the cursor functions in your level, remove the corresponding file from global.json.
+# If you remove one of the scripts from global.json, rebuild modules then save and load to update the UI. You don't have to touch ui.json.
+#
+# ui.irpl has UI declarations for both scripts, but they will disappear if one of the scripts is removed. This should always be here, even if you remove one of the other scripts.
+#
+# Every script has some options that can be changed. These are mostly explained in comments.

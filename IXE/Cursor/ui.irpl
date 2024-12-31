@@ -1,0 +1,158 @@
+# Sand picker UI ripped from hero mode
+$hideUI:1
+
+SendMsg("MSG_PreUpdate" 0)
+
+if(GetTimer0 1 eq GetEditMode GetGameUpdateCount eq0 && ||)
+	@MakeUI
+endif
+
+:GameLoaded
+	# Sets these to false, then the right scripts set them to true.
+	# This means that removing the scripts removes the UI too.
+	once
+		false ->*useSandCursor
+		false ->*useACCursor
+	endonce
+	@MakeUI
+    #CreateUI("uisandtypes", @UISandTypes, null)
+    #CreateUI("uicursorpower", @UICursorPower, null)
+    @RefreshTotals
+
+	
+
+:Once
+	20 SetTimer0
+	@MakeUI
+    RegisterForMsg("SAND_TYPE_SELECTED" "SetSandType")
+    RegisterForMsg("RefreshTotals" dup)
+
+:MakeUI
+	ShowInfoArea(true)
+    ShowResourceArea(<hideUI !)
+    ShowInventory(<hideUI !)
+	if(<-*useACCursor)
+    	CreateUI("uicursorpower", @UICursorPower, null)
+    endif
+	if(<-*useSandCursor)
+		CreateUI("uisandtypes", @UISandTypes, null)
+	endif
+
+:SetSandType
+    <_DATA{"name"} >name 
+    if(<name "dig" eq)
+        1 ->*digMode
+    else
+        0 ->*digMode
+        <name ->*selectedSand
+    endif
+    SetUIBackgroundColor("uisandtypes" "" V4(1 0.5 0.1 1))
+	SetUIBackgroundColor("uisandtypes" <name V4(0 1 0 1))
+    <-*dropList <-*selectedSand GetListIndex >index
+
+:SandCountChanged
+	@RefreshTotals
+	
+:RefreshTotals
+	SetUIText("uisandtypes" "12" concat3("WATER" LF <-*COLLECTEDSAND{"12"}))
+	SetUIText("uisandtypes" "14" concat3("EATER" LF <-*COLLECTEDSAND{"14"}))
+	SetUIText("uisandtypes" "18" concat3("PIXELIUM" LF <-*COLLECTEDSAND{"18"}))
+	SetUIText("uisandtypes" "20" concat3("ACID" LF <-*COLLECTEDSAND{"20"}))
+	SetUIText("uisandtypes" "25" concat3("SULFUR" LF <-*COLLECTEDSAND{"25"}))
+	SetUIText("uisandtypes" "26" concat3("NITRON" LF <-*COLLECTEDSAND{"26"}))
+	SetUIText("uisandtypes" "27" concat3("OIL" LF <-*COLLECTEDSAND{"27"}))
+	SetUIText("uisandtypes" "28" concat3("BOOM" LF <-*COLLECTEDSAND{"28"}))
+	SetUIText("uisandtypes" "30" concat3("IXEIDE" LF <-*COLLECTEDSAND{"30"}))
+	SetUIText("uisandtypes" "249" concat3("EMBERS" LF <-*COLLECTEDSAND{"249"}))
+
+:UICursorPower
+	"{
+		'anchor': [0.5, 1],
+"
+	if(<hideUI)
+"		'pos': [0, 0],
+"
+	else
+"		'pos': [0, -80],
+"
+	endif
+"		'pivot': [0.5, 1],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#00000000',
+		'Components': 	[
+							{
+								'type':'button', 'name':'power', 'anchor': [0.5, 1],'pivot': [0.5, 1], 'width': 200, 'height': 50, 
+								'pos': [0,0], 
+								'text': 'Power: 0', 'tooltip': 'Depth per second per tile', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': [],
+							}
+                        ]
+    }"
+	concat3
+
+:UISandTypes
+	"{
+		'anchor': [0, 1],
+		'pos': [0, -45],
+		'pivot': [0, 1],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#00000000',
+		'Components': 	[
+							{
+								'type':'button', 'name':'dig', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,0], 
+								'text': 'DIG', 'tooltip': 'DIG', 'bgcolor': '#00FF00', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'12', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-55], 
+								'text': 'WATER', 'tooltip': 'WATER', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'14', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-110], 
+								'text': 'EATER', 'tooltip': 'EATER', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'18', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-165], 
+								'text': 'PIXELIUM', 'tooltip': 'PIXELIUM', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'20', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-220], 
+								'text': 'ACID', 'tooltip': 'ACID', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},															
+							{
+								'type':'button', 'name':'25', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-275], 
+								'text': 'SULFUR', 'tooltip': 'SULFUR', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'26', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-330], 
+								'text': 'NITRON', 'tooltip': 'NITRON', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'27', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-385], 
+								'text': 'OIL', 'tooltip': 'OIL', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'28', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-440], 
+								'text': 'BOOM', 'tooltip': 'BOOMZENE', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'30', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-495], 
+								'text': 'IXEIDE', 'tooltip': 'IXEIDE', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+							{
+								'type':'button', 'name':'249', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-550], 
+								'text': 'EMBERS', 'tooltip': 'EMBERS', 'bgcolor': '#ff7020', 'color': '#FFFFFF', 'events': ['SAND_TYPE_SELECTED'],
+							},								
+						]
+	}"			

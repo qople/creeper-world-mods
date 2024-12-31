@@ -1,0 +1,11 @@
+# V1.0: 27 December 2024 (Can be found in colonies map #63)
+#     Initial release.
+# 
+# V1.1: 31 December 2024 (Can be found in colonies map #77)
+#     UI now matches dig state on save/load.
+#     Properly modularized ui visibility from different cursor functions.
+#     Mod now removes some of the vanilla UI.
+#     Moved power UI up a bit because of the space opened by the above change.
+#     Moved sand selection UI up a bit to be flush with the timer and makes the whole menu fit on 1176x664 resolution.
+#     Removed directional bias in cursor movement.
+#     Fixed bounds on GetCreeperInArea calls in various places.

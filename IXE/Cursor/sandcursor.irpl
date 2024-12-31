@@ -1,0 +1,92 @@
+# Collects sand on the whitelist when right click is pressed.
+
+# List of sands that can be picked up. Comma separated.
+$sandList:"1,2,3,4,5,6,7,8,9,12,13,14,18,20,23,25,26,27,28,30,75"
+
+# List of sands that can be dropped. Right now this cannot be changed.
+# Or at least, if you change it the UI won't update what the buttons do or say.
+# So it won't work unless you change that too.
+$dropList:"12,14,18,20,25,26,27,28,30"
+
+GetMouseCell >pos
+if(GetMouseButton(0 1))
+    if(<-*digMode)
+        @Dig
+    else
+        @Place
+    endif
+endif
+
+:Dig
+    GetSandInArea(V4(<-pos.x 5 -, <-pos.y 5 -, <-pos.x 5 +, <-pos.y 5 +) true <-sandList true) ->sands # returns a list of Vector3, where x and y and the position and z is the sandType
+    #Collect it all. Go through the list and add to the global table for each type in the list
+    do(GetListCount(<-sands) 0)
+        <sands[I] >sand
+        if(<sand.x 2 sub <sand.y 2 sub <sand.x 2 add <sand.y 2 add V4 true true GetCreeperInArea lt0)
+            <-sands[I]
+            if(<dropList <sand.z ListContains)
+                # Check for AC next to the cell
+                GetTableElement(<-*COLLECTEDSAND <-sand.z) ->count
+                <-count 1 + ->count
+                SetTableElement(<-*COLLECTEDSAND <-sand.z <-count)
+            endif
+        endif
+
+    loop
+    #Remove the sand
+    DestroySandFromList(List) # we can pass in the sands from above since this api just takes the x,y from the list of vectors. It doesn't care about the z (sandType)
+    SendMsg("RefreshTotals" false)
+
+:Place
+    <-*COLLECTEDSAND{<-*selectedSand} >sandAmt
+    <pos.y 2 sub <pos.y 3 add do
+        <pos.x 2 sub <pos.x 3 add do
+            if(i j GetSand 255 eq i j HasSandParticle ! && <sandAmt gt0 && i 1 sub j 1 sub i 1 add j 1 add V4 true true GetCreeperInArea lt0 &&)
+                i j <-*selectedSand CreateSand
+                <sandAmt 1 sub >sandAmt
+            endif
+        loop
+    loop
+
+    <sandAmt ->*COLLECTEDSAND{<-*selectedSand}
+    SendMsg("RefreshTotals" false)
+
+:Once
+    TerpPaintingEnabled(false)
+    CreateTable ->*COLLECTEDSAND
+    99999 ->*COLLECTEDSAND{"249"}
+
+    #Interpret lists
+    <sandList @Interpret >sandList
+    <dropList @Interpret dup ->*dropList >dropList
+    <dropList[0] ->*selectedSand
+    RegisterForMsg("MSG_PreUpdate" "WhilePaused")
+    
+
+:WhilePaused
+    if(GetKeyDown("Tab" 1) GetMouseButtonDown(2) ||)
+        <-*digMode ! ->*digMode
+        if(<-*digMode)
+            SendMsg("SAND_TYPE_SELECTED" TableN("name" "dig" 1))
+        else
+            SendMsg("SAND_TYPE_SELECTED" TableN("name" <-*selectedSand 1))
+        endif
+    endif
+
+:GameLoaded
+    1 ->*digMode
+    true ->*useSandCursor
+
+:Interpret
+    RemoveWhiteSpace "," Split >list
+    <list 0 do
+       #if(<list[i] StringToList "-" ListContains)
+       #    <list[i] "-" Split >runList
+       #    <runList[0] AsInt <runList[1] AsInt 1 add do
+       #        i
+       #    loop
+       #else
+            <list[i] AsInt
+       #endif
+    loop
+    List dup trace
