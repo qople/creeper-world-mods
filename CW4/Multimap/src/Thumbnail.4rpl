@@ -1,0 +1,13 @@
+# --Thumbnail-- 8/4/2023 5:36:06 PM
+# Just creates an actual thumbnil (level w/ <-IS_GOAL == true) on creation, then deletes itself.
+# Exists purely for the convenience of having separate buttons for thumbnails and levels.
+
+$$levelGUID:"627724b4-1a7b-4e6b-9764-e66ddf5edd1e"
+
+:Awake
+	#Weird bug when you run the code directly in :Awake, so wait till the post update.
+	"MSG_PostUpdate" "do" RegisterForMsg 
+
+:do
+	<-levelGUID Self GetUnitPosition TableN("IS_THUMBNAIL" 1 1) CreateUnit
+	Self 1 1 1 DestroyUnit

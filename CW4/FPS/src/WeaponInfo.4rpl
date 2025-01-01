@@ -1,0 +1,129 @@
+# --WeaponInfo-- 1/21/2021 7:50:17 PM
+if(InvocationCount 2 eq <-defaultDpsList ! &&)
+	@ResetPercentages
+endif
+
+:WhilePaused
+	SetObjActive(self "main" GetEditMode)
+	if(GetMappedKeyDown("Custom3" 1) <-*allowFPS &&)
+		Cancel
+		SetUnitSelected(self true)
+	endif
+	if(GetTimer0 eq0 GetUnitSelected(self) &&)
+		30 SetTimer0 #update every second
+		@UpdateUIText
+	endif
+
+:_Selected
+	@UpdateUIText
+
+#Changes UI labels when called
+:UpdateUIText
+	if(GetGameUpdateCount eq0)
+		SetUnitUIText(Self 2 "Waiting for unpause")
+		SetUnitUIText(Self 3 "")
+		SetUnitUIText(Self 4 "")
+		return
+	endif
+	GetUnitUIState(self 0) ->depthIndex
+	List(2146 10 1 0.1) <-depthIndex GetListElement ->depth
+	GetUnitUIState(self 1) ->type
+	
+	3 0 do
+		<-weaponList[i] ->weapon
+		self i 2 add #First arguments for SetUnitUIText
+		<-weapon dup ":" swap @ExactDps dup ->currentDps 0 round concat3 
+		
+		#Add in the percent DPS if the list exists
+		if(<-defaultDpsList GetListCount)
+			<-defaultDpsList[<-type][<-depthIndex][i] ->defaultDps
+			" (" <-currentDps <-defaultDps div 100 mul 0 round "%)" concat4
+		endif
+		SetUnitUIText
+	loop
+
+
+:ResetPercentages
+	CreateList ->defaultDpsList
+	2 0 do
+		i ->type
+		4 0 do
+			"2146 10 1 0.1" " " split i GetListElement ->depth
+			3 0 do
+				<-weaponList[i] ->weapon
+				<-weapon @ExactDps ->dps
+				<-dps
+			loop
+			3 ListN
+		loop
+		4 ListN ->defaultDpsList[i]
+	loop
+
+:_UiCallback
+	if(<-_DATA 6 eq)
+		@ResetPercentages
+	endif
+	@UpdateUIText
+
+#Gives the exact DPS of a weapon
+:ExactDps
+	<-*weaponAttributes swap GetTableElement ->stats
+	
+	#normal damage per shot
+	"DmgDepth" @Stat 1 <-type 0.8 mul sub mul ->dmgDepth
+	"DmgIterations" @Stat ->iterations
+	
+	"DmgDist" @Stat AsInt ->dmgDist
+	"AcDist" @Stat AsInt ->acDist
+	#Find the exact number of cells within the circular range if necessary
+	<-cellsInRadii[<-dmgDist] ->numCells
+	
+	#Account for the DmgIterations stat's effect on thin creep
+	<-depth <-dmgDepth lt if
+		#Find the multiplier to the damage (also is the divisor to the max cells)
+		<-depth <-dmgDepth <-iterations div div ceil <-iterations min <-iterations div ->multiplier
+		
+		<-dmgDepth <-multiplier mul <-depth min "DmgMaxCells" @Stat <-multiplier div
+	else
+		<-dmgDepth <-depth min "DmgMaxCells" @Stat 
+	endif
+	<-numCells min mul
+	
+
+	#add ac added per shot
+	<-cellsInRadii[<-acDist] ->numCells
+	
+	"AcDepth" @Stat <-depth "AcCap" @Stat add min <-numCells mul add
+	
+	#Divide by fire rate
+	"Rate" @Stat floor AsFloat 1 max div 30 mul
+	if(dup eq0)
+		pop 0.001 #appears as 0, but prevents a divide by 0 error with the relative damage.
+	endif
+	
+	return
+
+:Stat
+	<-stats swap GetTableElement 
+	return
+
+:Once
+	#List of how many cells are inside a circle with radius of the index.
+	List(1 9 21 37 69 97 137 177 225 293 349 421 489 577 665 749 861 973 1085 1201 1313 1457 1597 1741 1885 2053 2217 2377 2561 2733 2933 3125 3313 3521 3745 3969 4197 4421 4669 4905 5169 5417 5681 5957 6221 6509 6785 7089 7393 7705)
+			->cellsInRadii
+	RegisterForMsg("MSG_PostUpdate" "WhilePaused")
+	@Awake
+	
+	
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	SetObjText(self "main" "DPS Monitor")
+	SetObjTextFontSize(self "main" 45)
+	SetObjTextBillboard(self "main" true)
+	SetUnitUIText(Self 2 "Waiting for unpause")
+	SetUnitUIText(Self 3 "")
+	SetUnitUIText(Self 4 "")
+	
+	"cannon,mortar,sprayer" "," split ->weaponList
+	SetUnitPosition(Self GetMapSize pop 2 div 10 sub 0 -5 v3)
+	RegisterForMsg("MSG_PostUpdate" "WhilePaused")

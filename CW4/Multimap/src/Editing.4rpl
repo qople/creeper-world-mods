@@ -1,0 +1,137 @@
+# --Editing-- 5/10/2021 2:35:34 PM
+# Has logic for opening and closing the layout editor
+
+$$backgroundGUID:"6eaaa753-3a53-4ef1-a9f4-de991889c4e5" #GUID of visualization background unit
+
+#GUIDs of all buildable multimap units
+$$levelGUID:"627724b4-1a7b-4e6b-9764-e66ddf5edd1e"
+$$transitionGUID:"651ecd06-600d-4166-94d0-afde51f8b813"
+$$goalGUID:"a5a0f7bf-b34d-4047-8eec-c550c34aa12d"
+$$thumbnailGUID:"be183d6b-2cdd-4e51-9d2c-89935967ba6e"
+$$helpGUID:"ad2926ea-e30a-4e22-a581-6771869a8d3e"
+
+#Runs while the level layout is on top of the map
+:WhileActive
+	#Indicator on the custom tab the first time it's shown
+	if(<-*introDone !)
+		if(GetOpenBuildTab 4 neq)
+			ShowUiIndicator("MultiLevel" "buildtab4")
+		else
+			true ->*introDone
+		endif
+	endif
+	
+	#While transition is selected to build
+	if(GetBuildUnit <-transitionGUID eq dup)
+		if(<-lastState !) #first frame where transition is selected to build
+			SetMsgButton(2 true "Click and drag from one level to another to place a transition between them." 
+					V4(0.3 0.3 1 1) "" "")
+		endif
+		
+		if(0 1 GetMouseButtonDown) #Override build logic to allow click & drag placement
+			Cancel
+			CreateUnit(<-transitionGUID GetPointerTerrainCoords GetTerrainVector 0)
+		endif
+	else
+		if(<-lastState) #Frame where transition is unselected
+			SetMsgButton(2 false "" Vector0 "" "")
+		endif
+	endif
+	->lastState
+	
+	#Allow creating levels outside the map
+	if(GetBuildUnit <-levelGUID eq 0 1 GetMouseButtonDown && GetPointerTerrainCoords V2 IsV2InMap ! &&)
+		CreateUnit(<-levelGUID GetPointerTerrainCoords 0 swap V3 0)
+		SendMsg("MoveBG" -1)
+	endif
+
+:Awake
+	if(-?background !)
+		@CreateUniqueUnit(<-backgroundGUID Vector0 0) ->background
+	endif
+	RegisterForMsg("SetViewMode" "ViewMode")
+	<-*activeMap -1 eq ->viewMode
+	GetMapSize ->mapZ ->mapX
+	SetMSGButton(1 <-*finalized ! "Edit Layout" V4(0.3 1 0.3 1) "SetViewMode" 1)
+	SetCmodPlayerMenuName(<-levelGUID "" 4)
+	SetCmodPlayerMenuName(<-transitionGUID "" 4)
+	SetCmodPlayerMenuName(<-goalGUID "" 4)
+	SetCModPlayerMenuName(<-thumbnailGUID "" 4)
+	SetCModPlayerMenuName(<-helpGUID "" 4)
+	
+:ViewMode
+	if(<-*finalized !)
+		<-_DATA @SetViewMode
+	endif
+
+#1 means enable layout editor
+:SetViewMode
+	->viewMode 
+	if(<-viewMode 1 eq)
+		SetCmodPlayerMenuName(<-levelGUID "Level" 4)
+		SetCmodPlayerMenuName(<-transitionGUID "Transition" 4)
+		SetCmodPlayerMenuName(<-goalGUID "Goal" 4)
+		SetCModPlayerMenuName(<-thumbnailGUID "Thumbnail" 4)
+		SetCModPlayerMenuName(<-helpGUID "Help" 4)
+		
+		RegisterForMsg("MSG_PreUpdate" "WhileActive")
+		<-*activeMap ->baseMap
+	else
+		SendMsg("MoveBG" -1)
+	endif
+	<-background "Base" 1 SetObjActive
+	GetUnitsByType(<-levelGUID 0) ->units
+	<-units 0 do
+		<-units[i] @MoveUnit
+		<-units[i] "Main" 1 SetObjActive
+		<-units[i] "Text" 1 SetObjActive
+	loop
+	GetUnitsByType(<-transitionGUID 0) ->units
+	<-units 0 do
+		<-units[i] @MoveUnit
+		<-units[i] "Bend" 1 SetObjActive
+	loop
+	
+	if(<-viewMode 1 neq)
+		SetCmodPlayerMenuName(<-levelGUID "" 4)
+		SetCmodPlayerMenuName(<-transitionGUID "" 4)
+		SetCmodPlayerMenuName(<-goalGUID "" 4)
+		SetCModPlayerMenuName(<-thumbnailGUID "" 4)
+		SetCModPlayerMenuName(<-helpGUID "" 4)
+		
+		DeregisterForMsg("MSG_PreUpdate")
+		if(-?baseMap <-viewMode -1 neq &&)
+			SendMsg("SetMap" <-baseMap)
+		endif
+		0 ->viewMode
+	else
+		SendMsg("SetMap" -1)
+	endif
+
+	SetMSGButton(1 <-*finalized ! if(<-viewMode) "Return" else "Edit Layout" endif V4(0.3 1 0.3 1) "SetViewMode" <-viewMode !)
+
+#If <-viewMode is true, moves the unit up if below the map.
+#If <-viewMode is false, moves the unit down if not below the map.
+#Used to switch the layout units between below and on top of the map
+:MoveUnit
+	dup ->unit GetUnitPosition ->pos 
+	<-pos.z ->unitZ
+	if(<-viewMode 1 eq)
+		if(<-unitZ lt0)
+			#"EV3 swap pop" is the same as ToCell, but without rounding.
+			<-unit <-pos <-*posOffset sub SetUnitPosition
+		endif
+	else if(<-*activeMap -1 eq)
+		<-unit <-pos <-*posOffset add SetUnitPosition
+	endif endif
+
+#Creates a unit and deletes all other units of that type.
+:CreateUniqueUnit
+	->initParams ->pos ->GUID
+	GetUnitsByType(<-GUID 0) ->extraUnits
+	<-extraUnits 0 do
+		<-extraUnits[i] true true true DestroyUnit
+	loop --extraUnits
+	CreateUnit(<-GUID <-pos <-initParams) return 
+
+	# <-*posOffset <-viewMode <-unitZ lt0 && if sub else if(<-unitZ dup gte0 swap GetMapSize swap pop lt &&) add endif endif SetUnitPosition

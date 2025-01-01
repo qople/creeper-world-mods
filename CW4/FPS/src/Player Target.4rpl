@@ -1,0 +1,18 @@
+# --Player Target-- 7/25/2023 11:24:37 AM
+# Follows the player, and damages it when damaged. Just makes the player targetable.
+
+Self <-*playerPos V3(0 1 0) sub SetUnitPosition #Follow the player
+
+if(Self GetUnitHealth <-maxHealth lt) #When damaged
+	#Unit heals to full when damaged, so amount below max = amount damaged.
+	<-*playerHealth <-maxHealth Self GetUnitHealth sub sub ->*playerHealth
+	Self <-maxHealth SetUnitHealth #Heal back up
+endif
+
+:Awake
+	Self GetUnitType ->guid
+	Self GetUnitMaxHealth ->maxHealth
+
+:Destroyed
+	<-guid <-*playerPos V3(0 1 0) sub 0 CreateUnit
+	

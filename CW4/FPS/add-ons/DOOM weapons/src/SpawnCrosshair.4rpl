@@ -1,0 +1,59 @@
+# --SpawnCrosshair-- 3/14/2024 2:31:38 PM
+
+$GUID:"1ebfae39-22d7-415c-bd8f-19f14ab68503"
+
+# SetMsgButton(3 true "Move" "vertJumpVel" GetRegisteredScriptVar 0 0 0)
+
+:Once
+	"NOTHING" ->lastWeapon
+	<-GUID 0 GetUnitsByType dup 0 do
+		dup [i] 1 1 1 DestroyUnit
+	loop
+	pop
+	<-GUID Vector0 0 CreateUnit ->*doomCrosshair
+	
+	"shotgun" "plasmagun" "rocket" "ballista" "chaingun" "bfg" List ->weapons
+	
+	#Make the weapon visually different from others
+	RegisterForMsg("CrosshairUpdated" "CrosshairAppearance")
+	
+	<-weapons dup 0 do
+		dup[i] <-*doomCrosshair swap false SetObjActive
+	loop
+	pop
+
+:GameLoaded
+	<-*doomCrosshair "" Vector0 SetObjScale
+
+#Make a visual indicator by either modifying the existing crosshair's attributes
+#Or by hiding it and making your own. 
+:CrosshairAppearance
+	<-_DATA ->baseCrosshair
+	
+	
+	if(<-*activeWeapon <-lastWeapon neq)
+		<-*doomCrosshair V3(-100 -100 -100) SetUnitPosition
+		
+		<-*doomCrosshair <-lastWeapon false SetObjActive
+		<-*doomCrosshair <-*activeWeapon true SetObjActive
+		
+		<-weapons <-*activeWeapon ListContains ->useCrosshair
+		<-baseCrosshair "" true SetObjActive
+			
+		<-*activeWeapon ->lastWeapon
+	endif
+	
+	if(<-useCrosshair)
+		<-baseCrosshair "" false SetObjActive
+		<-*doomCrosshair "" V3(1 1 1) SetObjScale
+		<-*doomCrosshair <-*playerPos <-*playerForward 1.1 mul add SetUnitPosition
+		<-*doomCrosshair <-*playerForward SetUnitForward
+	else
+		<-*doomCrosshair "" Vector0 SetObjScale
+	endif
+	
+	if(<-*activeWeapon "shotgun" eq)
+		<-*doomCrosshair "shotRing" <-*weaponAttributes{"shotgun"}{"SpreadAngle"} Deg2Rad mul tan 1.1 mul dup 1 V3 SetObjScale
+	endif
+		
+	

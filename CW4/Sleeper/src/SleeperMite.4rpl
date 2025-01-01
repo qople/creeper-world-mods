@@ -1,0 +1,27 @@
+# --SleeperMite-- 7/9/2023 10:37:55 AM
+
+<-pos dup ->lastPos <-TARGET_X <-TARGET_Z <-speed 0 0 0 0 0 MoveTowardsCellAndAvoid ->pos
+<-pos EV3 swap pop 0 GetExactTerrain ->pos.y
+Self <-pos <-lastPos sub SetUnitForward
+Self <-pos SetUnitPosition
+if(Self GetUnitCell <-TARGET_Z eq swap <-TARGET_X eq &&)
+	@BuildUnit
+endif
+
+
+:Awake
+	Self V4(1 1 0 0.5) SetUnitOutlineColor
+	Self true SetUnitOutlineEnabled
+	Self 0.5 SetUnitOutlineWidth
+	Self 0 "Will burrow and start building a " <-UNIT_NAME ". Destroy with snipers." concat3 SetUnitUIText
+	0.1 ->speed
+	Self GetUnitPosition ->pos
+
+:BuildUnit
+	<-UNIT_ID true SetUnitEnabled
+	<-UNIT_ID "" V3(1 1 1) SetObjScale
+	-1 ->UNIT_ID
+	Self 1 1 1 DestroyUnit
+
+:Destroyed
+	<-UNIT_ID 1 1 1 DestroyUnit

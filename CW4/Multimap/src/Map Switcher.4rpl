@@ -1,0 +1,781 @@
+#Map Switcher.4rpl
+# Contains all logic for saving maps, and the process of switching between them. Does not decide when to switch.
+
+$$backgroundGUID:"6eaaa753-3a53-4ef1-a9f4-de991889c4e5"	#GUID of visualization background unit
+$$levelGUID:"627724b4-1a7b-4e6b-9764-e66ddf5edd1e"	#Level squares
+$$transitionGUID:"651ecd06-600d-4166-94d0-afde51f8b813"	#Transition arrows
+$$detectorGUID:"b31afcc6-e52a-47e2-899b-86043e4bb809" #Used to detect unit instance updates
+
+$customUnits:"" #List of all custom PLAYER-BUILDABLE units in the campaign. Used for saving build limits.
+$pause_on_switch:1 #Whether or not to pause when the map is switched
+$SAVE_BUILD_LIMITS:0 #Whether to save different unit build limits for each level
+$ERNS_PERSIST:1 #Whether ERNs should carry over between levels
+
+$$saveTheme:1 #Whether to save a separate theme for each level (Leave this on unless you have a good reason)
+
+#When 0, will show everything for locked levels
+#When 1, will hide description for levels until unlocked
+#When 2, will hide title and description for levels until unlocked
+#When 3, will fully hide all levels until they are unlocked (will not appear on the map)
+#When 4, will hide goal squares as well as levels
+$MAP_SPOILER_MODE:2 
+
+if(<-ERROR)
+	SetMsgButton("UNIT WITH NO SCRIPTS FOUND. (Script quit mid-save.) Add a blank script to all units on the map. DO NOT SAVE THE MAP. Return to your last game save." V4(1 0 0 1) "" "")
+endif
+
+if(<-justSetMap)
+	false ->justSetMap
+	Print3("SetMap completed with" GetLastExecutionCount "opcodes")
+	if(GetLastExecutionCount 10,000,000 eq)
+		SetMsgButton(2 true "<size=15>Max opcode count reached. (Script quit mid-load.) DO NOT SAVE THE MAP. Return to your last game save." V4(1 0 0 1) "" "")
+		Print("ERROR: MAX OPCODE COUNT REACHED")
+		PlaySound("Warning2" 1)
+	endif
+endif
+
+if(GetTimer1 1 eq)
+	<-unevenLand 0 do
+		<-unevenLand true SetUnitDestroyUnevenLand
+	loop
+	--unevenLand
+endif
+
+if(GetPause !)
+	once
+		2 0 "" 0 0 0 SetMsgButton
+	endonce
+	GetEnergyStore ->energy
+endif
+
+if(GetEditMode)
+	false ->ERNS_PERSIST
+endif
+
+#Move the rift lab closer to where it's going to land after the map switches
+#More specifically, move it to the closest map edge to the pointer cell.
+if(<-placing)
+	if(GetPause ! GetRiftLab GetUnitPosition IsV3InMap &&)
+		0 ->placing
+		return
+	endif
+		
+	if(GetRiftLab GetUnitSelected)
+		GetPointerTerrainCoords ->labZ ->labX
+		<-mapX <-labX sub ->diffX
+		<-mapZ <-labZ sub ->diffZ
+		<-diffX <-labX <-diffZ <-labZ min min min ->min
+		if(<-min <-labX eq)
+			GetRiftLab -20 <-labZ 1 SetUnitCell
+		else if(<-min <-labZ eq)
+			GetRiftLab <-labX -20 1 SetUnitCell
+		else if(<-min <-diffX eq)
+			GetRiftLab <-mapX 20 add <-labZ 1 SetUnitCell
+		else
+			GetRiftLab <-labX <-mapZ 20 add 1 SetUnitCell
+		endif endif endif
+	endif
+	
+	#Stop this behavior and move the rift lab into the map when the player moves it.
+	if(GetRiftLab GetUnitMoveCell V2 IsV2InMap)
+		0 ->placing
+		GetRiftLab dup GetUnitMoveCell 1 SetUnitCell
+	endif
+endif
+
+# ===============================================
+# MAP SWITCHING LOGIC
+# My apologies, but this will likely be very difficult to modify, if you want to change the way data is stored.
+
+# SendMsg("SetMap" [mapID]) runs this function.
+#Note: The save/load functions do not use the built-in FC/UFC commands because doing so makes save/load times several times slower (for some reason).
+:SetMap
+	true ->justSetMap
+	<-_DATA ->nextMap	
+	if(GetEditMode)
+		SetMsgButton(2 0 0 0 0 0)
+	endif
+	"Switching from map" <-*activeMap "to" <-nextMap print4
+	1 ->placing
+	#Don't save if transitioning out of the visualization, or if the game has started.
+	if(<-*activeMap -1 neq GetEditMode && <-*finalized ! &&)
+		SendMsg("PreSave" 0) #Give certain scripts a chance to prepare for the map switch
+		@Save
+	else
+		GetUnits("" Vector0 9999 true false false 0 0 0) ->units
+		-1 <-units GetListCount 1 sub do #Destroy all units other than the rift lab and Multimap CPACK units
+			if(<-saveBlacklist <-units[i] GetUnitType ListContains !)
+				if(<-units[i] GetRiftLab eq)
+					<-units[i] false SetUnitDestroyUnevenLand
+					<-units[i] V3(<-mapX 2 div 0 -20) SetUnitPosition
+				else if(<-units[i] GetUnitType "ern" eq <-ERNS_PERSIST && GetEditMode ! && !)
+					<-units[i] 1 1 1 DestroyUnit
+				endif endif
+			endif
+		loop
+	endif
+	151 SetTimer1
+	GetRiftLab List ->unevenLand
+	GetRiftLab false SetUnitDestroyUnevenLand
+		
+
+	
+	if(<-nextMap -1 neq)
+		<-*index GetTableKeys ->keys
+		
+		<-keys 0 do
+			<-keys[i] GetUnitType <-levelGUID eq if
+				<-keys[i] "id" GetScript1Var <-*activeMap eq if
+					<-keys[i] ->levelUnit
+				endif
+			endif
+		loop
+		
+		if(<-levelUnit "completed" GetScript1Var !)
+			#Destroy all ERNs from this particular map if the level is not completed
+			if(<-ERNS_PERSIST)
+				<-ernsInMap 0 do
+					<-ernsInMap[i] 1 1 1 DestroyUnit
+				loop
+			endif
+			
+			#Send a message that this map was left before it was finished, to undo unlocks if necessary.
+			"levelIncomplete" <-*activeMap SendMsg	
+		endif
+	
+		#Update after changing normally so the blue level is the current map
+		<-nextMap ->*activeMap
+		@LoadMap
+		SendMsg("UpdateTransitions" <-*activeMap)
+		SendMsg("UpdateLevels" 0) 
+	else
+		"Switching to map -1 (layout edit)" print
+		#Update before changing when switching to the map view in editor so the blue level is the last map
+		#(The map that hitting the "return" button will switch to)
+		SendMsg("UpdateTransitions" <-*activeMap)
+		SendMsg("UpdateLevels" 0) 
+		<-nextMap ->*activeMap
+		0 0 0 0 GetMapSize max 1 1 SetTerrainInRange
+		V3(-1 0 -1) V3(515 0 515) 2000 1 1 ClipCreeperLine #Clears creeper visuals, except for the bottom row for some reason.
+	endif
+	true ->justSetMap
+
+#Saves the active map (stores map data in global variables to allow switching to it later)
+:Save
+	"Saving map" <-*activeMap print2 
+	ElapsedTime ->fullStart
+	CreateTable ->other
+	
+	
+	#Save terrain, special, and creeper
+	CreateList ->special
+	CreateList ->creeper
+	
+	#Terrain
+	ElapsedTime ->start
+	#Terrain is stored in a complex manner, so it's left out of here for readability
+	@CompressTerrain 
+	"	Saved terrain in" ElapsedTime <-start sub "ms" print3
+	
+	#Special and creeper
+	ElapsedTime ->start
+	<-mapZ 0 do
+		<-mapX 0 do
+			i j dup2 <-mapX mul add ->ijFC
+			
+			if(dup2 GetTerrainSpecial)
+				dup2 GetTerrainSpecial 100,000 mul <-ijFC add <-special swap AppendToList
+			endif
+			if(dup2 GetCreeper)
+				#Generate an int to represent both creeper and position
+				GetCreeper 1 round 10 mul AsInt 100,000 mul dup gt0 if <-ijFC add else <-ijFC sub endif <-creeper swap AppendToList
+			endif
+			
+			#At this point, I and J are still on the stack from the special and creeper if statements
+			#Not cleared until after the loop to slightly decrease save times (it adds up)
+		loop
+	loop
+	ClearStack #Now clear the thousands of copies of I and J on the stack :P
+	<-special ->*specials{<-*activeMap}
+	<-creeper ->*creeper{<-*activeMap}
+	"	Saved" <-creeper GetListCount "cells of creeper and" <-special GetListCount "cells of special terrain in" ElapsedTime <-start sub "ms" printallsp
+	
+	ElapsedTime ->start
+	GetUnits("" Vector0 9999 false false false 0 0 0) ->units
+	CreateList ->temp
+	0 ->numErns
+	false ->other{"hasCustom"}
+	-1 <-units GetListCount 1 sub do
+		if(<-saveBlacklist <-units[i] GetUnitType ListContains)
+			#Remove Multimap CPACK units from the list
+			<-units i RemoveListElement
+		else
+			<-units[i] ->unit
+			if(<-unit GetRiftLab eq)
+				<-unit false SetUnitDestroyUnevenLand
+				<-unit V3(<-mapX 2 div 0 -20) SetUnitPosition
+				Cancel
+				# GetRiftLab true SetUnitSelected
+			else
+				true ->ERROR
+				if(<-unit GetUnitType "ern" eq)
+					<-numErns 1 add ->numErns
+				endif
+				if(<-unit GetUnitType StringLength 25 gt <-unit GetUnitSettings GetTableKeys GetListCount &&)
+					true ->other{"hasCustom"}
+				endif
+				StackSize ->prevSize
+				<-unit GetUnitSettings 
+				StackSize <-prevSize eq ->null
+				if(<-null !)
+					pop
+				endif
+				false ->ERROR
+				#Make a table with unit information
+				TableN("Type" <-unit GetUnitType "Pos" <-unit GetUnitPosition "Settings" <-null if 0 else <-unit GetUnitSettings endif "Constructing" <-unit GetUnitConstructing "Orientation" <-unit GetUnitOrientation "Ammo" <-unit GetUnitAmmo 6) ->units[i]
+				<-unit 1 1 1 DestroyUnit
+			endif
+		endif
+	loop
+	<-units ->*units{<-*activeMap}
+	<-numErns ->other{"numErns"}
+	"	Saved" <-units GetListCount "units in" ElapsedTime <-start sub "ms" print5
+	
+	ElapsedTime ->start
+	#global settings
+	0 GetCreeperCutoff ->other{"cutoff"}
+	GetVoidHeight ->other{"voidHeight"}
+	GetSoylentMode ->other{"soylent"}
+	
+	#Unit build limits
+	if(<-SAVE_BUILD_LIMITS)
+		@SaveLimits ->other{"limits"}
+	endif
+	
+	@SaveTheme ->other{"theme"}
+	
+	<-other ->*other{<-*activeMap}
+	"	Saved other settings in" ElapsedTime <-start sub "ms" print3
+	"	Saved map" <-*activeMap "in a total of" ElapsedTime <-fullStart sub "ms" print5
+	if(GetEditMode)
+		0 EditAddUndo
+	endif
+
+#Loads the active map.
+:LoadMap
+	"Loading map" <-*activeMap print2
+	ElapsedTime ->fullStart
+	@UpdateLists
+	
+	if(GetRiftLab GetUnitMoveCell V2 IsV2InMap)
+		GetRiftLab -5000 -5000 SetUnitMoveCell
+	endif
+
+	ElapsedTime ->start
+	<-energy -30 mul 300 add GenerateEnergy
+	10 ->energy
+	0 SetOrbitalCount
+	GetRiftLab 10 SetUnitHealth
+	
+	GetUnits("" Vector0 9999 true false false 0 0 0) ->theseUnits
+	<-theseUnits 0 do
+		if(<-theseUnits[i] GetRiftLab eq <-theseUnits[i] GetUnitType "ern" eq <-ERNS_PERSIST && || <-saveBlacklist <-theseUnits[i] GetUnitType ListContains || !)
+			<-theseUnits[i] 1 1 1 DestroyUnit
+		endif
+	loop
+	
+	#Setup
+	V3(-1 0 -1) V3(515 0 515) 2000 1 1 ClipCreeperLine #Clears creeper visuals (mostly)
+	if(GetMVersePlayerNum lte0)
+		#Set all terrain to void to clear greenar crystals
+		0 0 0 0 GetMapSize max true 1 SetTerrainInRange
+	endif
+	0 0 GetMapSize max true 0 false SetCreeperInRange
+	
+	#Reset the special terrain
+	<-mapZ 0 do
+		<-mapX 0 do
+			i j 0 SetTerrainSpecial
+		loop 
+	loop
+	"	Reset previous map in" ElapsedTime <-start sub "ms" print3
+	
+	ElapsedTime ->start
+	#Terrain
+	#Stored as a compressed list
+
+	#Load the map
+	if(GetMVersePlayerNum lte0)
+		-1 ->cellIndex
+		-1 ->lastTerrain
+		21 5 pow AsInt ->metaDataMod
+		<-map 0 do
+			<-map[i] ->rawVal
+			<-rawVal <-metaDataMod div ->metaData #Used to encode compression data
+			5 0 do #If true, the number in this index means "x cells of the last terrain height" instead of "one cell of x terrain height"
+				<-rawVal 21 mod ->thisVal
+				if(<-metaData 2 mod) #Do a run of cells
+					<-thisVal 0 do
+						<-cellIndex 1 add ->cellIndex
+						<-cellIndex dup <-mapX mod swap <-mapX div <-lastTerrain SetTerrain
+					loop
+				else
+					<-cellIndex 1 add ->cellIndex
+					<-thisVal ->lastTerrain
+					<-cellIndex dup <-mapX mod swap <-mapX div <-lastTerrain SetTerrain
+				endif
+				<-metaData 2 div ->metaData
+				<-rawVal 21 div ->rawVal
+			loop
+		loop
+		"	Loaded terrain in" ElapsedTime <-start sub "ms" print3
+	endif
+	
+	#Special terrain
+	ElapsedTime ->start
+	<-special 0 do
+		#Specials are stored with one int representing both a flattened cell position and a value
+		#So we need to unpack that first.
+		#The first 5 digits (farthest right) are the cell position, then the next 2 digits are the slot, from 0 to 10.
+		<-special[i] 100,000 mod dup <-mapX mod swap <-mapX div <-special[i] 100,000 div SetTerrainSpecial
+	loop
+	"	Loaded" <-special GetListCount "cells of special terrain in" ElapsedTime <-start sub "ms" print5
+	
+	#Creeper
+	ElapsedTime ->start
+	<-creeper 0 do
+		#Creeper is stored with one int representing both a flattened cell position and a value
+		#So we need to unpack that first.
+		#The first 5 digits (farthest right) are the cell position, then the next 5 digits are the creeper amount multiplied by 10.
+		#Because of this, creeper values smaller than 0.1 are not kept.
+		<-creeper[i] abs 100,000 mod dup <-mapX mod swap <-mapX div dup2 <-creeper[i] 100,000 div 10.0 div 0 SetCreeper 
+		dup2 0 SetCrimson #Remove crimson from cells with creeper on them (the rest will clear themselves, since there is no creeper on any other cells)
+		0 0 SetFlow #Halt flow on cells with creeper on them, too
+	loop
+	"	Loaded" <-creeper GetListCount "cells of creeper in" ElapsedTime <-start sub "ms" print5
+	
+	ElapsedTime ->start
+	#Move ERNs from the previous levels on top of terrain
+	if(<-ERNS_PERSIST)
+		"ern" 0 GetUnitsByType ->theseUnits
+		<-theseUnits 0 do
+			<-theseUnits[i] dup GetUnitPosition dup ->pos
+			ToCell GetTerrain 2 add <-pos.y max ->pos.y
+			<-pos SetUnitPosition
+		loop
+	endif
+	
+	#Load units
+	<-*index GetTableKeys ->keys
+	0 ->levelUnit
+	<-keys 0 do
+		<-keys[i] ->unit
+		if(<-unit GetUnitType <-levelGUID eq <-unit "id" GetScript1Var <-*activeMap eq &&)
+			<-unit ->levelUnit
+			break
+		endif
+	loop
+	@LoadUnits(true)
+
+	"	Loaded" <-units GetListCount "units in" ElapsedTime <-start sub "ms" print5
+	
+	#Other
+	ElapsedTime ->start
+	<-other{"voidHeight"} dup IsNull ! if SetVoidHeight else pop endif
+	<-other{"cutoff"} dup IsNull ! if SetCreeperCutoff else pop endif
+	<-other{"soylent"} dup IsNull ! if SetSoylentMode else pop endif
+	
+	if(<-other{"theme"})
+		@LoadTheme
+	endif
+	
+	if(<-SAVE_BUILD_LIMITS)
+		@LoadLimits
+	endif
+	"	Loaded other settings in" ElapsedTime <-start sub "ms" print3
+	
+	if(<-pause_on_switch)
+		1 SetPause
+	endif
+	GetRiftLab true SetUnitDestroyUnevenLand
+	"	Loaded map" <-*activeMap " in a total of" ElapsedTime <-fullStart sub "ms" print5
+	SendMsg("MapLoaded" 0)
+
+:LoadUnits
+	->loadAll
+	<-*index GetTableKeys ->keys
+	0 ->levelUnit
+	<-keys 0 do
+		<-keys[i] ->unit
+		if(<-unit GetUnitType <-levelGUID eq <-unit "id" GetScript1Var <-*activeMap eq &&)
+			<-unit ->levelUnit
+			break
+		endif
+	loop
+	CreateList ->ernsInMap
+
+	<-units GetListCount 0 do
+		<-units[i]{"Type"} dup ->type <-units[i]{"Pos"} 
+		if(<-loadAll <-type StringLength 25 gt ||)
+			<-units[i]{"Settings"} DeepCopy ->settings
+			
+			#Any settings ending in "Start" should be moved to be relative to current game time
+			if(GetEditMode !)
+				<-settings GetTableKeys ->keys
+				<-keys 0 do
+					if(<-keys[i] ToLower "start" EndsWith)
+						<-settings{<-keys[i]} GetGameUpdateCount if(<-*finalized) 1 add endif add ->settings{<-keys[i]}
+					endif
+				loop
+			endif
+			
+			if(<-levelUnit "completed" GetScript1Var <-ERNS_PERSIST && <-type "ern" eq &&)
+				pop pop
+			else
+				<-settings CreateUnit dup ->thisUnit
+				if(<-type "pod" eq) #Creating resource pods makes them unfunctional without this
+					dup true SetUnitSelectable
+					dup true SetUnitConnectable
+				endif
+				if(<-units[i]{"Constructing"} !)
+					99999 ConstructUnit
+				else
+					pop
+				endif
+				if(<-thisUnit GetUnitDestroyUnevenLand)
+					<-thisUnit false SetUnitDestroyUnevenLand
+					<-unevenLand <-thisUnit AppendToList
+				endif
+				<-thisUnit <-units[i]{"Ammo"} SetUnitAmmo
+				if(<-type "ern" eq <-ERNS_PERSIST &&)
+					<-ernsInMap <-thisUnit AppendToList
+				endif
+				<-thisUnit <-units[i]{"Orientation"} SetUnitOrientation
+				
+			endif
+
+			--keys
+		else
+			pop pop
+		endif
+	loop
+
+#Returns a list with theme data. Index 0 is cliffs, 1-20 is data for that level.
+:SaveTheme
+	#Cliffs: 	texture, light, lightboost, scale, normal, normalamt, normalscale
+	ListN(GetThemeCliffTexture GetThemeCliffLight V3 GetThemeCliffLightBoost GetThemeCliffScale GetThemeCliffNormal GetThemeCliffNormalAmt GetThemeCliffNormalScale 7)
+	
+	#Each level:texture, light, lightboost, scale, normal, normalamt, normalscale, detile
+	21 1 do
+		ListN(i GetThemeTexture i GetThemeTextureLight V3 i GetThemeTextureLightBoost i GetThemeTextureScale i GetThemeNormal i GetThemeNormalAmt i GetThemeNormalScale i GetThemeTextureDetile 8)
+	loop
+	List return
+	
+#Saves the unit build limits
+:SaveLimits
+	CreateTable ->result
+	<-defaultUnits 0 do
+		<-result <-defaultUnits[i] dup GetUnitBuildLimit <-defaultUnits[i] GetUnitCanBuild mul SetTableElement
+	loop
+	
+	<-customUnits 0 do
+		<-result <-customUnits[i] dup GetUnitBuildLimit SetTableElement
+	loop
+	<-result return
+
+#Loads the theme for the active map
+:LoadTheme
+	<-other{"theme"} ->theme
+	#Cliffs
+	<-theme[0] ->themeLevel
+	<-themeLevel 0 do
+		<-themeLevel[i] #Set up the inputs on the stack, then call the functions all in a row to avoid messy ifs
+	loop
+	SetThemeCliffNormalScale SetThemeCliffNormalAmt SetThemeCliffNormal SetThemeCliffScale SetThemeCliffLightBoost EV3 SetThemeCliffLight SetThemeCliffTexture
+
+	#Terrain theme
+	21 1 do
+		<-theme[i] ->themeLevel
+		<-themeLevel 0 do
+			j <-themeLevel[i] #Set up the inputs on the stack, then call the functions all in a row to avoid messy ifs
+		loop 
+		SetThemeTextureDetile SetThemeNormalScale SetThemeNormalAmt SetThemeNormal SetThemeTextureScale SetThemeTextureLightBoost EV3 SetThemeTextureLight SetThemeTexture
+	loop
+	ApplyTheme
+
+:LoadLimits
+	<-other{"limits"} ->limits
+	if(<-limits)
+		<-limits GetTableKeys ->keys
+		<-keys 0 do
+			<-keys[i] <-limits{<-keys[i]} dup2 SetUnitBuildLimit neq0 SetUnitCanBuild
+		loop
+	endif
+
+#Saves the terrain list
+:CompressTerrain
+	CreateList ->rawData
+	-1 ->lastTerrain
+	0 ->runLength
+	0 ->cellsSaved
+	ElapsedTime ->start
+	ClearStack
+	#First compression pass (look for runs of up to 20 cells in a row of the same height)
+	<-mapZ 0 do
+		<-mapX 0 do
+			i j GetTerrain <-lastTerrain eq i j <-mapX mul add <-mapSize 1 sub lt && if
+				if(<-runLength 20 eq)
+					-20
+					0 ->runLength
+				endif
+				<-runLength 1 add ->runLength
+			else
+				if(<-runLength)
+					<-runLength neg
+				endif
+				i j GetTerrain dup ->lastTerrain
+				0 ->runLength
+			endif
+		loop
+	loop
+	<-rawData PrependStackToList 
+
+	#Second compression pass (Combine each group of 5 cells/runs into one int)
+	<-rawData 5 div 0 do
+		0 ->metaData
+		1 ->dataIncrement
+		1 ->terrainIncrement
+		0
+		5 0 do 
+			<-rawData[j 5 mul i add] 
+			dup lt0 if
+				<-metaData <-dataIncrement add ->metaData
+			endif
+			abs <-terrainIncrement mul add
+			<-dataIncrement 2 mul ->dataIncrement
+			<-terrainIncrement 21 mul ->terrainIncrement
+		loop
+		<-metaData <-terrainIncrement mul add
+	loop
+
+	0 ->metaData
+	1 ->dataIncrement
+	1 ->terrainIncrement
+	<-rawData GetListCount dup 5 mod sub ->startIndex
+	0
+	<-rawData 5 mod 0 do
+		<-rawData[<-startIndex i add] 
+		dup lt0 if
+			<-metaData <-dataIncrement add ->metaData
+		endif
+		abs <-terrainIncrement mul add
+		<-dataIncrement 2 mul ->dataIncrement
+		<-terrainIncrement 21 mul ->terrainIncrement
+	loop
+	<-metaData 21 5 pow AsInt mul add
+	List ->*maps{<-*activeMap}
+
+:UpdateLists
+	<-*maps{<-*activeMap} copy ->map
+	<-*specials{<-*activeMap} ->special
+	<-*units{<-*activeMap} ->units
+	<-*creeper{<-*activeMap} ->creeper
+	<-*other{<-*activeMap} ->other
+
+:CloseGameMessage
+	false CloseGameMessage
+
+:Once
+	<-MAP_SPOILER_MODE ->*MAP_SPOILER_MODE
+	if(<-*other{<-*activeMap}{"hasCustom"} GetEditMode && <-justLoaded ! &&)
+		PlaySound("Notify" 1)
+		SetMsgButton(2 true "<size=10>Compiling with custom units will reset them to their default settings. Click here to revert units to this map's last save instead." V4(0.3 0.3 1 1) "RefreshMap" true)
+	endif
+	
+	#Move out of the thumbnail map
+	if(<-*activeMap -3 eq GetEditMode ! &&)
+		<-transitionGUID 0 GetUnitsByType ->units
+		<-units 0 do
+			if(<-units[i] "start" GetScript1Var -3 eq)
+				SendMsg("SetMap" <-units[i] "end" GetScript1Var)
+				return
+			endif
+		loop
+	endif
+	
+	false ->justLoaded
+	SendMsg("UpdateTransitions" <-*activeMap)
+	SendMsg("UpdateLevels" 0)
+
+# ====================
+
+:Setup
+	#Initialize globals if not present already
+	if(-?*maps !) #Terrain, a double-compressed list (sorry if you wanted to modify it, save size was a big issue)
+		#Each element contains 5 ints from 0-20, and then a 6th int from 0-32 that encodes compression metadata.
+		#Because of the way the data is stored, it is impossible to extract the terrain value of one cell from these lists
+		#Without unpacking every list element.
+		#But, it has a ~10x lossless compression ratio, so there's that at least.
+		CreateTable ->*maps
+		CreateList ->*maps{1}
+	endif
+	if(-?*specials !) #specials, one int for each cell with special other than 0
+		CreateTable ->*specials
+		CreateList ->*specials{1}
+	endif
+	if(-?*creeper !) #Creeper, one int for each cell with creeper or AC
+		CreateTable ->*creeper
+		CreateList ->*creeper{1}
+	endif
+	if(-?*units !) #Units, list of unit info tables (type, pos, settings, constructing, orientation, ammo)
+		CreateTable ->*units
+		CreateList ->*units{1}
+	endif
+	if(-?*other !) #Global settings, table 
+		CreateTable ->*other
+		CreateTable ->*other{1}
+	endif
+	if(-?*index !)
+		CreateTable ->*index
+	endif
+	if(-?*activeMap !)
+		1 ->*activeMap
+	endif
+	
+	#Prevent total script breakage when compiling on the editor
+	if(<-*activeMap -1 eq)
+		SendMsg("SetMap" 0)
+		0 ->*activeMap
+	endif
+	
+	<-*index GetTableKeys ->keys
+	<-keys 0 do
+		<-keys[i] ->unit
+		if(<-unit GetUnitType <-levelGUID eq <-unit "victory" GetScript1Var ! &&)
+			<-*index{<-unit} ->id
+			<-unit "id" <-id SetScript1Var
+		endif
+		if(<-unit GetUnitDestroyed)
+			if(<-*index{<-unit} GetTableKeys GetListCount eq0)
+				<-*compMaps <-*index{<-unit} RemoveTableElement
+				<-*specials <-*index{<-unit} RemoveTableElement
+				<-*creeper <-*index{<-unit} RemoveTableElement
+				<-*units <-*index{<-unit} RemoveTableElement
+			endif
+			<-*index <-unit RemoveTableElement
+		endif
+	loop
+	SendMsg("UpdateLevels" 0)
+	
+#Creates a unit and deletes all other units of that type.
+:CreateUniqueUnit
+	->initParams ->pos ->GUID
+	GetUnitsByType(<-GUID 0) ->extraUnits
+	<-extraUnits 0 do
+		<-extraUnits[i] true true true DestroyUnit
+	loop --extraUnits
+	CreateUnit(<-GUID <-pos <-initParams) return 
+
+:Awake
+	"Switcher" RegisterScript
+	
+	once
+	V3(0 0 GetMapSize swap pop neg) ->*posOffset
+	0 ->*mverse_on
+	
+	#Select and unselect units. Done to run their initilaize functions on recompile
+	<-levelGUID 0 GetUnitsByType ->units
+	<-units 0 do
+		<-units[i] dup true SetUnitSelected false SetUnitSelected
+	loop
+	<-transitionGUID 0 GetUnitsByType ->units
+	<-units 0 do
+		<-units[i] dup true SetUnitSelected false SetUnitSelected
+	loop
+
+	@Setup
+	List(<-backgroundGUID <-levelGUID <-transitionGUID <-detectorGUID) ->saveBlacklist
+	Split("tower pylon miner greenarrefinery terp porter cannon mortar sprayer sniper missile nullifier runway bomberpad acbomberpad rocketpad platform shield microrift beacon factory ernportal" " ")
+			dup ->*defaultUnits ->defaultUnits
+	Split(RemoveWhitespace(<-customUnits) ",") dup ->customUnits ->*customUnits
+	
+	#Titan units should always be included
+	<-customUnits "b2d47782-ebe0-4508-ace3-6ae4503b62fc" AppendToList
+	<-customUnits "ca8dfbe4-a3ca-4223-b8c4-070de8877b26" AppendToList
+	<-customUnits "c5b44bd0-1518-4091-9f15-36c919bc37c7" AppendToList
+
+	@CreateuniqueUnit(<-detectorGUID V3(-1000 -1000 -1000) 0) ->detectorUnit
+	RegisterForMsg("SetMap" "SetMap")
+	RegisterForMsg("RefreshMap" "RefreshMap")
+	RegisterForMsg("SaveTheme" "SaveTheme")
+	RegisterForMsg("LoadTheme" "LoadTheme")
+	RegisterForMsg("CloseGameMessage" "CloseGameMessage")
+	RegisterForMsg("UnitInstanceUpdate" "UnitsUpdated")
+	RegisterForMsg("MSG_SaveGame" "OnSave")
+	
+	GetMapSize dup2 mul ->mapSize ->mapZ ->mapX 
+	CreateList ->ernsInMap
+	
+	#Don't need these vars to persist
+	"map" 			NotPersist
+	"special" 		NotPersist
+	"creeper" 		NotPersist
+	"units" 		NotPersist
+	"theseUnits" 	NotPersist
+	"keys" 			NotPersist
+	"settings" 		NotPersist
+	"other" 		NotPersist
+	"theme" 		NotPersist
+	"themeLevel" 	NotPersist
+	"labX" 			NotPersist
+	"labZ" 			NotPersist
+	"diffX" 		NotPersist
+	"diffZ" 		NotPersist
+	"min" 			NotPersist
+	"charSpace"		NotPersist
+	"key" 			NotPersist
+	endonce
+
+#Clear map saves for unused maps on save
+:OnSave
+	--*levelIdOverride
+	<-*index GetTableKeys ->keys
+	<-keys 0 do
+		<-keys[i] ->unit
+		if(<-unit GetUnitDestroyed)
+			<-*index <-unit RemoveTableElement
+		endif
+	loop
+
+:UnitsUpdated
+	if(<-*other{<-*activeMap}{"hasCustom"} GetEditMode &&)
+		PlaySound("Notify" 1)
+		SetMsgButton(2 true "<size=10>Updating unit instances will reset custom units to default settings. Click here to revert custom units to the last multimap save instead." V4(0.3 0.3 1 1) "RefreshMap" true)
+	endif
+
+:RefreshMap
+	if(<-_DATA !)
+		@LoadMap
+		return
+	endif
+
+	SetMsgButton(2 0 0 0 0 0)
+	GetUnits("" Vector0 9999 true false false 0 0 0) ->units
+	-1 <-units GetListCount 1 sub do #Destroy custom units except for those in the blacklist
+		if(<-saveBlacklist <-units[i] GetUnitType ListContains ! <-units[i] GetUnitType StringLength 25 gt &&)
+			if(<-units[i] GetRiftLab eq)
+				<-units[i] false SetUnitDestroyUnevenLand
+				<-units[i] V3(<-mapX 2 div 0 -20) SetUnitPosition
+			else
+				<-units[i] 1 1 1 DestroyUnit
+			endif
+		endif
+	loop
+	
+	<-*units{<-*activeMap} ->units
+	@LoadUnits(false)
+
+:GameLoaded
+	GetEditMode ! ->*finalized 
+	"Switcher" RegisterScript
+	true ->justLoaded

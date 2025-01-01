@@ -1,0 +1,564 @@
+#Player.4rpl
+#Manages item pickups, weapons, and general game logic
+
+$maxHealth:100.0 #0 is invulnerability
+$regenRate:0.6
+$regenDelay:300
+
+$bonusRequirement:75 #Percentage HP to stay above for bonus objective
+
+$startingWeapons:"cannon,mortar,sprayer" #Comma separated
+
+#Determines the order of hotkeys and scrolling. 
+#Weapons not listed will be added to the end in the order initialized.
+$weaponOrder:"cannon,mortar,sprayer"
+
+$creeper_mode:0
+
+$$bulletGUID:"d611b424-2ce0-4317-a1e8-c5097c840d29"
+$$crosshairGUID:"37577d13-fa5c-4d0e-8c9a-ecbd2968ca2d"
+$$itemGUID:"d12d4163-732a-4b7c-b5ac-1dcf8f70aa1b"
+$$targetGUID:"abd3e0b5-69bc-4eb3-a7ac-7815758eda86"
+$$HUDGUID:"21632591-235f-4759-b0c7-b32ddc39491c"
+
+#-----------------------
+# Debug and version info
+# If you modify this script more than changing the above parameters, Update these. 
+# If you don't, leave them, even if you modified another script in the CPACK.
+
+# Current version of this script. If you branch someone else's version, add a period 
+# and start a new number ("10" -> "10.0"). If you edit your own version, add 1 to the last number ("10.0" -> "10.1")
+$$Script_Version:"12" 
+
+# The authors who have directly modified this script. There should be one name for each number in the script version.
+# If you don't want to attach your name, anything that separates your version from other possible branches works.
+$$Edit_History:"qople,"  
+
+$$Intended_Version:"1.6.0" #The CPACK version this script is intended for. The CPACK version is in the settings section of FpsCore.
+
+#Any other info that should be printed on startup, such as dependencies.
+#This is printed as-is (no extra formatting).
+$$Notes:"" 
+
+#=======================
+
+<-respawnInvuln gt0 if
+	<-respawnInvuln 1 sub ->respawnInvuln
+	<-*maxHealth ->*playerHealth
+endif
+
+if(<-*allowFPS !) #Disable all script actions
+	return
+endif
+
+if(GetPause ! <-lastUpdates GetGameUpdateCount neq &&)
+if(<-missionLost ! <-*isFPMode &&)	
+	once
+		SetGameMessageText(0 "Press Custom0 (<<Custom0>>) to toggle autofire.")
+		150 ->*msgTimer
+	endonce
+	@getInputs
+
+	#switch firing mode on scroll
+	if(GetMouseScrollDelta(true))
+		GetMouseScrollDelta(true) Sign0 ->direction
+		while #Probably a bad way of making a post check loop
+			<-fireIndex <-direction add <-weaponOrder GetListCount mod2 ->fireIndex
+			<-unlockedWeapons <-weaponOrder[<-fireIndex] ListContains ! 
+		repeat endwhile
+		
+		<-weaponOrder[<-fireIndex] ->*activeWeapon
+	endif
+
+	#direct weapon hotkeys
+	<-weaponOrder getListCount 0 do
+		if(GetMappedKeyDown("BuildUnit" i concat 1))
+			if(<-unlockedWeapons <-weaponOrder[i] ListContains)
+				<-weaponOrder[i] ->*activeWeapon
+				i ->fireIndex
+			endif
+		endif
+	loop
+	
+	<-*activeWeapon <-lastWeapon neq if
+		@GetWeaponStats
+	endif
+	
+	<-*activeWeapon ->lastWeapon
+	
+	#Unit proximity checks
+	if(getGameUpdateCount 10 mod eq0)
+		@checkPickups
+	endif
+	
+	#fire
+	<-*fireTimer 1 sub ->*fireTimer
+	if(<-firing, <-*fireTimer lte0, <-Path IsNull !, <-*playerStunned !, && && &&)
+		<-Rate ->*fireTimer
+		@Fire
+	endif
+	
+	#increment timers
+	if(<-*msgTimer 1 eq)
+		CloseGameMessage(true)
+	endif
+	<-*msgTimer 1 sub ->*msgTimer
+
+	
+else #If out of first person mode
+	#put the crosshair under the terrain
+	<-crosshair v3(0 1 0) setUnitForward
+	<-crosshair <-*playerPos.x -5 <-*playerPos.z v3 setUnitPosition
+	#put the HUD under the terrain
+	<-HUD v3(0 1 0) setUnitForward
+	<-HUD <-*playerPos.x -5 <-*playerPos.z v3 setUnitPosition
+endif
+
+#damage and lose condition
+<-missionLost ->missionWasLost
+if(<-maxHealth)
+	if(<-*playerPos.x <-*playerPos.z GetCreeper if(<-*creeperMode) lt0 else gt0 endif)
+		<-*playerPos.x <-*playerPos.z 0 1
+		if(<-*creeperMode !)
+			GetExactCreeperHeight swap pop mul swap pop
+		else
+			swap GetExactCreeperHeight swap pop swap pop mul
+		endif
+		
+
+		if(dup <-airborneDamage &&)
+			<-*playerHealth swap "Move" "playerTerrain" GetRegisteredScriptVar sub sqrt 0.33 mul 1 min sub ->*playerHealth
+		else
+		if(<-*playerPos.y <-*playerHeight sub sub dup gt0)
+			<-*playerHealth swap sqrt 0.33 mul 1 min sub ->*playerHealth
+		else
+			pop
+		endif endif
+		
+		<-*playerHealth <-lastHealth lt "Move" "jumpTimer" GetRegisteredScriptVar 2 eq && if
+			true ->airborneDamage
+		else if("Move" "jumpTimer" GetRegisteredScriptVar lte0)
+			false ->airborneDamage
+		endif endif
+	endif
+
+	if(<-*playerHealth <-lastHealth lt)
+		<-regenDelay SetTimer0
+	endif
+	
+	if(GetTimer0 !)
+		<-*playerHealth <-regenRate add ->*playerHealth
+	endif
+endif
+<-*playerHealth 0 <-*maxHealth clamp ->*playerHealth
+
+if(<-dead)
+	return
+endif
+if(<-*playerHealth <-lastHealth neq)
+	<-*playerHealth <-*maxhealth div dup ->healthPortion
+	100 mul ceil ->percentHP 
+	
+	if(<-lastHealth <-*playerHealth gt <-damageTimer lte0 <-healthPortion <-damageToBeep lt or &&)
+		#time between warning beeps is proportional to current health
+		29 <-healthPortion mul 1 add ->damageTimer
+		
+		#But this can be accelerated if a lot of damage is taken at once
+		<-healthPortion 0.8 mul <-healthPortion 0.1 sub max ->damageToBeep
+		# <-health dup 5 div <-maxHealth 10.0 div min sub ->damageToBeep
+		
+		if(<-*playerHealth gt0)
+			<-lastHealth <-*playerHealth sub <-*maxHealth div ->damageTaken
+			#Make damage beeps quieter for less urgent damage
+			#deprecated, but might be re-added later
+			<-*playerHealth <-damageTaken div ->timeToDeath
+			1.0 <-timeToDeath div sqrt 100 mul 0.5 1 clamp ->volume
+			
+			playSoundAtPosition("Warning" <-volume <-*playerPos)
+		else
+			true ->missionLost
+		endif
+	endif
+	
+	#Bonus objective management
+	if(<-bonusRequirement gte0)
+		if(<-percentHP <-bonusRequirement lt IsMissionComplete ! &&)
+			#Fail the flawless objective
+			true ->bonusLost
+		endif
+		
+		"Health "
+		if(<-bonusRequirement gt0)
+			if(<-bonusLost)
+				"<color=#f00>(target " <-bonusRequirement ")</color>: " concat4
+			else
+				"(target " <-bonusRequirement "): " concat4
+			endif
+		endif
+		<-percentHP "%" concat3
+		setCustomObjectiveText
+	endif
+endif
+<-*playerHealth ->lastHealth
+<-damageTimer 1 sub ->damageTimer
+
+#Check whether to complete custom objective
+if(IsMissionComplete <-bonusLost ! &&)
+	AcquireMissionObjective(5 false)
+endif
+
+#Loss check
+if(<-missionLost)
+	if(<-missionWasLost !)
+		@Dead 
+		<-numDeaths 1 add ->numDeaths
+
+		SendMsg("PlayerDied" <-numDeaths)
+	endif
+endif
+
+else if(GetGameUpdateCount eq0)
+	CloseGameMessage(false)
+	ShowGameMessage("message" "" "" false "channel")
+	SetGameMessageText(0 "Press Custom1 (<<Custom1>>) to enter first person mode. You can leave to look around the level, but cannot control your character while doing so." LF LF "Custom0-Custom9 are mapped keys you must bind in controls settings to use." concat4)
+	if(IsGameMessageShowing !)
+		SendMsg("AddText" "WP:ADA channel titled 'message' must be defined, with one text box.")
+		SendMsg("AddText" "WP:This will not appear when finalized.")
+	endif
+endif endif 
+GetGameUpdateCount ->lastUpdates
+
+#============
+
+:Dead
+	true ->dead
+	playSound("Explosion" 3)
+	CloseGameMessage(true)
+	ShowGameMessage("message" "No, I can do this! Just give me another chance." "" GetMVersePlayerNum lt0 "Respawn")
+	SetGameMessageText(0 "Your suit is compromised. I'm pulling you out of there.")
+
+:Respawn
+	false ->dead
+	CloseGameMessage(true)
+	<-*maxHealth ->*playerHealth
+	false ->missionLost
+	60 ->respawnInvuln
+
+#gets weapon stats from the global table and stores them in vars
+:GetWeaponStats
+	once
+		"Rate MinRange MaxRange ProjSpeed Path FireSound FireVolume" " " split ->neededStats
+	endonce
+	GetScript1Var(<-_DATA "weaponUnlock") ->weaponUnlock
+
+	if(<-weaponUnlock StringLength neq0)
+		<-unlockedWeapons <-weaponUnlock AppendToList
+	endif
+	
+	if(<-*weaponAttributes{<-*activeWeapon} IsNull)
+		"(" GetGameUpdateCount GetTimeString ")	No table for '" <-*activeWeapon "'"  concat4 concat Print
+	endif
+	
+	#Get current weapon stats from the stats table
+	<-neededStats GetListCount 0 do
+		<-neededStats[i] ->attribute
+		<-*weaponAttributes{<-*activeWeapon}{<-attribute} <-attribute ->!
+	loop
+
+#casts a ray from a given position, and returns the position where it hits, or v3(-1 -1 -1) if it doesnt.
+#syntax: v position, v rotation, i maxRange, i minRange, b ignoreCreeper, b ignoreAC
+:RayCast
+	#get inputs
+	if(<-*creeperMode) swap endif #Swap ignoreC and ignoreAC when in creeper mode
+	neq0 ->ignoreAC neq0 ->ignoreC floor ->minRange swap
+	->rotation swap ->tpos
+	
+	v3(-1 -1 -1) ->finalPos
+	0.25 mul <-minRange 0.25 mul do #Check every 4 cells for collision for speed
+		<-*playerPos <-*playerForward i 1 add mul 4 mul add ->tpos
+
+		if(<-tpos.x <-tpos.z @surfaceHeight <-tpos.y gte <-tpos dup <-*playerForward sub true GetTerrainLOS IsV3InMap ||)
+			<-tpos ->finalPos
+			
+			#look back more closely at the distance traveled in the past frame
+			#to figure out a more exact final position
+			<-finalPos dup ->lowEnd
+			<-*playerForward 4 mul sub ->highEnd
+			5 0 do 
+				<-highEnd <-lowEnd add 0.5 mul ->avg
+				if(<-avg.x <-avg.z @surfaceHeight <-avg.y gte)
+					<-avg ->lowEnd
+				else
+					<-avg ->highEnd
+				endif
+			loop
+			<-highEnd dup ->tpos ->finalPos
+			
+			#Must be at least the min range away from the start point
+			if(i <-minRange 0.25 mul floor eq)
+				v3(<-rotation.y sin 0 <-rotation.y cos) ->horizForward
+				
+				-1 <-minRange 4 mul do
+					<-*playerPos <-horizForward i mul 0.25 mul add ->tpos
+					<-*playerPos.y <-*playerForward.y 0.25 mul <-rotation.x cos .0001 max div i mul add ->tpos.y
+					
+					<-tpos.y <-tpos.x <-tpos.z false GetExactTerrain <-tpos.x <-tpos.z @surfaceHeight clamp ->tpos.y
+					if(<-tpos <-*playerPos Distance dup <-minRange lte swap <-minRange Approximately or)
+						if(<-rotation.x halfpi Approximately)
+							v3(-1 -1 -1) ->finalPos 
+							break
+						endif
+						<-tpos ->finalPos 
+						break
+					endif
+				loop
+			endif
+			break
+		endif
+	loop
+	<-finalPos 
+	return
+
+
+#returns the height of whatever is on top of a given position
+#is called by the ray cast function, and so uses its function vars 
+:surfaceHeight
+	<-ignoreC <-ignoreAC GetExactCreeperHeight 
+	swap pop swap pop swap pop #Get rid of the extra outputs the function gives
+
+#returns 0 if failed, 1 if successful
+:Fire
+	createTable ->initParams
+	-1 ->bullet
+	if(<-Path eq0)
+		@RayCast(<-*playerPos GetCameraRotation deg2rad mul 16 1 false true) <-*playerForward sub ->finalPos
+		if(<-finalPos.y lt0)
+			<-*playerPos <-*playerForward 15 mul add ->finalPos
+		endif
+		#spawn cannon shells directly in front of the camera
+		<-finalPos <-*playerForward sub ->bulletPos
+		--gravity
+		createUnit(<-bulletGUID <-bulletPos <-initParams) ->bullet
+		true ->playSound #Until the frame advances, the position global is one frame off, so wait until it does to play the sound
+
+
+	else if(<-Path 1 eq)
+		#don't fire if target is invalid
+		if(<-crosshair GetUnitPosition IsV3InMap ! -?gravity ! ||)
+			0 ->*fireTimer
+			0 return
+		endif
+
+		#arc vars
+		<-gravity ->initParams{"gravity"}
+		<-fireVel ->initParams{"fireVel"}
+		<-travelTime ->initParams{"travelTime"}
+		magnitude(<-finalPos <-*playerPos v3(0 2 0) add  -) ->d
+		<-d 2 / ->halfTT
+		v2(<-maxHeight <-halfTT) magnitude 2 * ->speedDivisor
+		<-d <-speedDivisor / ->speedMultiple
+		<-speedMultiple ->initParams{"speed"}
+		
+		#spawn mortar shells above the camera
+		<-*playerPos v3(0 2 0) add ->bulletPos
+		createUnit(<-bulletGUID <-bulletPos <-initParams) ->bullet
+		true ->playSound #Until the frame advances, the position global is one frame off, so wait until it does to play the sound
+	endif endif
+	SendMsg("WeaponFired" <-bullet)
+
+:DamagePlayer
+	if(<-*maxHealth)
+		<-*playerHealth <-_DATA AsFloat sub ->*playerHealth
+	endif
+	
+:getInputs
+	GetCameraRotation deg2rad mul ->rot
+	
+	#autofire
+	if("Custom0" 1 GetMappedKeyDown)
+		<-autofire ! ->autofire
+	endif
+	0 1 GetMouseButton <-autofire || ->firing
+	0 1 GetMouseButtonDown <-autofire || ->startedFiring
+	
+#converts a rotation vector into a unit velocity vector in that same direction 
+#basically spherical to rectangular conversion
+:rot2vel
+	->rotation
+	v3(<-rotation.y sin <-rotation.x cos mul
+			<-rotation.x sin neg
+			<-rotation.y cos <-rotation.x cos mul)
+	return
+
+:checkPickups
+	#Start charging all pickups in range
+	getUnits(<-itemGUID <-*playerPos 40 false false true 2 1 2) ->units
+	<-units getListCount 0 do
+		<-units i getListElement ->unit
+		if(GetUnitCell(<-unit) getCreeper if(<-*creeperMode) gte0 else lte0 endif)
+			setScriptVar(<-unit "Item.4rpl" "collecting" true)
+		endif
+	loop
+
+:once
+	if(<-targetGUID 0 getUnitsByType !)
+		<-targetGUID Vector0 0 CreateUnit #Makes the player targetable
+	endif
+	getUnitsByType(<-crosshairGUID 0) ->extraCrosshairs
+	<-extraCrosshairs getListCount 0 do
+		<-extraCrosshairs i getListElement true true true destroyUnit
+	loop
+	getUnitsByType(<-HUDGUID 0) ->extraHUDs
+	<-extraHUDs getListCount 0 do
+		<-extraHUDs i getListElement true true true destroyUnit
+	loop
+	
+	if(<-*allowFPS)
+		<-maxHealth ->*maxHealth
+		<-creeper_mode ->*creeperMode
+		<-*maxHealth ->*playerHealth
+		if(<-bonusRequirement gte0)
+			setMissionObjectiveEnabled(5 true)
+		endif
+
+		#Create a crosshair
+		createUnit(<-crosshairGUID v3(0 0 0) 0) ->crosshair
+
+		#Create a HUD
+		createUnit(<-HUDGUID v3(0 0 0) 0) ->HUD
+
+		#Register for events
+		registerForMsg("ItemCollected" "GetWeaponStats")
+		registerForMsg("Respawn" "Respawn")
+		registerForMsg("Moved" "MoveCrosshair")
+		registerForMsg("MSG_PostUpdate" "Main")
+		registerForMsg("DamagePlayer" "DamagePlayer")
+
+		<-*weaponAttributes GetTableKeys ->allWeapons
+		<-weaponOrder RemoveWhiteSpace "," split ->weaponOrder
+		<-allWeapons GetListCount 0 do
+			if(<-weaponOrder <-allWeapons[i] ListContains !)
+				<-weaponOrder <-allWeapons[i] AppendToList
+			endif
+		loop
+
+		split(toLower(RemoveWhiteSpace(<-startingWeapons)) ",") ->unlockedWeapons
+		<-unlockedWeapons 0 getListElement ->*activeWeapon
+		@getInputs
+		@GetWeaponStats
+
+		#set some list and table vars to not persist across saves (makes save files a little smaller)
+		"extraCrosshairs" notPersist
+		"units" notPersist
+		"initParams" notPersist
+		"allWeapons" notPersist
+		"list" notPersist
+	endif
+
+:MoveCrosshair
+	if(<-*isFPMode)
+		setUnitRotation(<-crosshair 0 0 0 v3)
+		SetObjColor(<-crosshair "horiz" V3(1 1 1))
+		SetObjColor(<-crosshair "vert" V3(1 1 1))
+		<-crosshair "Charge" Vector0 SetObjScale
+
+		setUnitPosition(<-HUD <-*playerPos <-*playerForward add)
+		SetObjScale(<-HUD "" V3(0.05 0.05 0.05))
+		SetObjScale(<-HUD "Health" V3(<-*playerHealth <-*maxHealth div 1 1))
+		SetObjScale(<-HUD "Stamina" V3(<-*stamina 2 div 1 1))
+		setUnitForward(<-HUD <-*playerForward)
+		SetObjActive(<-HUD "" true)
+		
+		if(<-Path eq0 <-Path 2 eq ||)
+			SetObjActive(<-crosshair "cross" true)
+
+			setUnitPosition(<-crosshair <-*playerPos <-*playerForward add)
+			SetObjScale(<-crosshair "cross" V3(0.03 .03 .03))
+			setUnitForward(<-crosshair <-*playerForward)
+			
+		else if(<-Path 1 eq) #Ballistic targeting
+			SetObjActive(<-crosshair "cross" true)
+			#Cast a ray to find where the shell will land
+			#These values are used for both the crosshair and the bullet
+			@RayCast(<-*playerPos GetCameraRotation deg2rad mul <-MaxRange <-MinRange false true) ->finalPos
+			if(<-finalPos.x lt0)
+				SetUnitPosition(<-crosshair v3(-5 -50 -5))
+				return
+			endif
+			#find arc vars
+			<-finalPos.x <-finalPos.z @surfaceHeight 3 add 
+					<-*playerPos.y 3 add max 3 add ->maxHeight
+			BallisticArcLateral(<-*playerPos <-ProjSpeed <-finalPos <-maxHeight) ->travelTime ->gravity ->fireVel
+			SetObjScale(<-crosshair "cross" V3(1 1 1))
+			#rotate crosshair the same as the bullet's path at the end
+			BallisticArcPos(<-*playerPos <-fireVel <-gravity <-travelTime 0.1 sub) ->almostFinalPos
+			<-crosshair <-finalPos <-almostFinalPos sub setUnitForward
+			
+			#move crosshair to the final position of the shell, but 2 units closer to the camera
+			setUnitPosition(<-crosshair <-finalPos <-*playerForward 2 mul sub)
+		else
+			SetObjActive(<-crosshair "cross" false)
+			<-crosshair <-*playerForward SetUnitForward
+			<-crosshair <-*playerPos <-*playerForward add SetUnitPosition
+		endif endif
+		
+		<-crosshair "Charge" <-*playerPos <-*playerForward add true SetObjPosition
+		<-crosshair "Charge" <-*playerForward SetObjForward
+
+		<-*stamina 1 lt if
+			SetObjColor(<-HUD "StaminaBar" V3(0 0.5 0.5))
+		else
+			SetObjColor(<-HUD "StaminaBar" V3(0 1 1))
+		endif
+		<-respawnInvuln 1 lt if
+			SetObjColor(<-HUD "HealthBar" V3(1 0 0))
+		else
+			SetObjColor(<-HUD "HealthBar" V3(0 1 0))
+		endif
+
+		SendMsg("CrosshairUpdated" <-crosshair)
+	endif
+	if(<-playSound)
+		--playSound
+		playSoundAtPosition(<-FireSound <-FireVolume <-*playerPos <-*playerForward 5 mul add)
+	endif
+
+:Awake
+	RegisterScript("Player")
+	
+:GameLoaded
+	if(<-*allowFPS)
+		SetObjActive(<-crosshair "cross" 0)
+		RegisterScript("Player")
+		registerForMsg("MSG_PostUpdate" "Main")
+		if(<-bonusRequirement gte0)
+			SetMissionObjectiveEnabled(5 true)
+			"Never fall below " <-bonusRequirement "% HP" concat3 SetCustomObjectiveText
+		endif
+		once
+			100 ->*playerHealth
+			#Starting Game message
+			CloseGameMessage(false)
+			ShowGameMessage("message" "" "" false "channel")
+			@SendDebugInfo
+			SetGameMessageText(0 "Press Custom1 (<<Custom1>>) to enter first person mode. You can leave to look around the level, but cannot control your character while doing so." LF LF "Custom0-Custom9 are mapped keys you must bind in controls settings to use." concat4)
+		endonce
+	endif
+	
+:SendDebugInfo
+	"Version " <-Script_Version LF concat3
+	"Edit History: " <-Edit_History LF concat4
+	"Made for FpsCore v" <-Intended_Version concat3
+	if(<-Notes RemoveWhiteSpace StringLength)
+		LF <-Notes concat3
+	endif
+	
+	#Check if the version matches
+	if(<-Intended_Version RemoveWhiteSpace <-*fpsCoreVersion RemoveWhiteSpace neq)
+		LF "VERSION MISMATCH: CPACK version (" <-*fpsCoreVersion ") does not match intended version." concat4 concat
+	endif
+	If(IsGameMessageShowing !)
+		LF "ADA channel is not defined. Create a channel with one blank text box, and title it 'message'" concat3
+	endif
+	
+	LF concat Print

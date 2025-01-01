@@ -1,0 +1,301 @@
+# --CreateNetwork-- 4/4/2024 7:45:03 AM
+$nodeGUID:"9027a0e1-9e27-4c90-aca4-87dc069fd8bf"
+
+# NODE FORMAT
+# 2 element list
+# first element is V2(x,z) for coordinates
+# Second element is list of neighbors' indices
+# Stored in a list in <-*pathfindNetwork (order of elements may change rarely over time due to node deletions)
+
+# Note: This code uses a lot of pass by reference
+
+#Node units are used for making the network in the editor, but said units are destroyed after finalize to help reduce lag. 
+#Because of this, You'll have to hook into the message calls they use to modify the network mid-level
+
+#All positions are in the form V2(x,z).
+#Index means the index of the node in the <-*pathfindNetwork list
+
+#Message channels that can be used to change the network, and the data format they take, are:
+
+#AddNode(position)
+#MoveNode(List[index, position])
+#RemoveNode(index)
+#AddConnection(List[index1, index2])
+#RemoveConnection(List[index1, index2])
+#ShowNetwork(anything) - refreshes *all* network connection beams if visible
+
+if(GetTimer0)
+    ShowUIIndicator("networkHelp" "buildtab4")
+    if(GetOpenBuildTab 4 eq)
+        0 SetTimer0
+    endif
+endif
+
+if(GetEditMode <-lastEditMode neq)
+    GetEditMode ->lastEditMode
+    SendMsg("EditModeToggled" GetEditMode)
+endif
+
+:Awake
+    once
+        if(-?*pathfindNetwork !)
+            CreateList ->*pathfindNetwork
+            CreateTable ->*networkUnits
+        endif
+
+        if(GetEditMode !)
+            #--*networkUnits
+        endif
+
+        SetMSGButton(4 GetEditMode "Edit Network" V4(0 1 0 1) "SetNetworkVisible" 1)
+
+        RegisterForMSG("SetNetworkVisible" dup)
+        RegisterForMSG("EditModeToggled" dup)
+        RegisterForMSG("AddNode" dup)
+        RegisterForMSG("AddNodeOnUnit" dup) #Probably only works right for the node units in this CPACK
+        RegisterForMSG("MoveNode" dup)
+        RegisterForMSG("RemoveNode" dup)
+        RegisterForMSG("AddConnection" dup)
+        RegisterForMSG("RemoveConnection" dup)
+        RegisterForMSG("ShowNetwork" "ShowNetworkMsgHandler")
+
+        --*updatingNodes
+        0 ->*lastNodeExecution
+        0 ->*nodeJustSelected
+        
+        RegisterScript("Setup")
+        <-nodeGUID 0 GetUnitsByType ->list
+        <-list 0 do
+            <-list[i] dup true SetUnitSelected false SetUnitSelected
+        loop
+        SendMsg("SetNetworkVisible" false)
+    endonce
+
+:EditModeToggled
+    if(GetEditMode !)
+        SendMsg("SetNetworkVisible" false)
+    endif
+    SetMSGButton(4 GetEditMode "Edit Network" V4(0 1 0 1) "SetNetworkVisible" 1)
+
+:SetNetworkVisible
+    <-_DATA GetEditMode && ->*networkVisible
+    if(<-*networkVisible)
+        SetCModPlayerMenuName(<-nodeGUID "NEW NODE" 4)
+
+        #Show an indicator on the custom tab the first time ever in the map the button is pressed
+        if(<-*firstTimeDone !)
+            300 SetTimer0
+            true ->*firstTimeDone
+        endif
+        @ShowNetwork
+    else
+        DestroyAllBeams
+        SetCModPlayerMenuName(<-nodeGUID "" 4)
+        #<-beams GetTableValues ->beams
+        #<-beams 0 do
+        #    <-beams[i] DestroyBeam
+        #loop
+        #CreateTable ->beams
+    endif
+    SetMSGButton(4 GetEditMode "Edit Network" V4(0 1 0 1) "SetNetworkVisible" <-*networkVisible !)
+
+:AddNode
+    <-_DATA ->nodePos
+    <-*pathfindNetwork ListN(<-nodePos CreateList 2) AppendToList
+
+#Adds a new node and relates it to the given unit
+:AddNodeOnUnit
+    <-_DATA ->nodeUnit
+    <-nodeUnit GetUnitCell V2 ->nodePos
+    if(<-*networkUnits GetTableKeys <-nodeUnit ListContains !)
+        <-*pathfindNetwork ListN(<-nodePos CreateList 2) AppendToList
+        <-*pathfindNetwork GetListCount 1 sub ->*networkUnits{<-nodeUnit}
+    endif
+
+#Moves the node related to the given unit to match its new position
+:MoveNode
+    <-_DATA[0] ->nodeIndex
+    <-_DATA[1] ->newPos
+    <-*pathfindNetwork[<-nodeIndex] ->node
+    <-node[0] ->oldPos
+    <-newPos ->node[0]
+
+    @ShowNetwork
+
+#Removes the node related to the given unit
+:RemoveNode
+    <-_DATA ->nodeIndex
+    <-*pathfindNetwork[<-nodeIndex] ->node
+
+    #Disconnect neighbors from the position of the deleted node
+    <-node[1] ->neighbors
+    <-neighbors 0 do
+        <-*pathfindNetwork[<-neighbors[i]] ->neighbor
+        <-neighbor[1] dup <-nodeIndex GetListIndices ->indices
+        <-indices 0 do
+            dup <-indices[i] RemoveListElement
+        loop
+        pop
+        <-nodeIndex <-neighbors[i] @UpdateConnection
+    loop
+
+    #Delete the node itself
+
+    #First, swap the last element of the list to this index, to minimize the nuber of entries that have to be moved
+    <-*pathfindNetwork PopList 
+    if(<-nodeIndex <-*pathfindNetwork GetListCount neq)
+        ->*pathfindNetwork[<-nodeIndex]
+        <-*pathfindNetwork GetListCount <-nodeIndex @UpdateNetworkReferences
+    else
+        pop
+    endif
+
+    @ShowNetwork    
+
+#Changes references to a network node from one value to another
+#For when a node changes positions in the list
+:UpdateNetworkReferences
+    ->newIndex ->oldIndex
+    <-*pathfindNetwork 0 do
+        <-*pathfindNetwork[i] ->thisNode
+        <-thisNode[1] ->myNeighbors
+        <-myNeighbors 0 do
+            if(<-myNeighbors[i] <-oldIndex eq)
+                <-newIndex ->myNeighbors[i]
+            endif
+        loop
+    loop
+
+    #Update references from node units to their respective nodes
+    SendMsg("NodeIndexMoved" ListN(<-oldIndex <-newIndex 2))
+
+    #Does nothing if the network is not shown, because <-beams is an empty table
+    <-beams GetTableKeys ->beamIndices
+    <-beamIndices 0 do
+        if(<-beamIndices[i] <-oldIndex "," concat StartsWith)
+            <-beamIndices[i] <-oldIndex "," concat <-newIndex "," concat StringReplace ->newBeamIndex
+            <-beams{<-beamIndices[i]} ->beams{<-newBeamIndex}
+            <-beams <-beamIndices[i] RemoveTableElement
+        endif
+    loop
+
+#Takes a UID and returns the node related to that unit
+:GetNodeFromUID
+    <-*networkUnits swap GetTableElement <-*pathfindNetwork swap GetListElement
+
+#Takes V2(x,z), returns the node at that cell, if any.
+#Returns null if there is no node on that cell.
+#Expensive with large networks.
+:GetNodeAtPosition
+    ->nodePosition
+    <-*pathfindNetwork 0 do
+        if(<-*pathfindNetwork[i][0] <-nodePosition eq)
+            <-*pathfindNetwork[i][0] return
+        endif
+    loop
+    NULL return
+
+#Adds a connection between the nodes related to two given units
+:AddConnection
+    <-_DATA[0] <-*networkUnits{<-_DATA[0]} SetUnitDebugText
+    <-_DATA[0]
+    <-_DATA[1]
+    @AddConnectionRaw
+
+#Takes node indices instead of UIDs
+:AddConnectionRaw
+    ->nodeIndex2 ->nodeIndex1
+    <-*pathfindNetwork[<-nodeIndex1] ->node1
+    <-*pathfindNetwork[<-nodeIndex2] ->node2
+
+    #Don't add a connection if the nodes are already connected
+    if(<-node1[1] <-nodeIndex2 ListContains !)
+        <-node1[1] <-nodeIndex2 AppendToList
+    endif
+
+    #Do both nodes' logic separately, to make things more robustly bidirectional
+    if(<-node2[1] <-nodeIndex1 ListContains !)
+        <-node2[1] <-nodeIndex1 AppendToList
+    endif
+
+    <-nodeIndex1 <-nodeIndex2 @UpdateConnection
+
+:RemoveConnection
+    <-_DATA[0] ->nodeIndex1
+    <-_DATA[1] ->nodeIndex2
+    <-*pathfindNetwork[<-nodeIndex1] ->node1
+    <-*pathfindNetwork[<-nodeIndex2] ->node2
+
+    #Don't add a connection if the nodes are already connected
+    if(<-node1[1] <-nodeIndex2 ListContains)
+        <-node1[1] dup <-nodeIndex2 GetListIndex RemoveListElement
+    endif
+
+    #Do both nodes' logic separately, to make things more robustly bidirectional
+    if(<-node2[1] <-nodeIndex1 ListContains)
+        <-node2[1] dup <-nodeIndex1 GetListIndex RemoveListElement
+    endif
+
+    <-nodeIndex1 <-nodeIndex2 @UpdateConnection
+
+:ShowNetwork
+    DestroyAllBeams
+
+    CreateTable ->beams
+    <-*pathfindNetwork 0 do
+        <-*pathfindNetwork[i] ->node
+        <-node[0] ->nodeCell
+        <-node[1] ->nodeNeighbors
+        #Create beams to all neighbors, if one doesn't already exist between them
+        <-nodeNeighbors 0 do
+            if(<-beams{j <-nodeNeighbors[i] @GetBeamIndex} !)
+                CreateBeam("green" 1 3) dup ->beam ->beams{j <-nodeNeighbors[i] @GetBeamIndex}
+                <-beam <-nodeCell @V2toV3 SetBeamStart
+                <-beam <-*pathfindNetwork[<-nodeNeighbors[i]][0] @V2toV3 SetBeamEnd
+            endif
+        loop
+    loop
+
+:ShowNetworkMsgHandler
+    if(<-*networkVisible)
+        @ShowNetwork
+    endif
+
+:GetBeamIndex
+    #Sort them to make order not matter (same index for 2 -> 1 as 1 -> 2)
+    #Prevents two beams being made for each connection
+    if(dup2 gt)
+        swap
+    endif
+
+    #Combine the coords to get the index
+    "," swap concat3
+
+:UpdateConnection
+    ->nodeIndex2 ->nodeIndex1
+    <-*pathfindNetwork[<-nodeIndex1] ->node1
+    <-*pathfindNetwork[<-nodeIndex2] ->node2
+    #pop pop @ShowNetwork return
+    <-nodeIndex1 <-nodeIndex2 @GetBeamIndex ->beamIndex
+    if(<-node1[1] <-nodeIndex2 ListContains)
+        if(<-beams{<-beamIndex} dup)
+            ->beam
+        else
+            pop
+            CreateBeam("green" 1 3) dup ->beam ->beams{<-beamIndex}
+        endif
+        <-beam <-node1[0] @V2toV3 SetBeamStart
+        <-beam <-node2[0] @V2toV3 SetBeamEnd
+    else
+        <-beams{<-beamIndex} DestroyBeam
+        <-beams <-beamIndex RemoveTableElement
+    endif
+        
+:V2toV3
+    EV2 GetTerrainVector V3(0 5 0) add
+    
+:RemoveConnectingBeam
+    ->nodeIndex2 ->nodeIndex1
+    <-nodeIndex1 <-nodeIndex2 @GetBeamIndex ->beamIndex
+    <-beams{<-beamIndex} DestroyBeam
+    <-beams <-beamIndex RemoveTableElement

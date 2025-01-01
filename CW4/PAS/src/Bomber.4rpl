@@ -1,0 +1,455 @@
+# --Bomber-- 2/9/2024 4:09:42 PM
+#Shared by bomber and AC bombers.
+$BOMB_DISTANCE:40
+$FIRE_RATE:4
+$DAMAGE:-1
+$CRIMSON_AMT:20
+
+#Flight parameters
+$FLY_HEIGHT:50
+$ACCELERATION:0.01
+$TAKEOFF_ACCELERATION:0.05 #Higher acceleration during takeoff for quick ascent
+$MAX_SPEED:0.7
+$ROTATIONAL_ACCELERATION:0.2
+$TURN_SPEED:6
+$ASCEND_ANGLE:-55
+$GRAVITY:0.015
+
+$DIVE_BOMB:1 #Whether to strafe or dive-bomb. Here to unify both bomber AIs into one easier-to-maintain script.
+
+$$MVERSE_SYNC_TIME:5.0 #delay between mverse position sync messages. Int only, just precast to a float for division purposes.
+
+Self false SetMVerseCreatesUnitGhost
+
+if(<-*isMVerseHost !)
+	<-pos <-vel add ->pos
+	Self <-pos SetUnitPosition
+	Self <-newPos <-newForward add <-rotSpeed RotateUnitTowards
+else
+switch
+	case(<-state eq0) #At pad
+	endcase
+	
+	case(<-state 1 eq) #Taking off
+		<-BOMBERPAD GetUnitSpecifiedTarget ->target
+		@TakeOff
+	endcase
+	
+	case(<-state 2 eq) #Flying to the target
+		<-BOMBERPAD GetUnitSpecifiedTarget ->target
+		30 ->waitTime
+		@Fly
+	endcase
+	
+	case(<-state 3 eq) #Dive bombing
+		@Dive
+	endcase
+	
+	case(<-state 4 eq) #Pull up
+		@PullUp
+	endcase
+	
+	case(<-state 5 eq) #Fly back to the pad
+		@ReturnToBase
+	endcase
+	
+	case(<-state 6 eq) #Approach the pad
+		@Descend
+	endcase
+	
+	case(<-state 7 eq) #Level off, slow down, and dock with the pad
+		@Land
+	endcase
+endswitch
+
+@TrackOrbs
+if(GetTimer2 eq0)
+	<-MVERSE_SYNC_TIME AsInt SetTimer2
+	SendMVerseMsg("SyncPos" <-trueGUID concat Self GetUnitPosition Self GetUnitForward 2 ListN)
+endif
+endif
+
+#Runway-free takeoff
+:TakeOff
+	#Turn towards the target position
+	<-target.x <-pos.y <-target.z V3 @RotatePlane ->angle
+	
+	#Accelerate
+	<-speed <-TAKEOFF_ACCELERATION add <-MAX_SPEED min ->speed
+	Self GetUnitForward <-speed mul ->vel
+	<-pos <-vel add ->nextPos
+	
+	#Climb terrain in a decently realistic way
+	<-nextPos.x <-nextPos.z false GetExactTerrain 
+	if(dup <-lastTerrain neq)
+		#Find a projected position that climbs terrain with constant speed
+		1 add ->nextPos.y 
+		<-nextPos <-pos sub Normalize <-speed mul <-pos add ->nextPos
+		
+		#Adjust that speed to make it slow down/speed up with gravity
+		#This effect is not really visible during this stage, but the same function is used in flight
+		#So we might as well use what we've got in case there's a large hill or something
+		# <-pos <-nextPos @ConserveEnergy ->nextPos dup ->vel
+		# <-newSpeed ->speed
+	else 
+		pop
+	endif
+	
+	#Update position
+	Self <-nextPos dup ->pos SetUnitPosition
+	
+	#Check if we have speed to take off
+	#This logic could be improved, sometimes they don't like to launch. 
+	#It'll need to be replaced if runways are added regardless.
+	if(<-speed <-MAX_SPEED gte <-angle 0.1 lt &&)
+		Self GetUnitRotation ->rot
+		0 ->rotSpeed
+		2 ->state
+	endif
+
+#Rotates the plane HORIZONTALLY ONLY towards the target, with rotational acceleration applied for smoothness
+#Retains X and Z components of unit rotation
+#Returns the new angle to the position you give, remove the "dup" to disable this
+:RotatePlane
+	->rotPos
+	Self GetUnitRotation ->prevRot
+	Self V3(0 <-prevRot.y 0) SetUnitRotation
+	<-rotSpeed <-ROTATIONAL_ACCELERATION add <-TURN_SPEED min ->rotSpeed
+	Self <-rotPos <-rotSpeed RotateUnitTowards 
+	Self GetUnitRotation ->newRot
+	<-prevRot.x ->newRot.x
+	<-prevRot.z ->newRot.z
+	Self <-newRot SetUnitRotation
+	if(Self "" <-rotPos GetObjFacingAngle dup 0.1 lt)
+		<-baseTurn ->TURN_SPEED
+		0 ->rotSpeed
+	endif
+
+
+:Fly
+	#Rotate the plane horizontally
+	
+	#First check angle to the target
+	Self "" <-target.x <-target.z GetObjFacingAngleCell ->angle
+	if(<-angle 0.1 gt) #We need to turn!
+	
+		#Stop rotation for a second when we pass the target, so we don't just spin in a circle
+		if(<-angle 90 gt)
+			if(<-lastAngle 90 lt)
+				<-waitTime SetTimer0 
+			endif
+		endif
+		
+		if(GetTimer0 eq0)
+			#Rotate the target
+			<-target.x <-pos.y <-target.z V3 ->newTarget
+			<-newTarget @RotatePlane pop
+			<-rot.x
+			Self GetUnitRotation ->rot
+			->rot.x
+		endif
+	else
+		
+		0 ->rotSpeed
+	endif
+	<-angle ->lastAngle
+	
+	#Rotate the plane vertically, separate from the horizontal rotation.
+	if(<-pos.y <-pos.x <-pos.z GetTerrain <-FLY_HEIGHT add lt)
+		@Ascend
+	else
+		@LevelOut
+		
+		<-TURN_SPEED 0.001 add ->TURN_SPEED #hacky fix to ensure we always hit the target by deecreasing turn radius over time.
+		
+		#Check to start diving/bombing
+		if(Self GetUnitCell <-target ToCell DistanceCell <-BOMB_DISTANCE lt)
+			if(<-DIVE_BOMB <-angle 0.1 lt && Self GetUnitCell <-target ToCell DistanceCell <-BOMB_DISTANCE 5 sub gt &&)
+				3 ->state
+				20 SetTimer1 #Wait a bit before we drop the first bomb to actually start the dive
+				0 ->rotSpeed
+				0 ->ascendRate
+			else if(GetTimer1 eq0 <-DIVE_BOMB ! &&)
+				<-FIRE_RATE SetTimer1
+				@Fire
+				if(Self GetUnitAmmo eq0)
+					5 ->state
+					0 ->ascendRate
+					0 SetTimer0
+				endif
+			endif endif
+		endif
+	endif
+	
+	#Accelerate
+	if(<-speed <-MAX_SPEED lte)
+		<-speed <-ACCELERATION add <-MAX_SPEED min ->speed
+	else
+		<-speed 0.01 sub ->speed #decelerate slowly at higher than max speed
+	endif
+	
+	#Adjust for gravity
+	Self GetUnitForward <-speed mul ->vel
+	Self <-pos dup <-vel add @ConserveEnergy dup ->pos swap ->vel SetUnitPosition
+	<-newSpeed ->speed
+	
+
+#Turns up to ascend
+:Ascend
+	<-ascendRate <-ROTATIONAL_ACCELERATION add 0 <-TURN_SPEED clamp ->ascendRate
+	<-rot.x <-ascendRate sub <-ASCEND_ANGLE max ->rot.x
+	if(<-rot.x <-ASCEND_ANGLE eq)
+		0 ->ascendRate
+	endif
+	Self <-rot SetUnitRotation
+
+#Turns down to level out
+:LevelOut
+	<-rot.x <-ascendRate sub 0 min ->rot.x
+	<-ascendRate <-ROTATIONAL_ACCELERATION sub <-TURN_SPEED neg 0 clamp ->ascendRate
+	if(<-rot.x eq0)
+		0 ->ascendRate
+	endif
+	Self <-rot SetUnitRotation
+
+#Diving to the target while dropping bombs
+:Dive	
+	#Rotate down to dive
+	<-rot.x <-ascendRate add 70 min ->rot.x
+	<-ascendRate <-ROTATIONAL_ACCELERATION add <-TURN_SPEED min ->ascendRate
+	Self <-rot SetUnitRotation
+	
+	#Accelerate
+	if(<-speed <-MAX_SPEED lt)
+		<-speed <-ACCELERATION add <-MAX_SPEED min ->speed
+	endif
+	
+	#Adjust for gravity
+	Self GetUnitForward <-speed mul ->vel
+	Self <-pos dup <-vel add @ConserveEnergy dup ->pos swap ->vel SetUnitPosition
+	<-newSpeed ->speed
+
+	#Check position to start pulling up
+	if(<-pos.y Self GetUnitCell GetTerrain sub 20 lt)
+		4 ->state
+		0 ->rotSpeed
+		0 ->ascendRate
+		@Fire
+		<-FIRE_RATE SetTimer1
+		return
+	endif
+
+#Just creates an orb
+:Fire
+	if(Self GetUnitAmmo <-DAMAGE gte)
+		Self dup GetUnitAmmo <-DAMAGE sub SetUnitAmmo
+		
+		if(<-DIVE_BOMB)
+			<-vel
+		else
+			V3(RandFloat 0.5 sub RandFloat 0.5 sub RandFloat 0.5 sub) 0.25 mul 
+		endif
+		->orbData{"velocity"}
+		
+		<-createdOrbs
+		Self GetUnitPosition V3(RandFloat 0.5 sub RandFloat 0.5 sub RandFloat 0.5 sub) add dup ->orbPos <-orbData CreateOrb 
+		if(<-CRIMSON_AMT)
+			AppendToList
+			<-orbPositions <-orbPos AppendToList
+		else
+			pop pop
+		endif
+		
+	else
+		Self 0 SetUnitAmmo 
+	endif
+
+#Recovering from a dive
+:PullUp
+	#Rotate back up
+	<-rot.x <-ascendRate 3 mul sub <-ASCEND_ANGLE max ->rot.x
+	<-ascendRate <-ROTATIONAL_ACCELERATION add <-TURN_SPEED min ->ascendRate
+	Self <-rot SetUnitRotation
+	if(GetTimer1 1 eq)
+		@Fire
+	endif
+	
+	#Accelerate
+	if(<-speed <-MAX_SPEED lt)
+		<-speed <-ACCELERATION add <-MAX_SPEED min ->speed
+	endif
+
+	#Adjust for gravity
+	Self GetUnitForward <-speed mul ->vel
+	Self <-pos dup <-vel add @ConserveEnergy dup ->pos swap ->vel SetUnitPosition
+	<-newSpeed ->speed
+	
+	if(<-pos.y <-FLY_HEIGHT gte) #Let the fly mode take over
+		if(Self GetUnitAmmo eq0)
+			5 ->state
+		else
+			2 ->state
+		endif
+		100 ->lastAngle
+		0 ->rotSpeed
+	endif
+
+:ReturnToBase
+	<-BOMBERPAD GetUnitPosition ->target
+	50 ->waitTime
+	@Fly
+	5 ->state
+	if(Self GetUnitCell <-target ToCell DistanceCell dup 50 lt swap 45 gt && <-angle 0.1 lt &&) #Begin landing
+		6 ->state
+		0 ->ascendRate
+	endif
+
+:Descend
+	#Rotate down to dive
+	<-rot.x <-ascendRate add 70 min ->rot.x
+	<-ascendRate <-ROTATIONAL_ACCELERATION add <-TURN_SPEED min ->ascendRate
+	Self <-rot SetUnitRotation
+
+	#Accelerate
+	if(<-speed <-MAX_SPEED lt)
+		<-speed <-ACCELERATION add <-MAX_SPEED min ->speed
+	endif
+
+	#Adjust for gravity
+	Self GetUnitForward <-speed mul ->vel
+	Self <-pos dup <-vel add @ConserveEnergy dup ->pos swap ->vel SetUnitPosition
+	<-newSpeed ->speed
+	
+	if(<-pos.y <-BOMBERPAD GetUnitCell GetTerrain sub 15 lte)
+		7 ->state
+		0 ->ascendRate
+	endif
+
+:Land
+	<-speed 0.92 mul 0.05 <-pos <-target Distance mul max 0.1 max ->speed
+
+	#Rotate back up
+	Self <-BOMBERPAD GetUnitPosition <-ascendRate RotateUnitTowards
+	<-ascendRate <-ROTATIONAL_ACCELERATION add 2 max ->ascendRate
+
+	if(<-pos <-target Distance 0.1 lt)
+		Self <-target SetUnitPosition
+		0 ->state
+		0 ->ascendRate
+		Self 0 <-rot.y 0 V3 SetUnitRotation
+		<-BOMBERPAD "Bomberpad.4rpl" "state" 2 SetScriptVar
+	endif
+
+	#Adjust for gravity
+	Self GetUnitForward <-speed mul ->vel
+	Self <-pos dup <-vel add @ConserveEnergy dup ->pos swap ->vel SetUnitPosition
+	<-newSpeed ->speed
+	
+
+#Does conservation of energy things to preserve total energy when going up and down
+#Or in other words, it increases speed when descending, and decreases it when ascending, roughly according to gravity.
+#Give it a current position and a projected next position, and it will return a new next position and velocity.
+#<-currentPos <-nextPos @ConserveEnergy ->newPos ->newVel
+:ConserveEnergy
+	->newPos ->oldPos
+	<-oldPos.y <-newPos.y sub <-GRAVITY mul 2 mul <-newPos <-oldPos sub dup ->oldVel SqrMagnitude dup ->oldSpeed add sqrt ->newSpeed
+	if(<-oldSpeed 0.01 lt)
+		<-oldVel <-newPos
+	else
+		<-oldVel Normalize <-newSpeed mul dup <-oldPos add 
+	endif
+	
+:Once
+	Self false SetMVerseCreatesUnitGhost
+	
+	if(<-*mVerseOn)
+		if(-?mverseSlave !) #host unit
+			false ->mverseSlave
+			<-BOMBERPAD "CoreSleeper.4rpl" "trueGUID" GetScriptVar ->trueGUID
+			SendMVerseMsg("CreateMVerseSlave" ListN(Self GetUnitType Self GetUnitPosition TableN("trueGUID" <-trueGUID "mverseSlave" true 2) 3))
+		endif
+		RegisterForMSG("MVerseDamaged" dup <-trueGUID concat swap)
+		RegisterForMSG("MVerseDestroy" <-trueGUID concat "MVerseDestroy")
+		if(<-*isMVerseHost !)
+			RegisterForMSG("SyncPos" <-trueGUID concat "SyncPos")
+		endif
+	endif 
+
+	Self GetUnitPosition ->pos
+
+	if(<-*isMVerseHost)
+		Self GetUnitRotation ->rot
+		Self GetUnitCell GetTerrain ->lastTerrain
+		Vector0 ->vel
+		0 ->speed
+		Vector0 ->rotVel
+		0 ->rotSpeed
+		if(-?BOMBERPAD !)
+			Self 1 1 1 DestroyUnit
+		endif
+		<-TURN_SPEED ->baseTurn
+
+		"payload" <-DAMAGE
+		"bounce" 0
+		"includepseudoterrain" 0
+		"bounceshield" 1
+		"creeperdamps" 0
+		"destroywhenstill" 1
+		"destroywhendrytime" 10
+		"releaseondestroy" 0
+		"maxspeed" 2
+		Table ->orbData
+		CreateList ->createdOrbs #keep track of in-flight orbs to put crimson on them when they die
+		CreateList ->orbPositions
+	endif
+
+:TrackOrbs
+	-1 <-createdOrbs 1 sub do
+		<-createdOrbs[i] GetUnitDestroyed if
+			if(<-CRIMSON_AMT)
+				<-orbPositions[i] ToCell ->z ->x
+				<-z 2 add <-z 1 sub do 
+					<-x 2 add <-x 1 sub do
+						i j <-CRIMSON_AMT 9.0 div SetCrimson
+					loop
+				loop
+			endif
+			<-orbPositions i RemoveListElement
+			<-createdOrbs i RemoveListElement
+		else
+			<-createdOrbs[i] GetUnitPosition ->orbPositions[i]
+		endif
+	loop
+
+:Destroyed
+	<-BOMBERPAD "Bomberpad.4rpl" "state" 1 SetScriptVar #Tell our bomberpad to start building a new plane.
+	if(<-*mVerseOn)
+		SendMsg("MVerseDestroy" <-trueGUID concat 0)
+	endif
+
+:_Selected
+	if(<-_DATA)
+		Self false SetUnitSelected
+		<-BOMBERPAD true SetUnitSelected
+	endif
+
+:MVerseDamaged
+	Self <-_DATA DamageUnit
+	
+:MVerseDestroy
+	Self 0 0 0 DestroyUnit
+
+:SyncPos
+	#Force sync us to the last position we received, to prevent any gradual desync
+	if(true once pop false endonce)
+		Self <-newPos SetUnitPosition
+		<-newPos ->pos
+		Self <-newForward SetUnitForward
+	endif
+	
+	#Get the new position and direction to face, and calculate how we need to move to get there.
+	<-_DATA[0] ->newPos 
+	<-_DATA[1] ->newForward
+
+	<-newPos <-pos sub <-MVERSE_SYNC_TIME div ->vel
+	Self "" <-newPos <-newForward add GetObjFacingAngle <-MVERSE_SYNC_TIME div ->rotSpeed

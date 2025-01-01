@@ -1,0 +1,84 @@
+# --PodCarrier-- 12/11/2023 1:35:11 PM
+$speed:1.0
+$minHeight:8
+
+switch
+	#On launch, state is set to 2.
+	case(<-state 2 eq) #Carrying the pod to the destination
+		@CarryPod
+	endcase
+	
+	#When we land or the pod is destroyed, state is set from 2 to 1.
+	case(<-state 1 eq) #Returning to the base
+		@Return
+	endcase
+
+	#Then back to 0 when we return to the pod, and are waiting to be sent out again.
+	case(<-state eq0) #Sitting at the porter, no action required.
+		Self false SetMVerseCreatesUnitGhost
+	endcase
+endswitch
+
+:Once
+	0 ->state
+	Self GetUnitPosition ->pos
+	true ->cellOpen
+
+:CarryPod	
+	#Return immediately if we lose the pod
+	if(<-pod GetUnitDestroyed)
+		<-PORTER_BASE GetUnitPosition ->target
+		1 ->cellOpen
+		1 ->state
+		return
+	endif
+
+	@MoveToPosition
+
+:Return
+	@MoveToPosition #The target is switched when we land, so we just need to run the same move function to return.
+
+:Destroyed
+	<-PORTER_BASE 0 0 0 DestroyUnit
+	<-pod 0 0 0 DestroyUnit
+
+:_Selected
+	if(<-_DATA) #The game crashes if you remove this "if". Don't.
+		Self false SetUnitSelected
+		<-PORTER_BASE true SetUnitSelected
+	endif
+
+:MoveToPosition	
+	if(<-target EV3 swap pop 600 mul add Self GetUnitPosition EV3 swap pop 600 mul add Approximately)
+		#Descend
+		if(<-cellOpen <-state 1 eq ||) #cellOpen is determined by the 
+			-100 ->height
+			<-target ->horizTarget
+			
+			#Check if we've landed
+			if(<-pos.y <-target.y eq)
+				<-target ->pos
+				<-state 1 sub ->state
+				
+				if(<-state) #Drop the pod
+					false ->cellOpen
+					<-PORTER_BASE GetUnitPosition ->target
+					<-pod "PorterPod.4rpl" "active" true SetScriptVar
+				else #Tell the porter we've returned
+					<-PORTER_BASE "Porter.4rpl" "ready" true SetScriptVar
+				endif
+			endif
+		endif
+	else
+		#Move horizontally only
+		<-minHeight ->height
+		<-target.x <-pos.y <-target.z V3 ->horizTarget
+	endif
+	
+	#Move the unit
+	<-pos dup ->lastPos <-horizTarget <-speed <-height 2 false true false MoveTowardsAndAvoid ->pos
+	Self <-pos SetUnitPosition
+	if(<-state 2 eq) #Carry the pod too
+		<-pod <-pos SetUnitPosition
+	endif
+	

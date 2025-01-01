@@ -1,0 +1,285 @@
+# --Pylon-- 12/13/2023 12:25:21 PM
+$CONNECTION_DIST:40
+$MAX_CONNECTIONS:6
+$FALLOFF:0.25
+
+$CHECK_RANGE:10 #Range of GetCreeperInRange check used to determine field direction
+$CHECK_DELAY:30 #Delay between checks. Won't work if set below 2.
+$FIELD_STRENGTH:2500
+$FIELD_WIDTH:8
+
+$$CONN_HEIGHT:6.0 #Height of the connection beam. Visual only.
+
+<-bSpeed <-bRot add ->bRot
+Self "Ball" <-bRot false SetObjRotation
+
+
+if(Self GetUnitConstructing !)
+	GetGameUpdateCount <-CHECK_DELAY mod
+	#Field updates are split into two updates:
+	#First, all towers save how much creeper is in the cells around them.
+	#Next, they check those values in all connected pylons and use that to update field directions.
+	if(dup eq0)
+		pop
+		@CalculateCreep
+	else if(1 eq) #Happens the next frame
+		@DoFields
+	endif endif
+endif
+
+#Save how much creep is around this tower.
+#This optimizes the next phase of checking creeper around all nearby towers next frame,
+#since it doesn't need to be checked by every tower next to us.
+:CalculateCreep
+	Self GetUnitCell <-CHECK_RANGE false true false GetCreeperInRange ->creepInRange
+
+#Check nearby creep around all connected towers, and create push fields to all with less creep.
+:DoFields
+	<-connectedTowers 0 do
+		if(<-connectedTowers[i] GetUnitConstructing !)
+			<-connectedTowers[i] "Pylon.4rpl" "creepInRange" GetScriptVar <-creepInRange lt ->pushToPylon
+			if(<-pushToPylon <-activeFieldTowers <-connectedTowers[i] ListContains ! &&)
+				#Push creeper to the other tower if it has less than this one
+				#If it has more than this tower, *it* will push to *us* instead when it runs this function.
+				<-connectedTowers[i] GetUnitPosition Self GetUnitPosition sub ->fieldDirection
+				<-connectedTowers[i] GetUnitCell Self GetUnitCell DistanceCell ->field_length
+				<-fieldDirection false <-field_length <-FIELD_WIDTH @createFieldRect #Resulting list is stored in <-fieldRect. Width of the field is in <-fieldRectWidth.
+				Self GetUnitPosition <-connectedTowers[i] GetUnitPosition add 0.5 mul ToCell ->fieldZ ->fieldX
+				
+				
+				#Remember these field settings and which tower it is connected to. 
+				#This lets us not have to recalculate the same field unless it changes, and lets us rebuild all fields on reload, since they don't persist.
+				<-fieldX <-fieldZ <-fieldRect <-fieldRectWidth <-FIELD_STRENGTH 0 1 true SetFieldRect
+				<-activeFieldPositions <-fieldX <-fieldZ FC AppendToList
+				<-activeFields <-fieldRect copy AppendToList
+				<-activeFieldWidths <-fieldRectWidth AppendToList
+				<-activeFieldTowers <-connectedTowers[i] AppendToList
+				
+			else if(<-pushToPylon ! <-activeFieldTowers <-connectedTowers[i] ListContains &&)
+				#Deactivate the field to this tower and let it push creep to us.
+				<-activeFieldTowers <-connectedTowers[i] GetListIndex ->index
+				<-activeFieldPositions[<-index] UFC <-activeFields[<-index] <-activeFieldWidths[<-index] <-FIELD_STRENGTH 0 1 false SetFieldRect
+				<-activeFields <-index RemoveListElement
+				<-activeFieldWidths <-index RemoveListElement
+				<-activeFieldPositions <-index RemoveListElement
+				<-activeFieldTowers <-index RemoveListElement
+				
+			endif endif
+		endif
+	loop
+
+:RemoveAllFields
+	<-activeFields 0 do
+		<-activeFieldPositions[i] UFC <-activeFields[i] <-activeFieldWidths[i] <-FIELD_STRENGTH 0 1 false SetFieldRect
+	loop
+
+	CreateList ->activeFields
+	CreateList ->activeFieldWidths
+	CreateList ->activeFieldPositions 
+	CreateList ->activeFieldTowers
+
+#Constructs fields from the saved lists
+:DeployFields
+	<-activeFields 0 do
+		<-activeFieldPositions[i] UFC <-activeFields[i] <-activeFieldWidths[i] <-FIELD_STRENGTH 0 1 true SetFieldRect
+	loop
+
+:Awake
+	once
+		V3(pi -7 3) ->bSpeed
+		Vector0 ->bRot
+		#Used to remember active fields, and reconstruct them on load
+		CreateList ->activeFields
+		CreateList ->activeFieldWidths
+		CreateList ->activeFieldPositions 
+		CreateList ->activeFieldTowers
+		
+		CreateList ->connectedTowers
+		V3(0 <-CONN_HEIGHT 0) ->height
+		Self GetUnitType ->towerGUID
+		Self GetUnitPosition ->myPos
+		Self "CoreSleeper.4rpl" "EMIT_AMT" GetScriptVar ->baseEmit
+		1 <-FALLOFF div <-MAX_CONNECTIONS add ->connection_limit
+		RegisterForMsg("AddConnection" Self concat "AddConnection")
+		RegisterForMsg("RemoveConnection" Self concat "RemoveConnection")
+		RegisterForMsg("UpdateConnections" "UpdateConnections")
+		-1 ->exclude
+		@Initialize
+	endonce
+
+:GameLoaded
+	@DeployFields #Fields don't persist across save/load
+
+:Initialize
+	@FindTowers ->nearbyTowers
+	<-nearbyTowers GetListCount 1 sub ->connections #subtract 1 because the tower doesn't connect to itself
+	<-nearbyTowers 0 do
+		if(<-nearbyTowers[i] self neq)
+			<-connectedTowers <-nearbyTowers[i] AppendToList
+			SendMsg("AddConnection" <-nearbyTowers[i] concat Self)
+		endif
+	loop
+	@SetEmitAmt
+	if(<-*sleeperConnections !)
+		SendMsg("TowerConnected" Self)
+	else
+		@UpdateConnections
+	endif
+	@CalculateCreep
+	@DoFields
+
+:FindTowers
+	<-towerGUID Self GetUnitPosition <-CONNECTION_DIST false true false 0 0 0 GetUnits ->nearbyTowers
+	-1 <-nearbyTowers GetListCount 1 sub do
+		<-nearbyTowers[i] GetUnitPosition <-height add Self GetUnitPosition <-height add dup2 true GetTerrainLOS [1] gte0 ->hit
+		swap true GetTerrainLOS [1] gte0 <-hit || ->hit
+		if(<-hit)
+			<-nearbyTowers i RemoveListElement
+		endif
+	loop
+	<-nearbyTowers
+
+#This is legacy, since this is a modified version of the tower script. 
+#Normally this governs creep production falloff after a certain number of connections are made on the tower.
+#I'm leaving it here, since I might repurpose it at a later date to do a similar falloff effect to the strength of the fields.
+:SetEmitAmt
+	# 1 <-connections <-MAX_CONNECTIONS sub 0 max <-FALLOFF mul sub <-baseEmit mul 0 max ->amt
+	# Self "CoreSleeper.4rpl" "EMIT_AMT" <-amt SetScriptVar
+	
+
+:Destroyed
+	@RemoveAllFields
+	<-connectedTowers ->nearbyTowers
+	<-nearbyTowers 0 do
+		if(<-nearbyTowers[i] self neq)
+			SendMsg("RemoveConnection" <-nearbyTowers[i] concat Self)
+		endif
+	loop
+
+:AddConnection
+	<-_DATA ->centerUnit
+	<-connections 1 add ->connections
+	<-connectedTowers <-centerUnit AppendToList
+	
+	if(<-*sleeperConnections)
+		@UpdateConnections
+		@SetEmitAmt
+		return
+	endif
+	
+	#Create the beam to visualize connections
+	"yellow" 1 4 CreateBeam ->beam
+	<-beam <-centerUnit "" AttachBeam
+	SetBeamStart(<-beam <-height Self GetUnitPosition <-centerUnit GetUnitPosition add 0.5 mul <-centerUnit GetUnitPosition sub add)
+	SetBeamEnd(<-beam Self GetUnitPosition <-height add)
+	
+	#Second half (close to placed unit)
+	<-centerUnit "Tower.4rpl" "connections" GetScriptVar ->centerConnections
+	"yellow" 1 4 CreateBeam ->beam
+	<-beam <-centerUnit "" AttachBeam
+	SetBeamStart(<-beam <-height Self GetUnitPosition <-centerUnit GetUnitPosition add 0.5 mul <-centerUnit GetUnitPosition sub add)
+	SetBeamEnd(<-beam <-centerUnit GetUnitPosition <-height add)
+	
+	@SetEmitAmt
+	
+:RemoveConnection
+	<-_DATA ->centerUnit
+	<-connectedTowers dup <-centerUnit GetListIndex RemoveListElement
+	<-activeFieldTowers <-centerUnit GetListIndex ->index
+	<-activeFieldPositions[<-index] UFC <-activeFields[<-index] <-activeFieldWidths[<-index] <-FIELD_STRENGTH 0 1 false SetFieldRect
+	<-activeFields <-index RemoveListElement
+	<-activeFieldWidths <-index RemoveListElement
+	<-activeFieldPositions <-index RemoveListElement
+	<-activeFieldTowers <-index RemoveListElement	
+	<-connections 1 sub ->connections
+	@SetEmitAmt
+	if(<-*sleeperConnections)
+		Self DestroyAllAttachedBeams
+		<-_DATA ->exclude
+		@UpdateConnections
+		-1 ->exclude
+	endif
+
+#Sets visual mode of connections
+:UpdateConnections
+	Self DestroyAllAttachedBeams
+	if(<-*sleeperConnections)
+		<-connectedTowers copy ->nearbyTowers
+		<-nearbyTowers 0 do
+			if(<-nearbyTowers[i] <-exclude neq)
+				"yellow" 1 4 CreateBeam ->beam
+				<-beam Self "" AttachBeam
+				SetBeamStart(<-beam <-height Self GetUnitPosition <-nearbyTowers[i] GetUnitPosition add 0.5 mul Self GetUnitPosition sub add)
+				SetBeamEnd(<-beam Self GetUnitPosition <-height add)
+			endif
+		loop
+	endif
+
+#Function from Kalli.
+:createFieldRect
+# Creates the list of fields to be used with the fieldrect function. The created field should always be remembered, so that it can always be undone before a new field is created. The strength of the fieldcells should be max 1 in here, the magnitude will be set with the fieldrect function.
+->fieldW # Width
+->fieldL # Length
+->pull
+->direction # a v3 vector
+	0 ->direction.y 
+	<-direction normalize ->direction
+	<-direction.z neg 0 <-direction.x v3 ->directionP
+	
+	<-pull if 
+		# <-direction.x 3 round <-direction.z 3 round v2 neg ->dirV2
+		<-direction.x neg <-directionP.x 2 mul add <-direction.z neg <-directionP.z 2 mul add v2 normalize ->dirRightV2
+		<-direction.x neg <-directionP.x 2 mul sub <-direction.z neg <-directionP.z 2 mul sub v2 normalize ->dirLeftV2
+	else
+		# <-direction.x 3 round <-direction.z 3 round v2 ->dirV2
+		<-direction.x <-directionP.x 2 mul add <-direction.z <-directionP.z 2 mul add v2 normalize ->dirRightV2
+		<-direction.x <-directionP.x 2 mul sub <-direction.z <-directionP.z 2 mul sub v2 normalize ->dirLeftV2
+	endif
+	
+	<-fieldW 2 div floor ->edgeZone
+	
+	<-directionP <-fieldW neg 0.5 mul mul tocell 0 swap v3 ->c0
+	<-directionP <-fieldW 0.5 mul mul tocell 0 swap v3 ->c1
+	<-directionP <-fieldW neg 0.5 mul mul <-direction <-fieldL mul add tocell 0 swap v3 ->c2
+	<-directionP <-fieldW 0.5 mul mul <-direction <-fieldL mul add tocell 0 swap v3 ->c3
+		
+	<-c0.x <-c1.x min <-c2.x min <-c3.x min ->startLoopX
+	<-c0.x <-c1.x max <-c2.x max <-c3.x max 1 add ->endLoopX
+	<-c0.z <-c1.z min <-c2.z min <-c3.z min ->startLoopZ
+	<-c0.z <-c1.z max <-c2.z max <-c3.z max 1 add ->endLoopZ
+	
+	createList ->fieldRect
+	<-endLoopX <-startLoopX sub abs ->fieldRectWidth
+	
+	<-endLoopZ <-startLoopZ do
+		<-endLoopX <-startLoopX do
+			i 0 j v3 ->p
+			switch
+				<-p <-c0 <-c1 distancepointline dup ->bottomD
+				<-fieldL gt case
+					<-fieldRect vector0 appendtolist
+				endcase
+				<-p <-c0 <-c2 distancepointline dup ->rightD
+				<-fieldW gt case
+					<-fieldRect vector0 appendtolist
+				endcase
+				<-p <-c2 <-c3 distancepointline dup ->topD
+				<-fieldL gt case
+					<-fieldRect vector0 appendtolist
+				endcase
+				<-p <-c3 <-c1 distancepointline dup ->leftD
+				<-fieldW gt case
+					<-fieldRect vector0 appendtolist
+				endcase
+				<-topD <-bottomD min <-leftD <-rightD min add dup <-edgeZone lt if <-edgeZone div ->softC else pop 1 ->softC endif					
+				<-leftD <-edgeZone lt case
+					<-fieldRect <-dirLeftV2 <-edgeZone <-leftD sub <-edgeZone div mul <-softC mul appendtolist
+				endcase
+				<-rightD <-edgeZone lt case
+					<-fieldRect <-dirRightV2 <-edgeZone <-rightD sub <-edgeZone div mul <-softC mul appendtolist
+				endcase
+				# <-fieldRect <-dirV2 <-softC mul appendtolist
+				<-fieldRect vector0 appendtolist
+			endswitch
+		loop
+	loop

@@ -1,0 +1,91 @@
+# --Selector-- 1/24/2024 12:46:09 PM
+if(GetGameUpdateCount eq0)
+	if(GetMVersePlayerNum lte0 <-*playingAsHumans ! && GetEditMode ! &&)
+		0 true 
+		switch
+			case(<-difficulty 0 eq)
+				"<u>Easy AI</u><br>Responds slowly for a simple, relaxing game."
+			endcase
+			
+			case(<-difficulty 1 eq)
+				"<u>Normal AI</u><br>A decent challenge."
+			endcase
+			
+			case(<-difficulty 2 eq)
+				"<u>Hard AI</u><br>Faster AI, expect a tough fight."
+			endcase
+			
+			case(<-difficulty 3 eq)
+				"<u>Impossible AI</u><br>Superhuman action speed, bring your best."
+			endcase
+		endswitch
+
+		V4(1 1 1 1) "ChangeDifficulty" 0 SetMsgButton
+	else
+		0 false "" Vector0 "" "" SetMsgButton
+	endif
+else if(GetGameUpdateCount 1 eq)
+		0 false "" Vector0 "" "" SetMsgButton
+		switch
+			case(<-difficulty 0 eq)
+				"Easy"
+			endcase
+			case(<-difficulty 1 eq)
+				"Normal"
+			endcase
+			case(<-difficulty 2 eq)
+				"Hard"
+			endcase
+			case(<-difficulty 3 eq)
+				"Impossible"
+			endcase
+		endswitch
+		->*autopilotDifficultySetting
+		ClearLocals
+endif endif
+
+:Once
+	0 ->difficulty
+	RegisterForMsg("ChangeDifficulty" dup)
+	"cannon" "mortar" "sprayer" "shield" List ->weaponTypes
+	@ChangeDifficulty
+
+:ChangeDifficulty
+	<-difficulty 1 add 4 mod ->difficulty
+	switch
+		case(<-difficulty 0 eq) #Easy AI
+			#0.5 @MultiplyCaps
+			30 @SetDelay
+			30 ->*AP_BUILD_TIME
+			SetRegisteredScriptVar("RiftLabAI" "buildDelay" 30)
+		endcase
+		
+		case(<-difficulty 1 eq) #Normal AI
+			15 @SetDelay
+		endcase
+		
+		case(<-difficulty 2 eq) #Hard AI
+			7 @SetDelay
+		endcase
+		
+		case(<-difficulty 3 eq) #Impossible AI
+			0 @SetDelay
+			#2 @MultiplyCaps
+		endcase
+	endswitch
+
+:SetDelay
+	->delay
+	<-delay ->*AP_BUILD_TIME
+	SetRegisteredScriptVar("RiftLabAI" "buildDelay" <-delay)
+	
+:MultiplyCaps
+	->multiplier
+	<-weaponTypes 0 do
+		GetRegisteredScriptVar("RiftLabAI" "max" <-weaponTypes[i] concat) ->softcap
+		SetRegisteredScriptVar("RiftLabAI" "max" <-weaponTypes[i] concat <-softcap <-multiplier mul)
+		
+		GetRegisteredScriptVar("RiftLabAI" <-weaponTypes[i] "Cap" concat) ->hardcap
+		SetRegisteredScriptVar("RiftLabAI" <-weaponTypes[i] "Cap" concat <-hardcap <-multiplier mul)
+	loop
+		

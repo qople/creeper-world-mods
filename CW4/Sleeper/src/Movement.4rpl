@@ -1,0 +1,251 @@
+# --Movement-- 6/23/2023 2:18:12 PM
+
+$FOOTPRINT_X:3
+$FOOTPRINT_Z:3
+$IDLE_TIME_TO_MOVE:150
+$MAX_MOVE_DIST:25
+$BACKUP_AMT:10
+$MIN_CREEP:1.0
+$DAMPER_FREEZES:1
+$SHORT_WAIT_TIME:150
+$LONG_WAIT_TIME:300
+$DAMAGE_TO_RETREAT:0.74 #Retreats after taking this much damage
+$TIME_TO_RETREAT:450 #Time actively firing before retreating
+$WAIT_AFTER_RETREAT:300 #Time to wait after retreat before advancing again
+$RETREAT_DIST:20 #How far back to move when retreating
+$REQUIRE_LOS:0 #Requires the unit to have LOS for movement targets.
+$MISSILE_DAMAGE_MULT:0.667
+$SNIPER_TARGET:0 #Set to true to allow snipers to target.
+$LAB_MOVEMENT:0 #Requires mesh on move squares, and freezes movement when a nullifier is present.
+
+#NOTE: this will break if set on more than just the shield!
+$FIELD_RADIUS:0
+$FIELD_MAX_STRENGTH:0
+
+if(GetTimer0 Self GetUnitMoveCell pop gte0 || Self GetUnitConstructing ||)
+	if(Self GetUnitMoveCell pop gte0 dup)
+		->lastInAir
+	endif
+	return
+endif
+
+
+if(<-lastInAir) #The frame when the unit lands
+	0 ->lastInAir
+	GetGameUpdateCount <-TIME_TO_RETREAT add ->retreatTime
+	Self V4(<-SNIPER_TARGET 0 0 0) SetUnitSpecialTarget
+	GetGameUpdateCount ->lastActive
+	Self <-baseMaxHealth SetUnitMaxHealth
+	Self dup GetUnitHealth <-MISSILE_DAMAGE_MULT mul SetUnitHealth
+	@SetFieldActive(true)
+	Self false SetUnitDestroyUnevenLand
+	<-moveX <-moveZ 1 add dup2 GetTerrain 1 add SetTerrain
+	Self true SetUnitDestroyUnevenLand
+endif
+
+#<-lastActive is also set by the unit's weapon script, if any, to the update count of the last time it fired
+if(GetGameUpdateCount <-lastActive sub <-IDLE_TIME_TO_MOVE gte)
+	if(<-LAB_MOVEMENT)
+		Self GetUnitHealth <-recentMaxHealth <-baseMaxHealth clamp ->recentMaxHealth
+		#dup2 "/" swap concat3 self swap SetUnitDebugText
+		if(<-recentMaxHealth Self GetUnitHealth sub <-DAMAGE_TO_RETREAT  gt GetGameUpdateCount <-retreatTime gt ||)
+			Self GetUnitHealth <-baseMaxHealth min ->recentMaxHealth
+			@FindMoveTarget
+			@Retreat
+			# Self GetGameUpdateCount SetUnitDebugText
+		endif
+	endif
+	if(<-idle ! RandFloat 0.2 lt ||)
+		@FindMoveTarget
+		if(<-targetUnit)
+			@BeginMove
+		else
+			<-LONG_WAIT_TIME SetTimer0
+			true ->idle
+			return
+		endif
+	endif
+else
+	Self GetUnitHealth <-recentMaxHealth <-baseMaxHealth clamp ->recentMaxHealth
+	if(<-recentMaxHealth Self GetUnitHealth sub <-DAMAGE_TO_RETREAT gt GetGameUpdateCount <-retreatTime gt ||)
+		Self GetUnitHealth <-baseMaxHealth min ->recentMaxHealth
+		@Retreat
+	endif
+	false ->idle
+endif
+
+<-SHORT_WAIT_TIME SetTimer0
+
+#=============================
+:FindMoveTarget
+	GetUnitsInRange(Self GetUnitPosition V3(0 4 0) add
+	
+	#Increase range of unit check to 100 cells if idle
+	if(<-idle)
+		100
+	else
+		<-MAX_MOVE_DIST 
+	endif
+	
+	false false <-REQUIRE_LOS 2 1 1) dup ->units
+	# Self <-units SetUnitDebugText
+	if(!)
+		0 ->targetUnit
+		return
+	endif
+	false ->idle
+	<-units[0] ->targetUnit
+
+:BuildComplete
+	@SetFieldActive(true)
+
+:BeginMove
+	<-targetUnit GetUnitPosition Self GetUnitPosition <-BACKUP_AMT MoveTowards ->targetPos
+	<-targetPos ToCell 500 @GetNearestBuildCell
+	
+	if(<-canBuild)
+		->moveZ ->moveX
+		
+		#Only move if the cell advances towards the target
+		if(Self GetUnitPosition <-targetUnit GetUnitPosition Distance <-targetUnit GetUnitPosition <-moveX <-moveZ GetTerrainVector Distance gt if(<-DAMPER_FREEZES) @DamperInRange ! && endif)
+			<-moveX <-moveZ 1 add dup2 GetTerrain 1 sub SetTerrain
+			@SetFieldActive(false)
+			Self <-moveX <-moveZ SetUnitMoveCell
+			Self V4(<-SNIPER_TARGET <-MISSILE_DAMAGE_MULT neq0 0 0) SetUnitSpecialTarget
+			Self dup GetUnitMaxHealth <-MISSILE_DAMAGE_MULT div SetUnitMaxHealth
+			Self dup GetUnitHealth <-MISSILE_DAMAGE_MULT div SetUnitHealth
+		# else
+			# true ->idle
+		endif
+	else
+		true ->idle
+	endif
+
+:DamperInRange
+	"damper" Self GetUnitPosition 25 false false false 0 0 0 GetUnits
+	"damper" <-moveX <-moveZ FromCell 25 false false false 0 0 0 GetUnits ||
+
+:Retreat
+	if(<-DAMPER_FREEZES @DamperInRange &&)
+		return
+	endif
+	Self GetUnitPosition <-targetUnit GetUnitPosition <-RETREAT_DIST neg MoveTowards ->targetPos
+	true ->retreating
+	Self dup <-targetPos ToCell 500 @GetNearestBuildCell 
+	if(<-canBuild)
+		dup2 ->moveZ ->moveX 
+		dup2 1 add dup2 GetTerrain 1 sub SetTerrain
+		SetUnitMoveCell
+		Self V4(<-SNIPER_TARGET <-MISSILE_DAMAGE_MULT neq0 0 0) SetUnitSpecialTarget
+		Self dup GetUnitMaxHealth <-MISSILE_DAMAGE_MULT div SetUnitMaxHealth
+		Self dup GetUnitHealth <-MISSILE_DAMAGE_MULT div SetUnitHealth
+		@SetFieldActive(false)
+		<-WAIT_AFTER_RETREAT SetTimer0
+		999999999 ->retreatTime
+	endif
+	false ->retreating
+	
+:Once
+	<-TIME_TO_RETREAT GetGameUpdateCount add ->retreatTime
+	Self true SetUnitSuppressedMovement
+	Self GetUnitMaxHealth ->baseMaxHealth
+	
+	if(-?*shieldList ! <-FIELD_MAX_STRENGTH &&)
+		<-FIELD_RADIUS 1 add dup neg 1 add do
+			<-FIELD_RADIUS 1 add dup neg 1 add do
+				i j V2
+				if(dup SqrMagnitude <-FIELD_RADIUS dup mul gt)
+					pop Vector0
+				else
+					dup Magnitude <-FIELD_RADIUS div 3 pow mul 
+				endif
+			loop
+		loop
+		List ->*shieldList
+		
+		#Send some data to let other game instances sync the fields themselves
+		SendMVerseMSG("SetShieldList" <-FIELD_RADIUS <-FIELD_MAX_STRENGTH 2 ListN)
+	endif
+	
+:Awake
+	once
+		#Destroy field-based units that are not the host of the mverse game
+		if(<-FIELD_MAX_STRENGTH GetMVersePlayerNum 1 gt &&)
+			Self 1 1 1 DestroyUnit
+		endif
+		return #Don't start up when placed
+	endonce
+	if(Self GetUnitConstructing ! Self GetUnitMoveCell pop lt0 &&)
+		false ->fieldDeployed
+		@SetFieldActive(true)
+	endif
+
+:Destroyed
+	if(Self GetUnitConstructing ! <-fieldDeployed &&)
+		@SetFieldActive(false)
+	endif
+	if(Self GetUnitMoveCell pop gte0)
+		<-moveX <-moveZ 1 add dup2 GetTerrain 1 add SetTerrain
+	endif
+
+:SetFieldActive
+	#Ignore erroneous function calls
+	->nextDeployed
+	if(<-nextDeployed <-fieldDeployed neq)
+		<-nextDeployed ->fieldDeployed
+	else
+		return
+	endif
+	
+	#Ignore the function call if this unit has no field
+	if(<-FIELD_MAX_STRENGTH eq0)
+		return
+	endif
+	
+	#Create the fields, one pushing AC outwards, the other pulling creeper inwards.
+	Self GetUnitCell <-*shieldList <-FIELD_RADIUS 2 mul 1 add <-FIELD_MAX_STRENGTH neg 0 1 <-fieldDeployed SetFieldRect #Creeper
+	Self GetUnitCell <-*shieldList <-FIELD_RADIUS 2 mul 1 add <-FIELD_MAX_STRENGTH 0 2 <-fieldDeployed SetFieldRect #AC
+	
+	SendMVerseMSG("DeployField" Self GetUnitCell FC 2 mul <-fieldDeployed add) #Combine cell and deployed values to only have to send a single int over the network
+
+#=========================================================
+
+#Finds the nearest cell the unit of footprint (Unitx, Unitz) can be built to the given cell
+#Returns -1 -1 if no cell is found
+:GetNearestBuildCell
+	->maxCells ->centZ ->centX
+	false ->canBuild
+	if(<-LAB_MOVEMENT <-retreating ! &&)
+		if(GetUnits("nullifier" Self GetUnitPosition 9 false false false 2 1 1) GetListCount)
+			-1 -1 return
+		endif
+	endif
+	FloodFillTerrain(<-centX <-centZ 1 21 <-maxCells) ->terrain
+	<-terrain GetListCount 0.5 mul 0 do
+		#<-terrain[i 2 mul] EV2 GetTerrainSpecial <-*MESH_SLOT eq <-retreating || <-LAB_MOVEMENT ! || 
+		<-terrain[i 2 mul] EV2 @CellBuildable if
+			true ->canBuild
+			<-terrain[i 2 mul] EV2 return
+		endif
+	loop
+	if(<-canBuild !)
+		-1 -1
+	endif
+
+:CellBuildable
+	dup2 ->cellZ ->cellX
+	GetTerrain dup ->centerTerrain
+	dup if
+		<-cellZ <-FOOTPRINT_Z 0.5 mul ceil add <-cellZ <-FOOTPRINT_Z 0.5 mul AsInt sub do
+			<-cellX <-FOOTPRINT_X 0.5 mul ceil add <-cellX <-FOOTPRINT_X 0.5 mul AsInt sub do
+				i j GetTerrain <-centerTerrain eq && 
+				i j GetCellOccupiedCount ! && 
+				i j GetCreeper <-MIN_CREEP gte &&
+				dup ! if
+					return
+				endif
+			loop
+		loop
+	endif
+
+	

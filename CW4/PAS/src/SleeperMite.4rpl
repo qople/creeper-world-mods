@@ -1,0 +1,79 @@
+# --SleeperMite-- 7/9/2023 10:37:55 AM
+$SPEED:0.2
+
+$$microriftGUID:"6e68137e-f89a-4013-834e-86af9968b5c3"
+
+
+if(<-UNIT_ID GetUnitDestroyed)
+	Self 1 1 1 DestroyUnit
+endif
+
+if(<-moving !)
+	if(<-*nextMiteFrame GetGameUpdateCount lte)
+		GetGameUpdateCount <-*DELAY_PER_MITE add ->*nextMiteFrame
+		true ->moving
+	endif
+	return
+endif
+
+<-pos dup ->lastPos <-TARGET_X <-TARGET_Z <-SPEED 0 0 0 0 0 MoveTowardsCellAndAvoid ->pos
+<-pos EV3 swap pop 0 GetExactTerrain ->pos.y
+Self <-pos <-lastPos sub SetUnitForward
+Self <-pos SetUnitPosition
+if(Self GetUnitCell <-TARGET_Z eq swap <-TARGET_X eq &&)
+	if(<-path GetListCount)
+		Self <-path[0] EV2 true SetUnitCell
+		Self GetUnitPosition ->pos
+		<-path[1] EV2 ->TARGET_Z ->TARGET_X
+		<-path 0 RemoveListElement
+		<-path 0 RemoveListElement
+	else
+		@BuildUnit
+	endif
+endif
+
+
+:Awake
+	once
+		@FindPath
+		Self V4(1 1 0 0.5) SetUnitOutlineColor
+		Self true SetUnitOutlineEnabled
+		Self 0.5 SetUnitOutlineWidth
+		Self 0 "Will burrow and start building a " <-UNIT_NAME ". Destroy with snipers." concat3 SetUnitUIText
+		Self GetUnitPosition ->pos
+		0 ->moving
+	endonce
+
+:BuildUnit
+	<-UNIT_ID "CoreSleeper.4rpl" "wait" false SetScriptVar
+	<-UNIT_ID true SetUnitEnabled
+	<-UNIT_ID "" V3(1 1 1) SetObjScale
+	-1 ->UNIT_ID
+	Self 1 1 1 DestroyUnit
+
+:Destroyed
+	<-UNIT_ID 1 1 1 DestroyUnit
+
+:FindPath
+	#Can't travel through m-rifts if there are less than two
+	if(<-microriftGUID 1 GetUnitsByType GetListCount 2 lt)
+		CreateList ->path
+		return
+	endif
+	
+	#When traveling through m-rifts, there is only one path that is the most efficient:
+	#Go in through the closest to you, and out through the closest to the destination
+	#(mostly, maybe not if the terrain has a lot of cliffs, but we can ignore that for the sake of speed.)
+	#So we can just check that one path instead of using an actual pathfinding algorithm.
+	
+	Self GetUnitCell <-TARGET_X <-TARGET_Z DistanceCell ->baseDist
+	
+	GetUnits(<-microriftGUID Self GetUnitPosition 1000 true false false 0 1 0)[0] ->nearRift
+	GetUnits(<-microriftGUID <-TARGET_X <-TARGET_Z GetTerrainVector 1000 true false false 0 1 0)[0] ->farRift
+	
+	#Check the rift travel distance
+	if(Self GetUnitCell <-nearRift GetUnitCell DistanceCell <-farRift GetUnitCell <-TARGET_X <-TARGET_Z DistanceCell add <-baseDist lt)
+		<-farRift GetUnitCell V2 <-TARGET_X <-TARGET_Z V2 List ->path
+		<-nearRift GetUnitCell ->TARGET_Z ->TARGET_X
+	endif
+	

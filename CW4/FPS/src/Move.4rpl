@@ -1,0 +1,922 @@
+# --Move-- 1/1/2021 2:01:07 PM
+#handles player movement and collision
+$moveSpeed:0.8 #in cells per frame
+$accelTime:4 #Updates to max speed from keypress
+$decelTime:10 #Updates to stop from key release
+$moveResponsiveness:0.8 #scale from 0 to 1 of how "floaty" movement is. 0 is no movement, 1 is no floatiness. Kind of like friction.
+$dashSpeed:5.0
+$dashTime:3 #Length of the dash in game updates. Set to 0 or negative to disable dashing.
+$playerHeight:9.0
+$allowMoveOnVoid:0
+$collisionThreshold:2 #absolute difference in terrain height needed to count as a wall
+$maxTerrainHeight:19 #forces a collision on terrain height over this amount (not on terrain equal to this). Set to 20+ to disable. 
+$startX:5
+$startZ:5
+$startRotation:0
+$stunDuration:150 #How long to stun for
+$allowCrouchJump:0 #when true, the player's hitbox goes up when they crouch midair. When false, they will lose height to keep collision the same, preventing skips.
+
+$$slowWalkDivisor:4
+$$collisionPadding:0.8 #Radius inside which the player counts as colliding with a wall. Setting to 0 reduces the number of collision checks, but may cause some inaccuracies.
+$$wallSlide:1.0 #Multiplier to speed each frame when colliding with a wall. Helps the player to slide off.
+$$terrainSmoothing:0.67
+$$strictCollision:1 #Setting to true freezes the player when inside a wall
+
+
+$$stamina:2.0
+$$maxStamina:2.0
+
+$$lookSpeed:1.5 #Camera rotation speed
+$$forceRespawnReq:90 #Hold Custom1 for at least this long to force a respawn. Counts as a death.
+$$promptTime:60 #Time to prompt for respawn when stuck
+
+# Jump-related vars
+$enable_jump:1
+$jumpHeight:5.2 #Maximum height of the jump relative to starting height. 
+$jumpDuration:20 #Duration of a jump on level ground, in frames.
+$jumpSpeedBoost:1.5 #Temporary multiplier to speed received on jump
+$airControlMult:0.1 #Portion of normal control you have while in the air
+
+
+$$markerGUID:"b03c096d-3b81-4fcb-8cbb-529df1217385" #used to mark location in the recorder
+$$OutlineGUID:"8d1ceebd-6c25-4fb5-91e8-df066e0049d1"
+
+#-----------------------
+# Debug and version info
+# If you modify this script more than changing the above parameters, Update these. 
+# If you don't, leave them, even if you modified another script in the CPACK.
+
+# Current version of this script. If you branch someone else's version, add a period 
+# and start a new number ("10" -> "10.0"). If you edit your own version, add 1 to the last number ("10.0" -> "10.1")
+$$Script_Version:"13" 
+
+# The authors who have directly modified this script.
+# If you don't want to attach your name, anything that separates your version from other possible branches works.
+$$Edit_History:"qople,kaiden"  
+
+$$Intended_Version:"1.8.0" #The CPACK version this script is intended for. The CPACK version is in the settings section of FpsCore.
+
+#Any other info that should be printed on startup, such as dependencies.
+#This is printed as-is (no extra formatting).
+$$Notes:"" 
+
+#=======================
+#General while-paused logic
+if(<-*allowFPS !)
+	false ->*isFPMode
+	return
+endif
+
+#Stamina mechanics (added by Kaiden)
+<-stamina <-maxStamina lt if
+	<-stamina 0.03 add ->stamina
+else
+	<-maxStamina ->stamina
+endif
+<-stamina ->*stamina
+
+if(GetMappedKeyDown("Custom1" 1))
+	<-forceRespawnReq ->timeToRespawn #Start the timer to force respawn
+	<-*isFPMode ! ->*isFPMode
+endif
+
+if(<-lastUpdates GetGameUpdateCount neq)
+#-----------------------
+#Force respawn
+
+#Clear the respawn timer when the key is released (There is no GetMappedKeyUp)
+if(GetMappedKey("Custom1" 1) !)
+	--timeToRespawn
+endif
+
+#Respawn if the key has been held long enough
+if(<-timeToRespawn)
+	if(<-timeToRespawn 1 eq)
+		@Respawn
+	endif
+	
+	if(<-forceRespawnReq <-timeToRespawn sub 10 gte)
+		SendMsg("AddText" "WP:Force respawn in " <-timeToRespawn 30.0 div 1 round "s" concat3)
+	endif
+	<-timeToRespawn 1 sub ->timeToRespawn
+endif
+
+#-----------------------
+#Stun
+
+<-marker GetUnitStunCount ->stun
+if(<-stun <-lastStun gt)
+	<-stun ->maxStun #Keep track of the max stun count
+endif
+<-stun ->lastStun
+
+if(<-maxStun <-stun sub <-stunDuration lt)
+	true ->*playerStunned
+	SendMsg("AddText" "WP:Stunned! " <-stunDuration <-maxStun <-stun - - 30.0 div 1 round "s" concat3)
+else
+	false ->*playerStunned
+	<-marker ClearUnitStun
+endif
+
+#-----------------------
+#Movement
+if(<-*isFPMode GetPause ! GetMVersePlayerNum gte0 || && <-dead ! &&)
+	if(<-respawned) #Stupid workaround
+		false ->respawned
+		<-checkPoint UFC GetTerrainVector V3(0 <-*playerHeight 0) add ->*playerPos
+	endif
+	
+	SendMsg("UpdatePlatforms" 0) #Tell any platforms to set up
+	<-*playerPos.x <-*playerPos.z 0 GetExactTerrain ->playerTerrain
+	SetCameraTopDown(false)
+	SetRplCam(true)
+	true SetRplCamCursorLock
+	@getInputs 
+	
+	# if(<-jumpTimer)
+		# return
+	# endif
+	
+	#Run separate logic when the player is teleported by another script
+	if(<-*playerPos <-lastPos neq)
+		#If a very negative y is given, replace it with the right Y level for the terrain.
+		if(<-*playerPos.y -100 lte)
+			<-*playerPos @AvgTerrain <-*playerHeight add ->*playerPos.y
+		endif
+		
+		#Disable interpolation when the w component is changed (limits movement animation to 30fps)
+		if(<-*playerPos.w)
+			0 ->*playerPos.w #Reset the w component
+			Vector0 ->vel #Signal that there should be no interpolation
+			0 ->targetPos #Hammer that signal home just to be certain
+		else
+			<-*playerPos <-lastPos sub ->vel
+		endif
+		<-*playerPos ->lastPos
+		return
+	endif
+	
+	if(<-enable_jump)
+		@Jump
+		if(<-jumpTimer)
+			# <-*playerPos ->lastPos
+			return
+		endif
+	endif
+	# 0 ->jumpTimer
+	
+	<-*playerPos ->lastPos
+	#Don't move if movement is off
+	if(<-freeze !)
+		<-*playerPos <-vel add ->*playerPos
+	else
+		false ->freeze
+	endif
+	if(<-jumpTimer eq0)
+		0 ->vel.y
+	endif
+	
+	if(<-*playerPos <-lastPos neq)
+		#check surroundings for collision
+		false ->collision
+		<-vel Magnitude ->mySpeed
+		<-mySpeed 0 do
+			<-lastPos <-vel Normalize i mul add @DoCollision
+			if(<-collision)
+				break
+			endif
+		loop
+		if(<-collision !)
+			<-*playerPos @DoCollision
+		endif
+		
+		#Average the exact terrain immediately around the player to set the camera position
+		#This greatly smooths out movement on uneven terrain.
+		@AvgTerrain(<-*playerPos) <-*playerHeight add ->*playerPos.y
+	endif
+
+	#Limit range of movement to the map
+	@ClampPosition
+	
+	<-*playerPos <-lastPos sub ->vel #helps with interpolation
+	<-*playerPos ->lastPos
+	
+	SendMsg("UpdatePlatforms" 1) #Clear platforms' terrain overrides for the creeper sim
+
+	#The player counts as stuck when they collide with something and can't slide off it.
+	if(<-stuck)
+		<-stuckTime 1 add ->stuckTime
+		if(<-stuckTime <-promptTime gt)
+			"AddText" "WP:Hold Custom1 to respawn if stuck" SendMsg
+		endif
+	else
+		0 ->stuckTime
+	endif
+endif
+
+if(<-*playerStunned)
+	true ->freeze
+	true SetUnderCreeperEffectEnabled
+else
+	<-*playerPos.x <-*playerPos.z false true if(<-*creeperMode) swap endif getExactCreeperHeight <-*playerPos.y gt SetUnderCreeperEffectEnabled
+endif
+
+
+
+endif
+GetGameUpdateCount ->lastUpdates
+#===============
+
+:DoCollision
+	->thisPos
+	--stuck
+	if(<-thisPos.x <-thisPos.z @Collision dup ->collision )
+		<-thisPos <-lastPos sub Magnitude ->currentSpeed
+		<-lastPos ->*playerPos
+		
+		#Find the angle the player is facing in
+		<-vel.z <-vel.x atan2 ->moveDirection
+
+		#Find where to move the player to
+		#First define the boundaries for the search
+		#2 sets: one for left, one for right
+		ListN(0 0 2) ->lowEnd
+		ListN(pi dup 2) ->highEnd
+		9 0 do #each iteration doubles accuracy
+			2 0 do #left/right
+				<-lowEnd[i] <-highEnd[i] avg2 ->rotDiff #Check the center of the limits
+				<-moveDirection <-rotDiff if(i) sub else add endif ->tRot
+				<-currentSpeed <-rotDiff cos mul <-wallSlide mul ->speedMult
+				<-*playerPos.x <-tRot cos <-speedMult mul add
+				<-*playerPos.z <-tRot sin <-speedMult mul add
+				if(@Collision)
+					<-rotDiff ->lowEnd[i]
+				else
+					<-rotDiff ->highEnd[i]
+				endif
+			loop
+		loop
+		#Pick whichever result is closer to the direction the player is moving
+		<-moveDirection <-highEnd[0] <-highEnd[1] min if(dup <-highEnd[0] eq) add else sub endif ->tRot
+		<-currentSpeed <-moveDirection <-tRot sub cos mul <-wallSlide mul ->speedMult
+		<-*playerPos.x <-tRot cos <-speedMult mul add
+		<-*playerPos.z <-tRot sin <-speedMult mul add
+		if(dup2 @PointCollision ! <-strictCollision ! ||) #Smaller check makes it easier to move out of a tight spot
+			0 swap V3 ->*playerPos
+			<-*playerPos <-lastPos sub <-terrainClimb div ->vel
+			0 ->vel.y
+			@MatchMomentum
+		else
+			true ->stuck
+			#@PushFromWall
+		endif #else #Change this to an else/endif to prevent the player from moving inside walls
+		# endif
+	endif
+
+#Logic for jumping
+:Jump
+	if(GetKeyDown("Space" 1))
+		5 SetTimer0
+	endif
+	if(GetTimer0 <-jumpTimer eq0 &&) #start the jump
+		0 ->slideError
+		<-*playerPos ->jumpStartPos
+		0 SetTimer0
+		0 ->collisionThreshold
+		1 ->jumpTimer
+		if(<-vel SqrMagnitude 0.1 gt)
+			<-vel dup Normalize <-jumpSpeedBoost 1 sub mul add ->vel #Boost the player forward a little when they jump
+		endif
+		@MatchMomentum
+		#Find some arc vars for the jump
+		
+		<-vel.x 0 <-vel.z V3 ->jumpVel #Horizontal component of jump path
+		<-jumpStartVel ->vertJumpVel
+		
+		
+		if(<-*playerPos ToCell false true GetExactCreeperHeight <-*playerPos.y <-*playerHeight sub sub gt0)
+			"Player" "airborneDamage" true SetRegisteredScriptVar
+		endif
+	endif
+	
+	if(<-jumpTimer gt0)
+		if(<-jumpTimer 3 eq)
+			<-baseThreshold ->collisionThreshold
+		endif
+		0 ->jumpVel.y
+		<-vertJumpVel.y <-jumpGrav sub ->vertJumpVel.y
+		<-vertJumpVel <-jumpVel add dup ->vel <-*playerPos add ->*playerPos
+		<-jumpTimer 1 add ->jumpTimer
+		
+		#Raycast-like collision to prevent clipping at high speeds
+		false ->collision
+		
+		<-jumpVel Magnitude ->mySpeed
+		<-mySpeed 0 do
+			<-lastPos <-jumpVel Normalize i mul add <-vertJumpVel <-mySpeed div i mul add @DoAirCollision
+			if(<-collision)
+				break
+			endif
+		loop
+		if(<-collision !)
+			<-*playerPos @DoAirCollision
+		endif
+
+		if(<-*playerPos.y <-*playerHeight sub GetExactTerrain(<-*playerPos.x <-*playerPos.z 0) lt <-vertJumpVel.y lt0 &&)
+			if(<-*playerPos.x <-*playerPos.z @Collision !)
+				@Land
+			else
+				@PushFromWall
+				@Land
+			endif
+			return
+		endif
+		
+		
+		@ClampPosition
+		# if(<-*playerPos.x <-*playerPos.z @AirCollision <-*playerPos.x <-*playerPos.z @Collision ! <-vel.y lte0 && &&)
+			# 0 ->jumpTimer
+		# endif
+		if(<-jumpTimer)
+			<-*playerPos <-lastPos sub dup ->vel ->jumpVel
+		endif
+		<-*playerPos ->lastPos
+		0 ->jumpVel.y
+	endif
+
+#Oh no this is a mess
+:DoAirCollision
+	->thisPos
+	if(<-thisPos.x <-thisPos.z @AirCollision dup)	
+		dup ->collisionPos
+		<-thisPos ->*playerPos
+		<-thisPos <-lastPos sub ->netVel
+		true ->collision
+		dup EV2 0 GetExactTerrain 
+		if(<-*playerPos.y <-*playerHeight sub sub abs 1.0 lt)
+			EV2 0 GetExactTerrainAndNormal ->collisionTerrain ->temp
+			if(<-temp GetType "VECTOR" eq <-temp.x <-temp.z || &&)
+				<-temp ->collisionNormal #Keep track of which direction the ground is sloping
+			endif
+		else
+			pop
+		endif
+		<-*playerPos.x <-*playerPos.z V2 <-lastPos.x <-lastPos.z V2 Distance ->currentSpeed
+		
+		#Move back
+		<-*playerPos.y
+		<-lastPos ->*playerPos
+		->*playerPos.y
+		
+
+		
+		#Move away from the wall, following its slope, to avoid clipping
+		if(<-netVel.y lt0 <-forceCollide ! &&) 
+			if(<-collisionNormal.x)
+				<-*playerPos.x <-netVel.y neg <-collisionNormal.x div add ->*playerPos.x
+			endif
+			if(<-collisionNormal.z)
+				<-*playerPos.z <-netVel.y neg <-collisionNormal.z div add ->*playerPos.z
+			endif
+		endif
+
+		#Land when you hit the ground
+		if(<-*playerPos.x <-*playerPos.z @Collision ! <-collisionTerrain <-*playerPos.y <-*playerHeight sub 1 sub gt && <-vertJumpVel.y lt0 &&)
+			@Land
+			return
+		endif
+
+
+		# <-*playerPos ->lastPos
+
+		# return
+
+	#check surroundings for collision
+	# if(<-*playerPos @AirCollision dup ->collision )
+		--stuck
+		
+		# <-lastPos ->*playerPos
+		# <-*playerPos <-jumpVel sub ->*playerPos
+		
+		#Find the angle the player is facing in
+		<-netVel.z <-netVel.x atan2 ->moveDirection
+
+		#Find where to move the player to
+		#First define the boundaries for the search
+		#2 sets: one for left, one for right
+		ListN(0 0 2) ->lowEnd
+		ListN(pi dup 2) ->highEnd
+		9 0 do #each iteration doubles accuracy
+			2 0 do #left/right
+				<-lowEnd[i] <-highEnd[i] avg2 ->rotDiff #Check the center of the limits
+				<-moveDirection <-rotDiff if(i) sub else add endif ->tRot
+				<-currentSpeed <-rotDiff cos mul <-wallSlide mul ->speedMult
+				<-*playerPos.x <-tRot cos <-speedMult mul add
+				<-*playerPos.z <-tRot sin <-speedMult mul add
+				if(@AirCollision)
+					<-rotDiff ->lowEnd[i]
+				else
+					<-rotDiff ->highEnd[i]
+				endif
+			loop
+		loop
+		#Pick whichever result is closer to the direction the player is moving
+		<-moveDirection <-highEnd[0] <-highEnd[1] min dup ->finalAngle if(dup <-highEnd[0] eq) add else sub endif ->tRot
+		<-currentSpeed <-moveDirection <-tRot sub cos mul <-wallSlide mul ->speedMult
+		<-*playerPos.x <-tRot cos <-speedMult mul add
+		<-*playerPos.z <-tRot sin <-speedMult mul add
+		if(dup2 @AirCollision !) #Smaller check makes it easier to move out of a tight spot
+			<-*playerPos.y swap V3 ->*playerPos
+			<-*playerPos <-lastPos sub ->jumpVel
+			0 ->jumpVel.y
+			<-jumpVel ->vel
+			@MatchMomentum
+		else
+			true ->stuck
+		endif
+	else
+		false ->collision
+	endif
+
+#Method for pushing from the wall:
+#Use TerrainLOS to cast rays out from the last player position, and push in the direction of whichever ray has the largest distance to collide.
+#NOTES:
+#	-GetTerrainLOS doesn't check surrounding cells to see if there's, for instance, a long narrow hallway the player can't actually enter
+#The solution would be a custom GetTerrainLOS to fix those issues, that has a radius.
+:PushFromWall
+	
+	0 ->maxDist
+	-1 ->bestDirection
+	0 ->direction
+	tau 16 div ->increment
+	16 0 do
+		<-direction <-increment add ->direction
+		V3(<-lastPos.x <-lastPos.z dup2 0 GetExactTerrain 0.2 add swap) dup V3(<-direction cos 0 <-direction sin) Normalize 10 mul add true GetTerrainLOS ->hitPos
+		
+		#Find distance to a wall in this direction
+		#No hit is counted as the distance of the LOS check + 1
+		if(<-hitPos.y lt0)
+			11 ->distance
+		else
+			<-hitPos <-lastPos Distance ->distance
+			if(<-distance 10 gt)
+				0 ->distance
+			endif
+		endif
+		
+		#Keep track of the direction with the longest distance to collision
+		if(<-distance <-maxDist gt)
+			<-distance ->maxDist
+			<-direction ->bestDirection
+			<-hitPos ->e
+		endif
+	loop
+	#Move in the direction of the longest distance until a wall, until there is no collision.
+	V3(<-bestDirection cos 0 <-bestDirection sin) ->increment
+	20 0 do
+		<-lastPos <-increment i 0.5 mul mul add ->thisPos
+		if(<-thisPos.x <-thisPos.z @Collision !)
+			<-thisPos ->*playerPos
+			break
+		endif
+	loop
+
+:Land
+	0 ->jumpTimer
+	if(<-*playerPos.x <-*playerPos.z GetTerrain lte0 <-allowMoveOnVoid ! &&)
+		<-jumpStartPos ->*playerPos
+	endif
+	<-*playerPos @AvgTerrain <-*playerHeight add ->*playerPos.y
+	<-baseThreshold ->collisionThreshold
+
+:ClampPosition
+	<-*playerPos.x 0 <-mapX 1.5 sub clamp ->*playerPos.x
+	<-*playerPos.z 0 <-mapZ 1.5 sub clamp ->*playerPos.z	
+
+:Frame
+	if(<-*allowFPS !)
+		GetGameUpdateCount ->lastUpdate
+		return
+	endif
+	@DetectHighFPS
+	@HandleMouseLook
+	@HandleMove
+	SendMsg("Moved" Null)
+	GetGameUpdateCount ->lastUpdate
+
+#Rotates the camera based on mouse movement
+:HandleMouseLook
+	if(<-*isFPMode GetPause ! GetMVersePlayerNum gte0 || &&)
+		GetMouseDelta ->delta
+		GetRplCamRotation ->rot 
+		<-rot.y <-delta.x <-lookSpeed * + ->rot.y
+		<-rot.x <-delta.y <-lookSpeed * - -89.99 89.99 clamp ->rot.x
+		<-rot SetRplCamRotation
+		GetRplCamForward ->*playerForward
+	endif
+
+#Translates changes in the <-*playerPos variable to changes in the camera position,
+#and handles some logic for entering and exiting first person mode.
+:HandleMove
+	if(<-*isFPMode GetPause ! GetMVersePlayerNum gte0 || && <-dead ! &&)
+		if(<-highFPS) #interpolate when high FPS is on
+			if(GetGameUpdateCount <-lastUpdate neq) #On the frames where updates have happened
+				<-*playerPos dup ->targetPos 
+				<-vel <-*frameToUpdate mul sub ->*playerPos
+			else if(<-targetPos)
+				<-targetPos ->*playerPos
+			endif 
+			endif
+		else
+			0 ->targetPos
+		endif
+		
+		# GetRplCamPosition ->*playerPos
+		<-*playerPos setCameraPosition
+		# <-*playerPos ->lastPos
+		
+		#Move the player marker
+		<-marker <-*playerPos V3(0 <-*playerHeight 0) sub SetUnitPosition
+		<-marker v3(0 <-*playerHeight 0) SetUnitTargetOffset
+		<-marker "head" Vector0 SetObjScale
+	else
+		
+		if(<-lastFPMode)
+			SetRplCam(false)
+			false SetRplCamCursorLock
+		endif
+		
+		if(<-marker GetUnitCell V2 <-*playerPos ToCell V2 neq GetEditMode &&)
+			#Move the player if the marker is dragged in the editor
+			<-marker GetUnitPosition 0 <-*playerHeight 0 V3 add ->*playerPos
+		endif
+		
+		<-marker "head" V3(2 2 1) SetObjScale
+		<-marker <-*playerPos v3(0 <-*playerHeight 0) sub SetUnitPosition
+		
+		true ->freeze
+		if(<-dead !)
+			SetMapZoomEnabled(true)
+			SetMapPanEnabled(true)
+			SetMapRotateEnabled(true)
+		endif
+	endif
+	<-*isFPMode GetPause ! && ->lastFPMode
+
+#Updates the momentum list to match the player's current velocity.
+:MatchMomentum
+	<-momentum ->startMomentum
+	0 0 0 0 4 ListN ->momentum
+	<-vel.z <-vel.x atan2 <-*playerForward.z <-*playerForward.x atan2 sub ->angle #Signed angle, unlike VectorAngle
+	<-vel.x dup mul <-vel.z dup mul add sqrt <-moveSpeed div ->mult
+	<-angle cos <-mult mul dup abs 1 min swap gt0 if ->momentum[0] else ->momentum[2] endif
+	<-angle sin <-mult mul dup abs 1 min swap gt0 if ->momentum[1] else ->momentum[3] endif
+	--mult
+
+:AvgTerrain
+	EV3 swap pop v2 ->center
+	0
+	2 -1 do
+		2 -1 do
+			<-center v2(j i) <-terrainSmoothing mul
+			if(i j &&) 
+				0.7071 mul #Makes it a circle
+			endif
+			add EV2 0 GetExactTerrain add
+		loop
+	loop
+	0.1111111111 mul
+
+:AirCollision
+	0 ->maxGradient
+	0 ->returnVal
+	if(<-collisionPadding gt0)
+		V2 #Center
+		2 -1 do
+			2 -1 do
+				dup V2(i j) <-collisionPadding
+				if(i j &&) 
+					0.7071 mul #Makes it a circle
+				endif
+				mul add dup EV2
+				if(@AirPointCollision)
+					dup EV2 0 GetExactTerrainAndNormal pop SqrMagnitude ->testGradient
+					if(<-testGradient <-maxGradient gt)
+						->returnVal
+						<-testGradient ->maxGradient
+					endif
+				else
+					pop
+				endif
+			loop
+		loop
+		
+		-1 ->maxTerrain
+		pop <-returnVal return
+	else
+		@AirPointCollision
+	endif
+
+:AirPointCollision
+	dup2 0.5 add swap 0.5 add swap GetTerrain <-maxTerrainHeight gte ->forceCollide
+	0 GetExactTerrain <-*playerPos.y <-*playerHeight sub gt <-forceCollide ||
+
+#Returns true if there is a collision within a radius of <-collisionPadding of the given position.
+:Collision
+	if(<-collisionPadding gt0)
+		V2 #Center
+		2 -1 do
+			2 -1 do
+				dup V2(i j) <-collisionPadding
+				if(i j &&) 
+					0.7071 mul #Makes it a circle
+				endif
+				mul add EV2
+				if(@PointCollision)
+					pop true return
+				endif
+			loop
+		loop
+		pop false return
+	else
+		@PointCollision
+	endif
+	
+#returns true if the exact position is not a valid place to stand
+#Anything in here should be *very* well optimized, as this can be called about 100 times per update when colliding with a wall.
+:PointCollision
+	dup2 0.5 add swap 0.5 add swap GetTerrain <-maxTerrainHeight gte ->forceCollide
+	0 GetExactTerrainAndNormal <-allowMoveOnVoid || ! #Void check
+			swap ->normal
+	<-normal.x abs <-normal.z abs max <-collisionThreshold gt || #Gradient (steepness) check
+	<-forceCollide ||
+	
+#Sets <-*frameToUpdate to a float from 0.5 to 4 for how many game updates 
+#happen per frame. Used to sync frame effects with game speed.
+:DetectHighFPS
+	if(GetGameFrameCount 2 mod eq0)
+		<-tick GetGameTickCount dup ->tick sub neg 0.5 mul 1 round getPause ! mul ->*frameToUpdate
+	endif
+	if(GetGameTickCount <-lastTick eq)
+		2 ->lowFPS
+	else
+		<-lowFPS 1 sub 0 max ->lowFPS
+	endif
+	GetGameTickCount ->lastTick
+	<-lowFPS gt0 ->highFPS
+	# <-lowFPS 1 sub ->lowFPS
+	
+:getInputs
+	GetRplCamRotation ->rot 
+	0 ->rot.x
+	GetRplCamForward ->*playerForward
+	
+	#Find velocity
+	
+	#Start by getting key inputs
+	"Up Left Down Right" 
+	4 0 do
+		ListN("MoveMap" <-keyList[i] concat GetMappedKeyStrings 2) ->keyBinds
+		2 0 do
+			PopList(<-keyBinds) "-" split PopList false GetKey
+		loop
+		or
+	loop
+	4 ListN ->moveKeys
+	
+	#Slow down acceleration when multiple keys are pressed at once
+	<-baseAccel 
+	if(<-moveKeys SqrMagnitude 1 gt)
+		0.7071 mul
+	endif
+	->acceleration
+	
+	#Speed up or slow down based on what keys are pressed
+	4 0 do
+		if(<-moveKeys[i])
+			<-momentum[i] <-acceleration add 1 min ->momentum[i]
+		else
+			<-momentum[i] <-deceleration sub 0 max ->momentum[i]
+		endif
+	loop
+		
+	if(<-vel.w)
+		true ->overrideResponse
+	endif
+	
+	<-vel #Save old vel on the stack to find delta-v later
+	
+	#Construct new vel based on momentum list
+	<-*playerForward.x 0 <-*playerForward.z V3 Normalize
+			<-momentum[0] <-momentum[2] sub mul
+			GetRplCamRight <-momentum[3] <-momentum[1] sub mul add 
+			dup ->vel
+	
+	#Limit speed on the ground
+	if(dup SqrMagnitude 1 gt)
+		Normalize
+	endif
+	<-moveSpeed mul ->vel
+	
+	#Crouch with control, reducing height
+	if(getKey("LeftControl" 1))
+		<-vel <-slowWalkDivisor div ->vel
+		<-playerHeight 0.5 mul ->*playerHeight
+		
+		if(<-lastCrouch ! <-allowCrouchJump ! && <-jumpTimer &&)
+			<-*playerPos.y <-*playerHeight sub ->*playerPos.y
+		endif
+		
+		true ->lastCrouch
+	else
+		if(<-lastCrouch <-allowCrouchJump ! && <-jumpTimer &&)
+			<-*playerPos.y <-*playerHeight add ->*playerPos.y
+		endif
+		
+		<-playerHeight ->*playerHeight
+		false ->lastCrouch
+	endif
+	
+	#dash with shift
+	if(GetKeyDown("LeftShift" 1) <-dashTime gt0 &&)
+		<-stamina 0.99 gt if
+			PlaySoundAtPosition("DamperDone" 0.7 <-*playerPos)
+			<-stamina 1 sub ->stamina
+			0
+			4 0 do
+				<-moveKeys[i] ||
+			loop
+			if
+				<-*playerForward.x 0 <-*playerForward.z V3 Normalize
+					<-moveKeys[0] <-moveKeys[2] sub mul
+					GetRplCamRight <-moveKeys[3] <-moveKeys[1] sub mul add 
+			else
+				if(<-vel.x <-vel.z ||)
+					<-vel.x 0 <-vel.z V3
+				else
+					<-*playerForward.x 0 <-*playerForward.z V3
+				endif
+			endif
+			Normalize <-dashSpeed mul dup ->dashVel ->vel
+			
+			1 ->responsiveness
+			1 ->airControlMult
+			<-dashTime 1 add SetTimer1
+		endif
+	endif
+	
+	if(GetTimer1)
+		if(<-collision !)
+			<-dashVel ->vel
+		else
+			1 SetTimer1
+		endif
+		if(GetTimer1 1 eq)
+			<-baseAirControl ->airControlMult
+			<-moveResponsiveness ->responsiveness
+		endif
+	endif
+	
+	
+	dup <-vel swap sub dup ->deltaV
+	<-responsiveness mul add ->vel #Make movement floaty if needed
+	if(<-jumpTimer gt0)
+		<-jumpVel <-deltaV <-airControlMult mul add ->jumpVel
+	endif
+	
+	if(<-jumpVel magnitude <-moveSpeed gt)
+		# <-jumpVel 0.975 mul ->jumpVel #Soft cap on move speed
+	endif
+
+	
+	
+
+	#Find how much to slow down to climb terrain
+	if(<-jumpTimer eq0)
+		<-*playerPos <-vel add ->nextPos
+		@AvgTerrain(<-nextPos) <-*playerHeight add ->nextPos.y
+		<-nextPos <-*playerPos sub ->testVel
+		<-testVel dup V3(<-testVel.x 0 <-testVel.z) VectorAngle dup ->val deg2rad mul cos dup ->terrainClimb
+		if(<-testVel.y gt0)
+			mul 
+		else
+			0.8 max div
+		endif
+	endif
+		->vel
+	
+	if(<-dead)
+		Vector0 ->vel
+	endif
+
+:once
+	Vector0 1 V3(<-jumpDuration 0 0) <-jumpHeight BallisticArcLateral pop ->jumpGrav ->jumpStartVel
+	0 ->jumpStartVel.x
+	1 ->responsiveness
+	5 SetTimer1
+	Vector0 ->vel
+	<-airControlMult ->baseAirControl
+	<-playerHeight ->*playerHeight
+	getUnitsByType(<-markerGUID 0) ->extraMarkers
+	<-extraMarkers getListCount 0 do
+		<-extraMarkers[i] true true true destroyUnit
+	loop 
+	"Up Left Down Right" " " Split ->keyList
+	<-collisionThreshold ->baseThreshold
+	if(<-*allowFPS)
+		<-startX <-startZ dup2 FromCell @AvgTerrain <-*playerHeight add swap V3 ->*playerPos 
+		0 <-startRotation 0 v3 setRplCamRotation
+		<-startX <-startZ FC ->checkPoint
+		getMapSize ->mapZ ->mapX
+		500 ->maxStun
+		0 0 0 0 List ->momentum
+		1.0 <-accelTime div dup ->acceleration ->baseAccel
+		1.0 <-decelTime div ->deceleration
+		# true ->outlinesLoaded
+		<-collisionThreshold 0.99 add ->collisionThreshold
+		
+		@getInputs
+		
+		RegisterForMsg("Respawn" "Respawn")
+		RegisterForMsg("PlayerDied" "PlayerDied")
+		RegisterForMsg("MSG_FrameAdvance" "Frame")
+		
+		CreateUnit(<-markerGUID <-startX -1 <-startZ v3 0) ->marker
+		
+		"000000000000
+		 000000000000
+		 000222220000
+		 002111112000
+		 021111211120
+		 211112222112
+		 211122222212
+		 211122222212
+		 022111111122
+		 000222222200
+		 000000000000
+		 000000000000" RemoveWhiteSpace ->miniMapImage
+		SetUnitMiniMapImageColor(<-marker v4(0.2 1 0.2 1))
+		SetUnitMiniMapImage(<-marker <-miniMapImage)
+		
+		"outlinesLoaded" NotPersist
+		"units" NotPersist
+		"extraMarkers" NotPersist
+		"versionList" NotPersist
+		"errors" NotPersist
+	endif
+
+:rot2vel
+	deg2rad mul ->rotation
+	v3(<-rotation.y sin <-rotation.x cos mul
+			<-rotation.x sin neg
+			<-rotation.y cos <-rotation.x cos mul)
+	return	
+
+:PlayerDied
+	false SetRplCamCursorLock
+	<-checkPoint UFC GetTerrainVector v3(0 <-*playerHeight 0) add ->*playerPos
+	true ->dead
+	--jumpTimer
+
+:Respawn
+	<-marker true false false destroyUnit
+	CreateUnitOnTerrain(<-markerGUID <-checkPoint UFC 0) ->marker
+	SetUnitMiniMapImageColor(<-marker v4(0.2 1 0.2 1))
+	SetUnitMiniMapImage(<-marker <-miniMapImage)
+	
+	<-checkPoint UFC GetTerrainVector v3(0 <-*playerHeight 0) add ->*playerPos
+	false ->dead
+	true ->respawned
+	if(<-*isFPMode)
+		true SetRplCamCursorLock
+	endif
+
+:GameLoaded
+	if(<-*allowFPS)
+		if(GetGameUpdateCount eq0 GetEditMode ! &&)
+			false ->*isFPMode #Make sure all finalized levels start out of first person
+		endif
+		
+		once @SendDebugInfo endonce
+	endif
+
+:Awake
+	RegisterScript("Move")
+
+:SendDebugInfo
+	"Version " <-Script_Version LF concat3
+	"Edit History: " <-Edit_History LF concat4
+	"Made for FpsCore v" <-Intended_Version concat3
+	if(<-Notes RemoveWhiteSpace StringLength)
+		LF <-Notes concat3
+	endif
+	
+	#Check if the version matches
+	if(<-Intended_Version RemoveWhiteSpace <-*fpsCoreVersion RemoveWhiteSpace neq)
+		LF "VERSION MISMATCH: CPACK version (" <-*fpsCoreVersion ") does not match intended version." concat4 concat
+	endif
+	
+	LF concat print
+
+:Trace
+	"Trace" swap SendMsg

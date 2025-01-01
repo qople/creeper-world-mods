@@ -1,0 +1,139 @@
+# --ControlPanel-- 3/31/2021 11:28:13 AM
+$messageSlot:"message" #message slot for "select and set" option
+
+if(<-*autoPilotDebug 2 eq)
+	true ->shown
+	<-times GetTableKeys ->list
+
+	"<size=9>"
+	<-list 0 do
+		<-list[i] ->name
+		<-name ": " <-times{<-name} concat4 LF concat
+	loop
+
+
+	<-times{"Total"} ->avg[<-num 300 mod]
+	<-num 1 add ->num
+	0
+	<-avg 0 do
+		<-avg[i] add
+	loop
+	"Total (10s Avg): " swap <-num AsFloat 300 min div 3 round concat3
+	->debugString
+	SetMSGButton(0 true <-debugString V4(1 1 1 1) "" "")
+else
+	if(<-shown)
+		SetMsgButton(0 false "" Vector0 "" "")
+		false ->shown
+	endif
+endif
+
+:WhilePaused
+	Self "Main" GetEditMode SetObjActive
+	Self V3(<-mapX 2 div 0.01 -5) SetUnitPosition
+	if(Self 0 GetUnitUIState)
+		if(GetTimer0 !)
+			10 SetTimer0
+			GetUnits("" Vector0 515 true false false 2 0 0) ->debugUnits
+			<-debugUnits 0 do
+				<-debugUnits[i] dup ->unit
+				if(GetUnitType <-movableUnits swap ListContains)
+					if(<-*moveModes{<-unit} !)
+						<-unit "<size=8>stationary" SetUnitDebugText
+						
+					else if(<-*reserves{<-unit} !)
+						<-unit "<size=8>moving(" GetRegisteredScriptVar("UnitMove" "timeToMove"){<-unit} AsInt "/" GetRegisteredScriptVar("UnitMove" "moveRequirement") ")" concat4 concat SetUnitDebugText
+					else
+						<-unit "<size=8>reserve" SetUnitDebugText
+					endif endif
+				endif
+			loop
+		endif
+	endif
+
+:StartMeasure
+	ElapsedTime ->times{<-_DATA}
+
+:EndMeasure
+	ElapsedTime <-times{<-_DATA} sub ->times{<-_DATA}
+
+:Awake
+	Self 0 GetUnitUIState ->*autoPilotDebug
+	Self GetEditMode SetUnitSelectable
+	Self V3(<-mapX 2 div 0.01 -5) SetUnitPosition
+	@SetDebug
+
+	if(GetEditMode)
+		CreateTable ->times
+		CreateListStartingSize(300) ->avg
+		RegisterForMsg("StartMeasure" dup)
+		RegisterForMsg("EndMeasure" Dup)
+		RegisterForMsg("MSG_PostUpdate" "WhilePaused")
+		RegisterForMsg("MessageClosed" "ProcessAndClose")
+	endif
+	GetMapSize ->mapZ ->mapX
+	Self "Main" "Autopilot
+Options" SetObjText
+	Self "Main" 0 SetObjTextBilloard
+	Self "Main" V3(0 0 1) SetObjForward
+	Self "Main" 60 SetObjTextFontSize
+	Self "Main" GetEditMode SetObjActive
+	# if(<-*weaponMovers !)
+		# CreateTable ->*weaponMovers
+	# endif
+	List("cannon" "mortar" "sprayer" "shield") ->movableUnits
+
+:_UICallback
+	if(<-_DATA eq0)
+		Self 0 GetUnitUIState ->*autoPilotDebug
+		@SetDebug
+	else if(<-_DATA 1 eq)
+		Self 1 GetUnitUIState ->moveMode
+	else if(<-_DATA 2 eq)
+		CloseGameMessage(true)
+		ShowGameMessage(<-messageSlot "Cancel" "Confirm" 0 "MessageClosed")
+		SetGameMessageText(0 "Select units to set their movement modes.")
+	else if(<-_DATA 3 eq)
+		GetUnits("" Vector0 515 true false false 2 0 0) @SetUnitMoveModes
+	endif endif endif endif
+	0 SetTimer0
+	@WhilePaused
+
+:ProcessAndClose
+	if(<-_DATA)
+		GetSelectedUnits @SetUnitMoveModes
+	endif 
+	CloseGameMessage(false)
+
+:SetUnitMoveModes
+	->units
+	<-units 0 do
+		if(<-units[i] GetRiftLab neq)
+			<-moveMode 1 min ->*moveModes{<-units[i]}
+			if(<-moveMode 2 eq)
+				true ->*reserves{<-units[i]}
+			endif
+		endif
+	loop
+
+:SetDebug
+	if(<-*autoPilotDebug !)
+		GetUnits("" Vector0 515 true false false 0 0 0) ->debugUnits
+		<-debugUnits 0 do
+			<-debugUnits[i] "" SetUnitDebugText 
+			# dup ->unit
+			# if(GetUnitType <-movableUnits swap ListContains <-unit GetUnitType "greenarmother" eq or)
+				# "" SetUnitDebugText
+			# else
+				# pop
+			# endif
+			# # <-keys[i] ->unit
+			# <-weaponMovers{<-unit} ->mover
+			# if(<-mover "moveMode" GetScript1Var)
+			# else
+				# <-unit "stationary" SetUnitDebugText
+			# endif
+		loop
+	else
+		0 SetTimer0
+	endif

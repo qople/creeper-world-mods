@@ -1,0 +1,10 @@
+# --ShieldActivity-- 7/2/2023 11:32:35 PM
+
+if(GetTimer0)
+	return
+else
+	150 SetTimer0
+	if(Self GetUnitCell FromCell 6 false false true 2 1 1 GetUnitsInRange)
+		Self "MovementField.4rpl" "lastActive" GetGameUpdateCount SetScriptVar
+	endif
+endif

@@ -1,0 +1,1801 @@
+# --Terminal-- 3/23/2024 3:45:42 PM
+
+#Permanently enable the terminal once the editor has been opened
+if(GetEditMode)
+	true ->inEditor
+endif
+
+if(GetKeyDown("BackQuote" 0) <-inEditor &&)
+	@ToggleTerminal
+endif
+
+if(<-terminalOpen !)
+	return
+endif
+
+if(<-errorCode)
+	if(<-errorCode 1 eq)
+		@PrintToOutput("ERROR: execution stopped unexpectedly. Likely an empty stack error.")
+	endif
+	0 ->errorCode
+endif
+
+@GetInput
+
+:ParseAndProcess
+	";" concat ->parseString
+	"" ->currentWord
+	
+	true ->canBeNum
+	true ->canBeWord
+	false ->inString
+	
+	1 ->errorCode
+	
+	<-parseString StringToList ->parseList
+	<-parseList 0 do
+		<-parseList[i] ->char
+		if(<-char DQ eq)
+			PlaySound("Notify" 1)
+			<-inString ! ->inString
+		endif
+
+		if(<-wordChars <-char ToLower ListContains !)
+			false ->canBeWord
+		endif
+		if(<-numChars <-char ToLower ListContains !)
+			false ->canBeNum
+		endif
+		
+		if(<-canBeNum <-canBeWord || <-inString ||)
+			<-currentWord <-char concat ->currentWord
+
+		else if(<-currentWord StringLength)
+			if(<-validString)
+				<-currentWord dup StringLength 1 sub 1 swap SubString #dup @PrintToOutput
+			else if(<-validNum)
+				if(<-currentWord AsInt <-currentWord "0" eq ||)
+					<-currentWord AsInt
+				else if(<-currentWord AsFloat <-currentWord "0." eq <-currentWord "0.0" eq || ||)
+					<-currentWord AsFloat
+				else 
+					2 ->errorCode
+					@PrintToOutput("ERROR: invalid number format (" <-currentWord ")" concat3)
+				endif endif
+			else if(<-validWord)
+				<-currentWord ToLower ->currentWord
+				if(<-currentWord "<-" StartsWith)
+					<-currentWord dup StringLength 2 sub 2 swap Substring @refread
+				else if(<-currentWord "->" StartsWith)
+					<-currentWord dup StringLength 2 sub 2 swap Substring @refwrite
+				else if(<-apiTable{<-currentWord} dup StringLength)
+					Refcall
+				else
+					pop 
+					@PrintToOutput("ERROR: unknown operator (" <-currentWord ")" concat3)
+					3 ->errorCode
+				endif endif endif
+			endif endif endif
+			endif
+			"" ->currentWord
+			true ->canBeNum
+			true ->canBeWord
+			false ->inString
+		endif
+		
+		<-canBeWord ->validWord
+		<-canBeNum ->validNum
+		<-inString ->validString
+	loop
+	
+	@PrintAllToOutput
+	if(<-errorCode 1 eq)
+		0 ->errorCode
+	endif
+
+:PrintAllToOutput
+	List ->outputs
+	<-outputs 0 do
+		<-outputs[i] ->value
+		if(<-value GetType "STRING" eq)
+			DQ <-value DQ concat3 @PrintToOutput
+		else
+			<-value AsString @PrintToOutput
+		endif
+	loop
+
+:Once
+	ShowRaster(false)
+	false ->terminalOpen
+	false ->inEditor
+	"" ->inputString
+	V2(90 90) ->*RL_cursorPos 
+	V2(3 3) ->startCursor
+	500 250 @ResizeRaster
+	@BlitInputArea
+	-1 ->scope
+	@InitKeys
+	@InitAPITable
+	@InitVarSandbox
+	@InitHelpTable
+	
+	"4RPL Terminal V0.0.1
+By Qople
+Updated March 2024
+Type help for more"
+	@PrintToOutput
+	
+:ToggleTerminal
+	<-terminalOpen ! ->terminalOpen
+	ShowRaster(<-terminalOpen)
+	if(<-terminalOpen)
+		RPLCamCopyPosAndRot
+		false SetUnderCreeperEffectEnabled
+		false SetMapZoomEnabled
+		false SetMapPanEnabled
+		false SetMapRotateEnabled
+		SetRPLCam(true)
+		RegisterForMsg("MSG_FrameAdvance" "CancelButKeepSelected")
+	else
+		false SetRPLCam
+		true SetMapZoomEnabled
+		true SetMapPanEnabled
+		true SetMapRotateEnabled
+		DeregisterForMsg("MSG_FrameAdvance")
+	endif
+
+:CancelButKeepSelected
+	GetSelectedUnits ->selectedUnits
+	Cancel
+	<-selectedUnits 0 do
+		<-selectedUnits[i] true SetUnitSelected
+	loop
+
+#Deals with managing string input, and displaying it accordingly on the raster.
+:GetInput
+	false ->charPrinted
+	
+	<-allKeys 0 do
+		<-allKeys[i] ->keyData
+		if(GetKeyDown(<-keyData[0] 0))
+			true ->charPrinted
+			<-keyData[1 GetKey("LeftShift" 0) GetKey("RightShift" 0) || add] ->char
+			<-inputString <-char concat ->inputString
+			# SendMsg("RL_PrintString" <-char)
+			Cancel
+		endif
+	loop
+	
+	if(GetKey("Backspace" 0))
+		<-backspaceTimer 1 add ->backspaceTimer
+		#Allow holding backspace to continuously delete characters
+		if(<-backspaceTimer 1 eq <-backspaceTimer 20 gt <-backspaceTimer 2 mod eq0 && ||)
+			true ->charPrinted
+			@Backspace
+		endif
+	else
+		0 ->backspaceTimer
+	endif
+	
+	if(GetKeyDown("Return" 0))
+		"> " <-inputString concat @PrintToOutput
+		<-inputString @ParseAndProcess
+		"" ->inputString
+		true ->charPrinted
+	endif
+	
+	if(<-charPrinted)
+		@BlitInputArea
+	endif
+
+#Blits the whole input area, text included, to the raster.
+:BlitInputArea
+	0 0 <-bottomSprite <-rasterWidth BlitRaster
+	
+	<-*RL_cursorPos ->outputPos #Save on the stack to reset after printing
+	
+	<-startCursor ->*RL_cursorPos
+	
+	<-inputString StringLength <-charsPerLine sub ->startIndex
+	<-charsPerLine <-startIndex add <-charsPerLine min ->printLength
+	
+	SendMsg("RL_PrintString" "> " <-inputString <-startIndex 0 max <-printLength Substring concat)
+	<-outputPos ->*RL_cursorPos
+
+:PrintToOutput
+	true ->*RL_enableLogging
+	SendMsg("RL_PrintString" swap LF concat)
+	false ->*RL_enableLogging
+	if(<-*RL_cursorPos.y 3 lt)
+		@ReprintOutput
+	endif
+
+:ReprintOutput
+	ClearRaster(<-colorBlack)
+	<-outputStartPos ->*RL_cursorPos
+	<-*RL_printLog <-*RL_logLength min 0 do
+		SendMsg("RL_PrintString" <-*RL_printLog[i])
+	loop
+
+#Updates some display-related settings that have to be changed whenever the raster size changes
+#Then resizes the raster, clears it, and reprints the window.
+:ResizeRaster
+	->rasterHeight ->rasterWidth
+	
+	#The sprite for the bottom line
+	V4(0 0 0 1) ->colorBlack
+	V4(1 1 1 1) ->colorWhite
+	<-rasterWidth <-*RL_lineHeight 2 add mul 0 do
+		<-colorBlack
+	loop
+	<-rasterWidth 0 do
+		<-colorWhite
+	loop
+	List ->bottomSprite
+	
+	<-rasterWidth <-rasterHeight <-*RL_lineHeight 2 add mul sub 0 do
+		<-colorBlack
+	loop
+	List ->topSprite
+	
+	V4(3 3 <-rasterWidth <-*RL_letterSpacing sub <-rasterHeight <-*RL_lineHeight sub) ->*RL_wrapRect
+	<-rasterWidth <-*RL_letterSpacing div 4 sub ->charsPerLine
+	
+	<-rasterWidth <-rasterHeight SetRasterSize
+	ClearRaster(<-colorBlack)
+	
+	V2(3 <-rasterHeight <-*RL_lineHeight sub 3 sub) dup ->outputStartPos ->*RL_cursorPos
+	
+	<-rasterHeight 3 sub <-*RL_lineHeight div 1 sub ->*RL_logLength
+	
+	@ReprintOutput
+	
+:Backspace
+	Substring(<-inputString dup StringLength 1 sub 0 swap) ->inputString
+	SendMsg("RL_PrintString" " ")
+
+:InitVarSandbox
+	CreateTable ->sandboxedVars
+
+
+:self
+	if(<-scope gte0)
+		<-scope
+	else
+		-1
+	endif
+	
+:runas
+	if(StackSize 1 eq)
+		->arg1
+		if(<-arg1 GetType "STRING" eq)
+			-3 ->scope
+			<-arg1 ->scopeScript
+			@PrintToOutput("Running as global script registered to " DQ <-scopeScript DQ concat4)
+		else if(<-arg1 GetType "INT" eq)
+			<-arg1 ->scope
+			"" ->scopeScript
+			@PrintToOutput("Running as unit " <-scope " (official name " DQ concat4 <-scope GetUnitOfficialName DQ concat4 ")" LF "No script specified, using Script1." concat4)
+		endif endif
+	else
+		->arg2 ->arg1
+		<-arg1 ->scope
+		<-arg2 ->scopeScript
+		@PrintToOutput("Running as unit " <-scope " (official name " DQ concat4 <-scope GetUnitOfficialName DQ concat4 ")" LF "Script: " concat4 <-scopeScript concat)
+	endif
+
+:refread
+	->varName
+	
+	if(<-varName "*" StartsWith) #global var read
+		<-varName dup StringLength 1 sub 1 swap Substring <-!*
+	else if(<-scope -1 eq) #default, sandboxed var table
+		<-sandboxedVars{<-varName}
+	else if(<-scope -2 eq) #debug, directly read internal vars
+		<-varName <-!
+	else if(<-scope -3 eq) #registered script
+		PlaySound("Notify" 1)
+		<-scopeScript <-varName GetRegisteredScriptVar 
+	else #Simulate running as the unit with the given ID
+		<-scope <-scopeScript GetScriptVar
+	endif endif endif endif
+
+:refwrite
+	->varName
+
+	if(<-varName "*" StartsWith) #global var read
+		<-varName dup StringLength 1 sub 1 swap Substring ->!*
+	else if(<-scope -1 eq) #default, sandboxed var table
+		->sandboxedVars{<-varName}
+	else if(<-scope -2 eq) #debug, directly read internal vars
+		<-varName ->!
+	else if(<-scope -3 eq) #registered script
+		<-scopeScript <-varName SetRegisteredScriptVar
+	else #Simulate running as the unit with the given ID
+		<-scope <-scopeScript SetScriptVar
+	endif endif endif endif
+
+:selected
+	GetSelectedUnits[0]
+
+:allselected
+	GetSelectedUnits
+
+:help
+	if(StackSize eq0)
+		@PrintToOutput(<-helpTable{"_INTRO_"})
+	else
+		ToLower ->topic
+		@PrintToOutput(<-helpTable{<-topic})
+	endif
+
+:InitHelpTable
+	Table (
+	"_INTRO_" "The 4RPL terminal is a minimalist command prompt meant to help quickly debug 4RPL programs.
+Type [" DQ "commands" DQ concat4 " help] for a list of terminal-specific commands.
+Type [" DQ "syntax" DQ concat4 " help] for unsupported syntax notes." concat3
+
+	"syntax" " Warp notation (parentheses in expressions) is not supported. RPN notation must be used at all times.
+ Shorthand for list and table references using [] and {} brackets is not supported.
+ Individual vector dimensions cannot be accessed with, for example, vector.x."
+
+	"commands" "Type [" DQ "commandname" DQ concat4 " help] for a description of a specific command.
+  help
+  resize
+  runas
+  _selected" concat
+	
+	"help" "Shows information on commands or other topics. You seem to have figured it out."
+	
+	"runas" "emulates commands to be run as the unit or global script provided. Syntax options are:
+UID runas (uses script1)
+UID " DQ "script.4rpl" DQ concat4 "runas
+" DQ "registerString" concat4 DQ "runas" concat3
+
+	"resize" "Given width and height dimensions in pixels, resizes the terminal window to those dimensions. Default is 500 250."
+	
+	) ->helpTable
+
+:InitKeys
+	"abcdefghijklmnopqrstuvwxyz1234567890_<>-*^%/+!" StringToList ->wordChars
+	"1234567890.-" StringToList ->numChars
+	List(
+		ListN("A" "a" "A" 3)
+		ListN("B" "b" "B" 3)
+		ListN("C" "c" "C" 3)
+		ListN("D" "d" "D" 3)
+		ListN("E" "e" "E" 3)
+		ListN("F" "f" "F" 3)
+		ListN("G" "g" "G" 3)
+		ListN("H" "h" "H" 3)
+		ListN("I" "i" "I" 3)
+		ListN("J" "j" "J" 3)
+		ListN("K" "k" "K" 3)
+		ListN("L" "l" "L" 3)
+		ListN("M" "m" "M" 3)
+		ListN("N" "n" "N" 3)
+		ListN("O" "o" "O" 3)
+		ListN("P" "p" "P" 3)
+		ListN("Q" "q" "Q" 3)
+		ListN("R" "r" "R" 3)
+		ListN("S" "s" "S" 3)
+		ListN("T" "t" "T" 3)
+		ListN("U" "u" "U" 3)
+		ListN("V" "v" "V" 3)
+		ListN("W" "w" "W" 3)
+		ListN("X" "x" "X" 3)
+		ListN("Y" "y" "Y" 3)
+		ListN("Z" "z" "Z" 3)
+		
+		ListN("Space" " " " " 3)
+		ListN("Alpha1" "1" "!" 3)
+		ListN("Alpha2" "2" "@" 3)
+		ListN("Alpha3" "3" "#" 3)
+		ListN("Alpha4" "4" "$" 3)
+		ListN("Alpha5" "5" "%" 3)
+		ListN("Alpha6" "6" "^" 3)
+		ListN("Alpha7" "7" "&" 3)
+		ListN("Alpha8" "8" "*" 3)
+		ListN("Alpha9" "9" "(" 3)
+		ListN("Alpha0" "0" ")" 3)
+		
+		ListN("Quote" "'" DQ 3)
+		ListN("Comma" "," "<" 3)
+		ListN("Minus" "-" "_" 3)
+		ListN("Period" "." ">" 3)
+		ListN("Slash" "/" "?" 3)
+		ListN("Semicolon" ";" ":" 3)
+		ListN("Equals" "=" "+" 3)
+		ListN("LeftBracket" "[" "{" 3)
+		ListN("RightBracket" "]" "}" 3)
+		ListN("Backslash" "\" "|" 3)
+		#" #Fix the issue with the syntax highlighter thinking we can escape quotes
+	) ->allKeys
+
+:InitAPITable
+	Table(
+		#System commands
+		"runas" 			"runas"
+		"refread" 			"refread"
+		"resize"			"ResizeRaster"
+		"<-!" 				"refread"
+		"refwrite" 			"refwrite"
+		"->!" 				"refwrite"
+		"_selected"			"selected"
+		"_allselected"		"allselected"
+		"help"				"help"
+		
+		#EVERYTHING BELOW HERE IS THE TABLE AND FUNCTION DEFINITIONS FOR THE WHOLE LANGUAGE
+		#THERE IS NOTHING PAST HERE BUT THAT
+		
+		#4RPL commands
+"+" "add"
+"-" "sub"
+"*" "mul"
+"/" "div"
+"^" "pow"
+"%" "mod"
+"abs"		"abs"
+"acos"		"acos"
+"acquiremissionobjective"		"acquiremissionobjective"
+"add"		"add"
+"addaswareholder"		"addaswareholder"
+"addcreeper"		"addcreeper"
+"addcreeperinrange"		"addcreeperinrange"
+"addcreeperwithcap"		"addcreeperwithcap"
+"addcreeperwithcapinrange"		"addcreeperwithcapinrange"
+"and"		"and"
+"appendstacktolist"		"appendstacktolist"
+"appendtolist"		"appendtolist"
+"applytheme"		"applytheme"
+"applytodamagemap"		"applytodamagemap"
+"approximately"		"approximately"
+"asfloat"		"asfloat"
+"asin"		"asin"
+"asint"		"asint"
+"asstring"		"asstring"
+"atan"		"atan"
+"atan2"		"atan2"
+"attachbeam"		"attachbeam"
+"avg2"		"avg2"
+"ballisticarclateral"		"ballisticarclateral"
+"ballisticarcpos"		"ballisticarcpos"
+"blitfaderaster"		"blitfaderaster"
+"blitraster"		"blitraster"
+"bounceedgecollision"		"bounceedgecollision"
+"bouncefadeblack"		"bouncefadeblack"
+"bounceterraincollision"		"bounceterraincollision"
+"break"		"break"
+"cancel"		"cancel"
+"case"		"case"
+"ceil"		"ceil"
+"clamp"		"clamp"
+"clamp01"		"clamp01"
+"clearglobals"		"clearglobals"
+"clearlist"		"clearlist"
+"clearlocals"		"clearlocals"
+"clearprintlog"		"clearprintlog"
+"clearraster"		"clearraster"
+"clearstack"		"clearstack"
+"clearthemeoverlay"		"clearthemeoverlay"
+"cleartracelog"		"cleartracelog"
+"clearunitspecifiedtarget"		"clearunitspecifiedtarget"
+"clearunitstun"		"clearunitstun"
+"clipcreeperline"		"clipcreeperline"
+"closegamemessage"		"closegamemessage"
+"concat"		"concat"
+"concat3"		"concat3"
+"concat4"		"concat4"
+"constructunit"		"constructunit"
+"convertactocreeper"		"convertactocreeper"
+"convertcreepertoac"		"convertcreepertoac"
+"copy"		"copy"
+"cos"		"cos"
+"cr"		"cr"
+"createbeam"		"createbeam"
+"createeffect"		"createeffect"
+"createegg"		"createegg"
+"createlist"		"createlist"
+"createliststartingsize"		"createliststartingsize"
+"createmissile"		"createmissile"
+"createmist"		"createmist"
+"createorb"		"createorb"
+"createsnipershot"		"createsnipershot"
+"createtable"		"createtable"
+"createthemeoverlay"		"createthemeoverlay"
+"createtrail"		"createtrail"
+"createunit"		"createunit"
+"createunitonterrain"		"createunitonterrain"
+"cross"		"cross"
+"damagecreeper"		"damagecreeper"
+"damagemesh"		"damagemesh"
+"damageunit"		"damageunit"
+"debug"		"debug"
+"debugallsp"		"debugallsp"
+"deepcopy"		"deepcopy"
+"deg2rad"		"deg2rad"
+"deletemcsentry"		"deletemcsentry"
+"deployunitshield"		"deployunitshield"
+"deregisterformsg"		"deregisterformsg"
+"deregisterscript"		"deregisterscript"
+"destroyallattachedbeams"		"destroyallattachedbeams"
+"destroyallbeams"		"destroyallbeams"
+"destroybeam"		"destroybeam"
+"destroyterrainrangeindicator"		"destroyterrainrangeindicator"
+"destroythemeoverlay"		"destroythemeoverlay"
+"destroytrail"		"destroytrail"
+"destroyunit"		"destroyunit"
+"distance"		"distance"
+"distancecell"		"distancecell"
+"distancepointline"		"distancepointline"
+"div"		"div"
+"do"		"do"
+"dot"		"dot"
+"dq"		"dq"
+"dup"		"dup"
+"dup2"		"dup2"
+"e"		"e"
+"editaddundo"		"editaddundo"
+"editredo"		"editredo"
+"editrestoreundo"		"editrestoreundo"
+"elapsedtime"		"elapsedtime"
+"else"		"else"
+"endcase"		"endcase"
+"endif"		"endif"
+"endmission"		"endmission"
+"endonce"		"endonce"
+"endswitch"		"endswitch"
+"endswith"		"endswith"
+"endwhile"		"endwhile"
+"eq"		"eq"
+"eq0"		"eq0"
+"ev2"		"ev2"
+"ev3"		"ev3"
+"ev4"		"ev4"
+"false"		"false"
+"fc"		"fc"
+"findunitenemy"		"findunitenemy"
+"floodfillterrain"		"floodfillterrain"
+"floor"		"floor"
+"fromcell"		"fromcell"
+"generateenergy"		"generateenergy"
+"getadalogopen"		"getadalogopen"
+"getbuildunit"		"getbuildunit"
+"getcameramode"		"getcameramode"
+"getcameraposition"		"getcameraposition"
+"getcamerarotation"		"getcamerarotation"
+"getcameratopdown"		"getcameratopdown"
+"getcanmoveunits"		"getcanmoveunits"
+"getcelloccupiedcount"		"getcelloccupiedcount"
+"getcreeper"		"getcreeper"
+"getcreepercoverage"		"getcreepercoverage"
+"getcreepercutoff"		"getcreepercutoff"
+"getcreeperinrange"		"getcreeperinrange"
+"getcreeperwithdamagemap"		"getcreeperwithdamagemap"
+"getcrimson"		"getcrimson"
+"getdecalcolor"		"getdecalcolor"
+"getdecalposition"		"getdecalposition"
+"getdecalsize"		"getdecalsize"
+"getdecalvisible"		"getdecalvisible"
+"getecocounts"		"getecocounts"
+"geteditmode"		"geteditmode"
+"getenergybonus"		"getenergybonus"
+"getenergyeco"		"getenergyeco"
+"getenergygeneration"		"getenergygeneration"
+"getenergystore"		"getenergystore"
+"getenergyuse"		"getenergyuse"
+"geternportal"		"geternportal"
+"geternportalefficiency"		"geternportalefficiency"
+"getexactcreeperheight"		"getexactcreeperheight"
+"getexactterrain"		"getexactterrain"
+"getexactterrainandnormal"		"getexactterrainandnormal"
+"getexactterrainwithshield"		"getexactterrainwithshield"
+"getfactory"		"getfactory"
+"getfactorywares"		"getfactorywares"
+"getfieldcell"		"getfieldcell"
+"getfinaldialogopen"		"getfinaldialogopen"
+"getflow"		"getflow"
+"getgameframecount"		"getgameframecount"
+"getgametickcount"		"getgametickcount"
+"getgameupdatecount"		"getgameupdatecount"
+"getgloballist"		"getgloballist"
+"getglobaltable"		"getglobaltable"
+"getkey"		"getkey"
+"getkeydown"		"getkeydown"
+"getlastexecutioncount"		"getlastexecutioncount"
+"getlistcount"		"getlistcount"
+"getlistelement"		"getlistelement"
+"getlistindex"		"getlistindex"
+"getlistindices"		"getlistindices"
+"getmappedkey"		"getmappedkey"
+"getmappedkeydown"		"getmappedkeydown"
+"getmappedkeystrings"		"getmappedkeystrings"
+"getmapsize"		"getmapsize"
+"getmaxaccell"		"getmaxaccell"
+"getmaxcreepercell"		"getmaxcreepercell"
+"getmaxcreepercellwithdamage"		"getmaxcreepercellwithdamage"
+"getmcsentries"		"getmcsentries"
+"getmeshhealth"		"getmeshhealth"
+"getminaccell"		"getminaccell"
+"getmincreepercell"		"getmincreepercell"
+"getmincreepercellwithdamage"		"getmincreepercellwithdamage"
+"getminermode"		"getminermode"
+"getmissionobjectiveenabled"		"getmissionobjectiveenabled"
+"getmissionobjectiverequired"		"getmissionobjectiverequired"
+"getmissionobjectivestate"		"getmissionobjectivestate"
+"getmissionscancomplete"		"getmissionscancomplete"
+"getmousebutton"		"getmousebutton"
+"getmousebuttondown"		"getmousebuttondown"
+"getmousebuttonup"		"getmousebuttonup"
+"getmousedelta"		"getmousedelta"
+"getmousescrolldelta"		"getmousescrolldelta"
+"getmverseplayernum"		"getmverseplayernum"
+"getmverseplayers"		"getmverseplayers"
+"getnearestairsac"		"getnearestairsac"
+"getnearestsnipertarget"		"getnearestsnipertarget"
+"getnearestspore"		"getnearestspore"
+"getobjactive"		"getobjactive"
+"getobjcolor"		"getobjcolor"
+"getobjfacingangle"		"getobjfacingangle"
+"getobjfacinganglecell"		"getobjfacinganglecell"
+"getobjforward"		"getobjforward"
+"getobjposition"		"getobjposition"
+"getobjrotation"		"getobjrotation"
+"getobjscale"		"getobjscale"
+"getopenbuildtab"		"getopenbuildtab"
+"getorbitalcount"		"getorbitalcount"
+"getpause"		"getpause"
+"getpointerterraincoords"		"getpointerterraincoords"
+"getprintprefixenabled"		"getprintprefixenabled"
+"getrandmapcell"		"getrandmapcell"
+"getregisteredscriptvar"		"getregisteredscriptvar"
+"getriftlab"		"getriftlab"
+"getrplcamforward"		"getrplcamforward"
+"getrplcamposition"		"getrplcamposition"
+"getrplcamright"		"getrplcamright"
+"getrplcamrotation"		"getrplcamrotation"
+"getrplcamup"		"getrplcamup"
+"getscript1var"		"getscript1var"
+"getscriptvar"		"getscriptvar"
+"getselectedunits"		"getselectedunits"
+"getsoylentmode"		"getsoylentmode"
+"gettablecount"		"gettablecount"
+"gettableelement"		"gettableelement"
+"gettablekeys"		"gettablekeys"
+"gettablevalues"		"gettablevalues"
+"getterraformdigsite"		"getterraformdigsite"
+"getterraformmarker"		"getterraformmarker"
+"getterraformmenuopen"		"getterraformmenuopen"
+"getterrain"		"getterrain"
+"getterrainlos"		"getterrainlos"
+"getterrainoverride"		"getterrainoverride"
+"getterrainspecial"		"getterrainspecial"
+"getterrainvector"		"getterrainvector"
+"getthemeclifflight"		"getthemeclifflight"
+"getthemeclifflightboost"		"getthemeclifflightboost"
+"getthemecliffnormal"		"getthemecliffnormal"
+"getthemecliffnormalamt"		"getthemecliffnormalamt"
+"getthemecliffnormalscale"		"getthemecliffnormalscale"
+"getthemecliffscale"		"getthemecliffscale"
+"getthemeclifftexture"		"getthemeclifftexture"
+"getthemenormal"		"getthemenormal"
+"getthemenormalamt"		"getthemenormalamt"
+"getthemenormalscale"		"getthemenormalscale"
+"getthemetexture"		"getthemetexture"
+"getthemetexturedetile"		"getthemetexturedetile"
+"getthemetexturelight"		"getthemetexturelight"
+"getthemetexturelightboost"		"getthemetexturelightboost"
+"getthemetexturescale"		"getthemetexturescale"
+"gettimer0"		"gettimer0"
+"gettimer1"		"gettimer1"
+"gettimer2"		"gettimer2"
+"gettimer3"		"gettimer3"
+"gettimestring"		"gettimestring"
+"gettotalac"		"gettotalac"
+"gettotalcreeper"		"gettotalcreeper"
+"gettotemactivated"		"gettotemactivated"
+"gettype"		"gettype"
+"getundercreepereffectenabled"		"getundercreepereffectenabled"
+"getunitammo"		"getunitammo"
+"getunitammoware"		"getunitammoware"
+"getunitanticreeperdamages"		"getunitanticreeperdamages"
+"getunitarmed"		"getunitarmed"
+"getunitbuildlimit"		"getunitbuildlimit"
+"getunitbuildware"		"getunitbuildware"
+"getunitcanbuild"		"getunitcanbuild"
+"getunitcandestroy"		"getunitcandestroy"
+"getunitcanmove"		"getunitcanmove"
+"getunitcanstun"		"getunitcanstun"
+"getunitcell"		"getunitcell"
+"getunitconnectable"		"getunitconnectable"
+"getunitconnectedtoriftlab"		"getunitconnectedtoriftlab"
+"getunitconstructing"		"getunitconstructing"
+"getunitconstructingdata"		"getunitconstructingdata"
+"getunitcount"		"getunitcount"
+"getunitcreeperdamages"		"getunitcreeperdamages"
+"getunitdamagedbyac"		"getunitdamagedbyac"
+"getunitdamagedbycreeper"		"getunitdamagedbycreeper"
+"getunitdestroyed"		"getunitdestroyed"
+"getunitdestroyunevenland"		"getunitdestroyunevenland"
+"getunitenabled"		"getunitenabled"
+"getuniternsimulated"		"getuniternsimulated"
+"getuniternstate"		"getuniternstate"
+"getunitfireoffset"		"getunitfireoffset"
+"getunitfootprintresistscreeperheight"		"getunitfootprintresistscreeperheight"
+"getunitforward"		"getunitforward"
+"getunitgrowsmesh"		"getunitgrowsmesh"
+"getunithealrate"		"getunithealrate"
+"getunithealth"		"getunithealth"
+"getunitincreeper"		"getunitincreeper"
+"getunitlosenabled"		"getunitlosenabled"
+"getunitmaxammo"		"getunitmaxammo"
+"getunitmaxhealth"		"getunitmaxhealth"
+"getunitmovecell"		"getunitmovecell"
+"getunitoccupiesland"		"getunitoccupiesland"
+"getunitofficialname"		"getunitofficialname"
+"getunitorientation"		"getunitorientation"
+"getunitpacketrequestrate"		"getunitpacketrequestrate"
+"getunitposition"		"getunitposition"
+"getunitrange"		"getunitrange"
+"getunitrangewithmods"		"getunitrangewithmods"
+"getunitrequestpackets"		"getunitrequestpackets"
+"getunitrotation"		"getunitrotation"
+"getunits"		"getunits"
+"getunitsbytype"		"getunitsbytype"
+"getunitselectable"		"getunitselectable"
+"getunitselected"		"getunitselected"
+"getunitsettings"		"getunitsettings"
+"getunitshieldrange"		"getunitshieldrange"
+"getunitsinrange"		"getunitsinrange"
+"getunitspecialtarget"		"getunitspecialtarget"
+"getunitspecifiedtarget"		"getunitspecifiedtarget"
+"getunitstuncount"		"getunitstuncount"
+"getunitsupplied"		"getunitsupplied"
+"getunitsuppresscount"		"getunitsuppresscount"
+"getunitsuppressedmovement"		"getunitsuppressedmovement"
+"getunittargetoffset"		"getunittargetoffset"
+"getunittrueguid"		"getunittrueguid"
+"getunittype"		"getunittype"
+"getunituioptions"		"getunituioptions"
+"getunituistate"		"getunituistate"
+"getunituitext"		"getunituitext"
+"getunitupdatecount"		"getunitupdatecount"
+"getvoidheight"		"getvoidheight"
+"gt"		"gt"
+"gt0"		"gt0"
+"gte"		"gte"
+"gte0"		"gte0"
+"halfpi"		"halfpi"
+"i"		"i"
+"if"		"if"
+"insertlistelement"		"insertlistelement"
+"invocationcount"		"invocationcount"
+"isadamessageread"		"isadamessageread"
+"isadamessageshowing"		"isadamessageshowing"
+"isbeam"		"isbeam"
+"isbuildunitselected"		"isbuildunitselected"
+"iscreepercutoff"		"iscreepercutoff"
+"isgamemessageshowing"		"isgamemessageshowing"
+"ismissioncomplete"		"ismissioncomplete"
+"isnull"		"isnull"
+"isv2inmap"		"isv2inmap"
+"isv3inmap"		"isv3inmap"
+"j"		"j"
+"k"		"k"
+"lf"		"lf"
+"list"		"list"
+"listcontains"		"listcontains"
+"listn"		"listn"
+"ln"		"ln"
+"log"		"log"
+"log10"		"log10"
+"loop"		"loop"
+"lt"		"lt"
+"lt0"		"lt0"
+"lte"		"lte"
+"lte0"		"lte0"
+"magnitude"		"magnitude"
+"max"		"max"
+"min"		"min"
+"mod"		"mod"
+"mod2"		"mod2"
+"movetowards"		"movetowards"
+"movetowardsandavoid"		"movetowardsandavoid"
+"movetowardscellandavoid"		"movetowardscellandavoid"
+"msg_frameadvance"		"msg_frameadvance"
+"msg_postupdate"		"msg_postupdate"
+"msg_preupdate"		"msg_preupdate"
+"msg_savegame"		"msg_savegame"
+"mul"		"mul"
+"getnearestspecialtarget"		"getnearestspecialtarget"
+"neg"		"neg"
+"neq"		"neq"
+"neq0"		"neq0"
+"normalize"		"normalize"
+"not"		"not"
+"notpersist"		"notpersist"
+"null"		"null"
+"once"		"once"
+"or"		"or"
+"pi"		"pi"
+"playsound"		"playsound"
+"playsoundatposition"		"playsoundatposition"
+"playsoundloop"		"playsoundloop"
+"pop"		"pop"
+"poplist"		"poplist"
+"pow"		"pow"
+"prependstacktolist"		"prependstacktolist"
+"prependtolist"		"prependtolist"
+"print"		"print"
+"print2"		"print2"
+"print3"		"print3"
+"print4"		"print4"
+"print5"		"print5"
+"printall"		"printall"
+"printallsp"		"printallsp"
+"printstack"		"printstack"
+"pushlist"		"pushlist"
+"quarterpi"		"quarterpi"
+"rad2deg"		"rad2deg"
+"randfloat"		"randfloat"
+"randint"		"randint"
+"rastercolor"		"rastercolor"
+"refcall"		"refcall"
+"refreshunitloscache"		"refreshunitloscache"
+"registerformsg"		"registerformsg"
+"registerscript"		"registerscript"
+"removeaswareholder"		"removeaswareholder"
+"removelistelement"		"removelistelement"
+"removetableelement"		"removetableelement"
+"removeunitdamagemap"		"removeunitdamagemap"
+"removewhitespace"		"removewhitespace"
+"repeat"		"repeat"
+"resetcamera"		"resetcamera"
+"return"		"return"
+"reverselist"		"reverselist"
+"rotateobj"		"rotateobj"
+"rotateobjtowards"		"rotateobjtowards"
+"rotateobjtowardscell"		"rotateobjtowardscell"
+"rotatetowards"		"rotatetowards"
+"rotatetowardscell"		"rotatetowardscell"
+"rotateunit"		"rotateunit"
+"rotateunittowards"		"rotateunittowards"
+"rotateunittowardscell"		"rotateunittowardscell"
+"round"		"round"
+"rplcamcopyposandrot"		"rplcamcopyposandrot"
+"rplcamtween"		"rplcamtween"
+"rplcamtweenlookat"		"rplcamtweenlookat"
+"self"		"self"
+"sendmsg"		"sendmsg"
+"sendmversemsg"		"sendmversemsg"
+"setadalogopen"		"setadalogopen"
+"setalllegalunitcells"		"setalllegalunitcells"
+"setbeambrightness"		"setbeambrightness"
+"setbeamcolor"		"setbeamcolor"
+"setbeamend"		"setbeamend"
+"setbeamforcelocalend"		"setbeamforcelocalend"
+"setbeamstart"		"setbeamstart"
+"setbeamvisible"		"setbeamvisible"
+"setbeamwidth"		"setbeamwidth"
+"setcameraposition"		"setcameraposition"
+"setcamerarotation"		"setcamerarotation"
+"setcameratopdown"		"setcameratopdown"
+"setcanmoveunits"		"setcanmoveunits"
+"setcelloccupiedcount"		"setcelloccupiedcount"
+"setcmodeditmenuname"		"setcmodeditmenuname"
+"setcmodplayermenuname"		"setcmodplayermenuname"
+"setcreeper"		"setcreeper"
+"setcreepercutoff"		"setcreepercutoff"
+"setcreepergraphavailable"		"setcreepergraphavailable"
+"setcreeperinrange"		"setcreeperinrange"
+"setcrimson"		"setcrimson"
+"setcustomobjectivetext"		"setcustomobjectivetext"
+"setdecalcolor"		"setdecalcolor"
+"setdecalposition"		"setdecalposition"
+"setdecalsize"		"setdecalsize"
+"setdecalvisible"		"setdecalvisible"
+"setdepartbuttonavailable"		"setdepartbuttonavailable"
+"seteggorbdata"		"seteggorbdata"
+"setfactorywares"		"setfactorywares"
+"setfieldcell"		"setfieldcell"
+"setfieldrect"		"setfieldrect"
+"setflow"		"setflow"
+"setgamemessagetext"		"setgamemessagetext"
+"setgloballist"		"setgloballist"
+"setglobaltable"		"setglobaltable"
+"setlegalunitcells"		"setlegalunitcells"
+"setlistelement"		"setlistelement"
+"setlistelementrpn"		"setlistelementrpn"
+"setmappanenabled"		"setmappanenabled"
+"setmaprotateenabled"		"setmaprotateenabled"
+"setmapzoomenabled"		"setmapzoomenabled"
+"setmeshhealth"		"setmeshhealth"
+"setmissionobjectiveenabled"		"setmissionobjectiveenabled"
+"setmissionobjectiverequired"		"setmissionobjectiverequired"
+"setmsgbutton"		"setmsgbutton"
+"setmversecreatesunitghost"		"setmversecreatesunitghost"
+"setmversesendcreeperchanges"		"setmversesendcreeperchanges"
+"setobjactive"		"setobjactive"
+"setobjcolor"		"setobjcolor"
+"setobjforward"		"setobjforward"
+"setobjlightconevisible"		"setobjlightconevisible"
+"setobjposition"		"setobjposition"
+"setobjrotation"		"setobjrotation"
+"setobjscale"		"setobjscale"
+"setobjtext"		"setobjtext"
+"setobjtextbillboard"		"setobjtextbillboard"
+"setobjtextcolor"		"setobjtextcolor"
+"setobjtextfontsize"		"setobjtextfontsize"
+"setorbitalcount"		"setorbitalcount"
+"setpause"		"setpause"
+"setprintprefixenabled"		"setprintprefixenabled"
+"setraster"		"setraster"
+"setrasterc"		"setrasterc"
+"setrastersize"		"setrastersize"
+"setregisteredscriptvar"		"setregisteredscriptvar"
+"setrplcam"		"setrplcam"
+"setrplcamcursorlock"		"setrplcamcursorlock"
+"setrplcamforward"		"setrplcamforward"
+"setrplcamposition"		"setrplcamposition"
+"setrplcamright"		"setrplcamright"
+"setrplcamrotation"		"setrplcamrotation"
+"setrplcamup"		"setrplcamup"
+"setscript1var"		"setscript1var"
+"setscriptvar"		"setscriptvar"
+"setsoylentcount"		"setsoylentcount"
+"setsoylentdelay"		"setsoylentdelay"
+"setsoylentmode"		"setsoylentmode"
+"settableelement"		"settableelement"
+"settableelementrpn"		"settableelementrpn"
+"setterraformactivecell"		"setterraformactivecell"
+"setterraformmarker"		"setterraformmarker"
+"setterrain"		"setterrain"
+"setterraininrange"		"setterraininrange"
+"setterrainline"		"setterrainline"
+"setterrainoverride"		"setterrainoverride"
+"setterrainspecial"		"setterrainspecial"
+"setthemeclifflight"		"setthemeclifflight"
+"setthemeclifflightboost"		"setthemeclifflightboost"
+"setthemecliffnormal"		"setthemecliffnormal"
+"setthemecliffnormalamt"		"setthemecliffnormalamt"
+"setthemecliffnormalscale"		"setthemecliffnormalscale"
+"setthemecliffscale"		"setthemecliffscale"
+"setthemeclifftexture"		"setthemeclifftexture"
+"setthemenormal"		"setthemenormal"
+"setthemenormalamt"		"setthemenormalamt"
+"setthemenormalscale"		"setthemenormalscale"
+"setthemeoverlayapplytocliffs"		"setthemeoverlayapplytocliffs"
+"setthemeoverlaycolor"		"setthemeoverlaycolor"
+"setthemeoverlayenabled"		"setthemeoverlayenabled"
+"setthemeoverlayoffset"		"setthemeoverlayoffset"
+"setthemeoverlaypixels"		"setthemeoverlaypixels"
+"setthemeoverlaypointfilter"		"setthemeoverlaypointfilter"
+"setthemeoverlayrectpixels"		"setthemeoverlayrectpixels"
+"setthemeoverlayscale"		"setthemeoverlayscale"
+"setthemetexture"		"setthemetexture"
+"setthemetexturedetile"		"setthemetexturedetile"
+"setthemetexturelight"		"setthemetexturelight"
+"setthemetexturelightboost"		"setthemetexturelightboost"
+"setthemetexturescale"		"setthemetexturescale"
+"settimer0"		"settimer0"
+"settimer1"		"settimer1"
+"settimer2"		"settimer2"
+"settimer3"		"settimer3"
+"settimerobeypause0"		"settimerobeypause0"
+"settimerobeypause1"		"settimerobeypause1"
+"settimerobeypause2"		"settimerobeypause2"
+"settimerobeypause3"		"settimerobeypause3"
+"settotemactivated"		"settotemactivated"
+"setundercreepereffectenabled"		"setundercreepereffectenabled"
+"setunitammo"		"setunitammo"
+"setunitammoware"		"setunitammoware"
+"setunitanticreeperdamages"		"setunitanticreeperdamages"
+"setunitarmed"		"setunitarmed"
+"setunitbuildlimit"		"setunitbuildlimit"
+"setunitbuildware"		"setunitbuildware"
+"setunitcanbuild"		"setunitcanbuild"
+"setunitcandestroy"		"setunitcandestroy"
+"setunitcanmove"		"setunitcanmove"
+"setunitcanstun"		"setunitcanstun"
+"setunitcell"		"setunitcell"
+"setunitconnectable"		"setunitconnectable"
+"setunitcreeperdamages"		"setunitcreeperdamages"
+"setunitdamagedbyac"		"setunitdamagedbyac"
+"setunitdamagedbycreeper"		"setunitdamagedbycreeper"
+"setunitdebugtext"		"setunitdebugtext"
+"setunitdestroyunevenland"		"setunitdestroyunevenland"
+"setunitenabled"		"setunitenabled"
+"setuniternsimulated"		"setuniternsimulated"
+"setunitfireoffset"		"setunitfireoffset"
+"setunitfootprintresistscreeperheight"		"setunitfootprintresistscreeperheight"
+"setunitforward"		"setunitforward"
+"setunitgrowsmesh"		"setunitgrowsmesh"
+"setunithealrate"		"setunithealrate"
+"setunithealth"		"setunithealth"
+"setunitlosenabled"		"setunitlosenabled"
+"setunitmaxammo"		"setunitmaxammo"
+"setunitmaxhealth"		"setunitmaxhealth"
+"setunitminimapimage"		"setunitminimapimage"
+"setunitminimapimagecolor"		"setunitminimapimagecolor"
+"setunitminimaptext"		"setunitminimaptext"
+"setunitminimaptimetoevent"		"setunitminimaptimetoevent"
+"setunitmodranges"		"setunitmodranges"
+"setunitmovecell"		"setunitmovecell"
+"setunitoccupiesland"		"setunitoccupiesland"
+"setunitorientation"		"setunitorientation"
+"setunitoutlinecolor"		"setunitoutlinecolor"
+"setunitoutlineenabled"		"setunitoutlineenabled"
+"setunitoutlinemode"		"setunitoutlinemode"
+"setunitoutlinewidth"		"setunitoutlinewidth"
+"setunitpacketrequestrate"		"setunitpacketrequestrate"
+"setunitpopupenabled"		"setunitpopupenabled"
+"setunitpopuptext0"		"setunitpopuptext0"
+"setunitpopuptext1"		"setunitpopuptext1"
+"setunitposition"		"setunitposition"
+"setunitrange"		"setunitrange"
+"setunitrequestpackets"		"setunitrequestpackets"
+"setunitrotation"		"setunitrotation"
+"setunitselectable"		"setunitselectable"
+"setunitselected"		"setunitselected"
+"setunitsettings"		"setunitsettings"
+"setunitshieldrange"		"setunitshieldrange"
+"setunitshieldvisible"		"setunitshieldvisible"
+"setunitspecialtarget"		"setunitspecialtarget"
+"setunitspecifiedtarget"		"setunitspecifiedtarget"
+"setunitspecifiedtargetoccupiesmap"		"setunitspecifiedtargetoccupiesmap"
+"setunitspecifiedtargetpathheight"		"setunitspecifiedtargetpathheight"
+"setunitspecifiedtargetpathsourceoffset"		"setunitspecifiedtargetpathsourceoffset"
+"setunitspecifiedtargetshowpath"		"setunitspecifiedtargetshowpath"
+"setunitsselectable"		"setunitsselectable"
+"setunitstuncount"		"setunitstuncount"
+"setunitsupplied"		"setunitsupplied"
+"setunitsuppresscount"		"setunitsuppresscount"
+"setunitsuppressedmovement"		"setunitsuppressedmovement"
+"setunittargetoffset"		"setunittargetoffset"
+"setunituioptions"		"setunituioptions"
+"setunituistate"		"setunituistate"
+"setunituitext"		"setunituitext"
+"setvoidheight"		"setvoidheight"
+"setwallcharged"		"setwallcharged"
+"shortestangle"		"shortestangle"
+"showadamessage"		"showadamessage"
+"showadamessageatcell"		"showadamessageatcell"
+"showadamessageatunit"		"showadamessageatunit"
+"showgamemessage"		"showgamemessage"
+"showraster"		"showraster"
+"showterrainrangeindicator"		"showterrainrangeindicator"
+"showuiindicator"		"showuiindicator"
+"sign"		"sign"
+"sign0"		"sign0"
+"signalgenerator"		"signalgenerator"
+"sin"		"sin"
+"getspecialtargets"		"getspecialtargets"
+"split"		"split"
+"sqrmagnitude"		"sqrmagnitude"
+"sqrt"		"sqrt"
+"stacksize"		"stacksize"
+"startswith"		"startswith"
+"stopconsole"		"stopconsole"
+"stopsoundloop"		"stopsoundloop"
+"stringlength"		"stringlength"
+"stringreplace"		"stringreplace"
+"stringtolist"		"stringtolist"
+"stununit"		"stununit"
+"stununitsinrange"		"stununitsinrange"
+"sub"		"sub"
+"substring"		"substring"
+"suppresstotemactivation"		"suppresstotemactivation"
+"swap"		"swap"
+"switch"		"switch"
+"tab"		"tab"
+"table"		"table"
+"tablen"		"tablen"
+"tan"		"tan"
+"tau"		"tau"
+"threehalvespi"		"threehalvespi"
+"threequarterpi"		"threequarterpi"
+"tocell"		"tocell"
+"tolower"		"tolower"
+"toupper"		"toupper"
+"trace"		"trace"
+"trace2"		"trace2"
+"trace3"		"trace3"
+"trace4"		"trace4"
+"trace5"		"trace5"
+"traceall"		"traceall"
+"traceallsp"		"traceallsp"
+"tracestack"		"tracestack"
+"true"		"true"
+"twopi"		"twopi"
+"ufc"		"ufc"
+"unattachbeam"		"unattachbeam"
+"uselegalunitcells"		"uselegalunitcells"
+"v2"		"v2"
+"v3"		"v3"
+"v4"		"v4"
+"vector0"		"vector0"
+"vectorangle"		"vectorangle"
+"vectoranglecell"		"vectoranglecell"
+"while"		"while"
+"xor"		"xor"
+
+) ->apiTable
+
+:abs abs
+:acos acos
+:acquiremissionobjective acquiremissionobjective
+:add add
+:addaswareholder addaswareholder
+:addcreeper addcreeper
+:addcreeperinrange addcreeperinrange
+:addcreeperwithcap addcreeperwithcap
+:addcreeperwithcapinrange addcreeperwithcapinrange
+:and and
+:appendstacktolist appendstacktolist
+:appendtolist appendtolist
+:applytheme applytheme
+:applytodamagemap applytodamagemap
+:approximately approximately
+:asfloat asfloat
+:asin asin
+:asint asint
+:asstring asstring
+:atan atan
+:atan2 atan2
+:attachbeam attachbeam
+:avg2 avg2
+:ballisticarclateral ballisticarclateral
+:ballisticarcpos ballisticarcpos
+:blitfaderaster blitfaderaster
+:blitraster blitraster
+:bounceedgecollision bounceedgecollision
+:bouncefadeblack bouncefadeblack
+:bounceterraincollision bounceterraincollision
+# :break break
+:cancel cancel
+# :case case
+:ceil ceil
+:clamp clamp
+:clamp01 clamp01
+:clearglobals clearglobals
+:clearlist clearlist
+:clearlocals clearlocals
+:clearprintlog clearprintlog
+:clearraster clearraster
+:clearstack clearstack
+:clearthemeoverlay clearthemeoverlay
+:cleartracelog cleartracelog
+:clearunitspecifiedtarget clearunitspecifiedtarget
+:clearunitstun clearunitstun
+:clipcreeperline clipcreeperline
+:closegamemessage closegamemessage
+:concat concat
+:concat3 concat3
+:concat4 concat4
+:constructunit constructunit
+:convertactocreeper convertactocreeper
+:convertcreepertoac convertcreepertoac
+:copy copy
+:cos cos
+:cr cr
+:createbeam createbeam
+:createeffect createeffect
+:createegg createegg
+:createlist createlist
+:createliststartingsize createliststartingsize
+:createmissile createmissile
+:createmist createmist
+:createorb createorb
+:createsnipershot createsnipershot
+:createtable createtable
+:createthemeoverlay createthemeoverlay
+:createtrail createtrail
+:createunit createunit
+:createunitonterrain createunitonterrain
+:cross cross
+:damagecreeper damagecreeper
+:damagemesh damagemesh
+:damageunit damageunit
+:debug debug
+:debugallsp debugallsp
+:deepcopy deepcopy
+:deg2rad deg2rad
+:deletemcsentry deletemcsentry
+:deployunitshield deployunitshield
+:deregisterformsg deregisterformsg
+:deregisterscript deregisterscript
+:destroyallattachedbeams destroyallattachedbeams
+:destroyallbeams destroyallbeams
+:destroybeam destroybeam
+:destroyterrainrangeindicator destroyterrainrangeindicator
+:destroythemeoverlay destroythemeoverlay
+:destroytrail destroytrail
+:destroyunit destroyunit
+:distance distance
+:distancecell distancecell
+:distancepointline distancepointline
+:div div
+# :do do
+:dot dot
+:dq dq
+:dup dup
+:dup2 dup2
+:e e
+:editaddundo editaddundo
+:editredo editredo
+:editrestoreundo editrestoreundo
+:elapsedtime elapsedtime
+# :else else
+# :endcase endcase
+# :endif endif
+:endmission endmission
+# :endonce endonce
+# :endswitch endswitch
+:endswith endswith
+# :endwhile endwhile
+:eq eq
+:eq0 eq0
+:ev2 ev2
+:ev3 ev3
+:ev4 ev4
+:false false
+:fc fc
+:findunitenemy findunitenemy
+:floodfillterrain floodfillterrain
+:floor floor
+:fromcell fromcell
+:generateenergy generateenergy
+:getadalogopen getadalogopen
+:getbuildunit getbuildunit
+:getcameramode getcameramode
+:getcameraposition getcameraposition
+:getcamerarotation getcamerarotation
+:getcameratopdown getcameratopdown
+:getcanmoveunits getcanmoveunits
+:getcelloccupiedcount getcelloccupiedcount
+:getcreeper getcreeper
+:getcreepercoverage getcreepercoverage
+:getcreepercutoff getcreepercutoff
+:getcreeperinrange getcreeperinrange
+:getcreeperwithdamagemap getcreeperwithdamagemap
+:getcrimson getcrimson
+:getdecalcolor getdecalcolor
+:getdecalposition getdecalposition
+:getdecalsize getdecalsize
+:getdecalvisible getdecalvisible
+:getecocounts getecocounts
+:geteditmode geteditmode
+:getenergybonus getenergybonus
+:getenergyeco getenergyeco
+:getenergygeneration getenergygeneration
+:getenergystore getenergystore
+:getenergyuse getenergyuse
+:geternportal geternportal
+:geternportalefficiency geternportalefficiency
+:getexactcreeperheight getexactcreeperheight
+:getexactterrain getexactterrain
+:getexactterrainandnormal getexactterrainandnormal
+:getexactterrainwithshield getexactterrainwithshield
+:getfactory getfactory
+:getfactorywares getfactorywares
+:getfieldcell getfieldcell
+:getfinaldialogopen getfinaldialogopen
+:getflow getflow
+:getgameframecount getgameframecount
+:getgametickcount getgametickcount
+:getgameupdatecount getgameupdatecount
+:getgloballist getgloballist
+:getglobaltable getglobaltable
+:getkey getkey
+:getkeydown getkeydown
+:getlastexecutioncount getlastexecutioncount
+:getlistcount getlistcount
+:getlistelement getlistelement
+:getlistindex getlistindex
+:getlistindices getlistindices
+:getmappedkey getmappedkey
+:getmappedkeydown getmappedkeydown
+:getmappedkeystrings getmappedkeystrings
+:getmapsize getmapsize
+:getmaxaccell getmaxaccell
+:getmaxcreepercell getmaxcreepercell
+:getmaxcreepercellwithdamage getmaxcreepercellwithdamage
+:getmcsentries getmcsentries
+:getmeshhealth getmeshhealth
+:getminaccell getminaccell
+:getmincreepercell getmincreepercell
+:getmincreepercellwithdamage getmincreepercellwithdamage
+:getminermode getminermode
+:getmissionobjectiveenabled getmissionobjectiveenabled
+:getmissionobjectiverequired getmissionobjectiverequired
+:getmissionobjectivestate getmissionobjectivestate
+:getmissionscancomplete getmissionscancomplete
+:getmousebutton getmousebutton
+:getmousebuttondown getmousebuttondown
+:getmousebuttonup getmousebuttonup
+:getmousedelta getmousedelta
+:getmousescrolldelta getmousescrolldelta
+:getmverseplayernum getmverseplayernum
+:getmverseplayers getmverseplayers
+:getnearestairsac getnearestairsac
+:getnearestsnipertarget getnearestsnipertarget
+:getnearestspore getnearestspore
+:getobjactive getobjactive
+:getobjcolor getobjcolor
+:getobjfacingangle getobjfacingangle
+:getobjfacinganglecell getobjfacinganglecell
+:getobjforward getobjforward
+:getobjposition getobjposition
+:getobjrotation getobjrotation
+:getobjscale getobjscale
+:getopenbuildtab getopenbuildtab
+:getorbitalcount getorbitalcount
+:getpause getpause
+:getpointerterraincoords getpointerterraincoords
+:getprintprefixenabled getprintprefixenabled
+:getrandmapcell getrandmapcell
+:getregisteredscriptvar getregisteredscriptvar
+:getriftlab getriftlab
+:getrplcamforward getrplcamforward
+:getrplcamposition getrplcamposition
+:getrplcamright getrplcamright
+:getrplcamrotation getrplcamrotation
+:getrplcamup getrplcamup
+:getscript1var getscript1var
+:getscriptvar getscriptvar
+:getselectedunits getselectedunits
+:getsoylentmode getsoylentmode
+:gettablecount gettablecount
+:gettableelement gettableelement
+:gettablekeys gettablekeys
+:gettablevalues gettablevalues
+:getterraformdigsite getterraformdigsite
+:getterraformmarker getterraformmarker
+:getterraformmenuopen getterraformmenuopen
+:getterrain getterrain
+:getterrainlos getterrainlos
+:getterrainoverride getterrainoverride
+:getterrainspecial getterrainspecial
+:getterrainvector getterrainvector
+:getthemeclifflight getthemeclifflight
+:getthemeclifflightboost getthemeclifflightboost
+:getthemecliffnormal getthemecliffnormal
+:getthemecliffnormalamt getthemecliffnormalamt
+:getthemecliffnormalscale getthemecliffnormalscale
+:getthemecliffscale getthemecliffscale
+:getthemeclifftexture getthemeclifftexture
+:getthemenormal getthemenormal
+:getthemenormalamt getthemenormalamt
+:getthemenormalscale getthemenormalscale
+:getthemetexture getthemetexture
+:getthemetexturedetile getthemetexturedetile
+:getthemetexturelight getthemetexturelight
+:getthemetexturelightboost getthemetexturelightboost
+:getthemetexturescale getthemetexturescale
+:gettimer0 gettimer0
+:gettimer1 gettimer1
+:gettimer2 gettimer2
+:gettimer3 gettimer3
+:gettimestring gettimestring
+:gettotalac gettotalac
+:gettotalcreeper gettotalcreeper
+:gettotemactivated gettotemactivated
+:gettype gettype
+:getundercreepereffectenabled getundercreepereffectenabled
+:getunitammo getunitammo
+:getunitammoware getunitammoware
+:getunitanticreeperdamages getunitanticreeperdamages
+:getunitarmed getunitarmed
+:getunitbuildlimit getunitbuildlimit
+:getunitbuildware getunitbuildware
+:getunitcanbuild getunitcanbuild
+:getunitcandestroy getunitcandestroy
+:getunitcanmove getunitcanmove
+:getunitcanstun getunitcanstun
+:getunitcell getunitcell
+:getunitconnectable getunitconnectable
+:getunitconnectedtoriftlab getunitconnectedtoriftlab
+:getunitconstructing getunitconstructing
+:getunitconstructingdata getunitconstructingdata
+:getunitcount getunitcount
+:getunitcreeperdamages getunitcreeperdamages
+:getunitdamagedbyac getunitdamagedbyac
+:getunitdamagedbycreeper getunitdamagedbycreeper
+:getunitdestroyed getunitdestroyed
+:getunitdestroyunevenland getunitdestroyunevenland
+:getunitenabled getunitenabled
+:getuniternsimulated getuniternsimulated
+:getuniternstate getuniternstate
+:getunitfireoffset getunitfireoffset
+:getunitfootprintresistscreeperheight getunitfootprintresistscreeperheight
+:getunitforward getunitforward
+:getunitgrowsmesh getunitgrowsmesh
+:getunithealrate getunithealrate
+:getunithealth getunithealth
+:getunitincreeper getunitincreeper
+:getunitlosenabled getunitlosenabled
+:getunitmaxammo getunitmaxammo
+:getunitmaxhealth getunitmaxhealth
+:getunitmovecell getunitmovecell
+:getunitoccupiesland getunitoccupiesland
+:getunitofficialname getunitofficialname
+:getunitorientation getunitorientation
+:getunitpacketrequestrate getunitpacketrequestrate
+:getunitposition getunitposition
+:getunitrange getunitrange
+:getunitrangewithmods getunitrangewithmods
+:getunitrequestpackets getunitrequestpackets
+:getunitrotation getunitrotation
+:getunits getunits
+:getunitsbytype getunitsbytype
+:getunitselectable getunitselectable
+:getunitselected getunitselected
+:getunitsettings getunitsettings
+:getunitshieldrange getunitshieldrange
+:getunitsinrange getunitsinrange
+:getunitspecialtarget getunitspecialtarget
+:getunitspecifiedtarget getunitspecifiedtarget
+:getunitstuncount getunitstuncount
+:getunitsupplied getunitsupplied
+:getunitsuppresscount getunitsuppresscount
+:getunitsuppressedmovement getunitsuppressedmovement
+:getunittargetoffset getunittargetoffset
+:getunittrueguid getunittrueguid
+:getunittype getunittype
+:getunituioptions getunituioptions
+:getunituistate getunituistate
+:getunituitext getunituitext
+:getunitupdatecount getunitupdatecount
+:getvoidheight getvoidheight
+:gt gt
+:gt0 gt0
+:gte gte
+:gte0 gte0
+:halfpi halfpi
+:i i
+# :if if
+:insertlistelement insertlistelement
+:invocationcount invocationcount
+:isadamessageread isadamessageread
+:isadamessageshowing isadamessageshowing
+:isbeam isbeam
+:isbuildunitselected isbuildunitselected
+:iscreepercutoff iscreepercutoff
+:isgamemessageshowing isgamemessageshowing
+:ismissioncomplete ismissioncomplete
+:isnull isnull
+:isv2inmap isv2inmap
+:isv3inmap isv3inmap
+:j j
+:k k
+:lf lf
+:list list
+:listcontains listcontains
+:listn listn
+:ln ln
+:log log
+:log10 log10
+# :loop loop
+:lt lt
+:lt0 lt0
+:lte lte
+:lte0 lte0
+:magnitude magnitude
+:max max
+:min min
+:mod mod
+:mod2 mod2
+:movetowards movetowards
+:movetowardsandavoid movetowardsandavoid
+:movetowardscellandavoid movetowardscellandavoid
+:mul mul
+:getnearestspecialtarget getnearestspecialtarget
+:neg neg
+:neq neq
+:neq0 neq0
+:normalize normalize
+:not not
+:notpersist notpersist
+:null null
+# :once once
+:or or
+:pi pi
+:playsound playsound
+:playsoundatposition playsoundatposition
+:playsoundloop playsoundloop
+:pop pop
+:poplist poplist
+:pow pow
+:prependstacktolist prependstacktolist
+:prependtolist prependtolist
+:print print
+:print2 print2
+:print3 print3
+:print4 print4
+:print5 print5
+:printall printall
+:printallsp printallsp
+:printstack printstack
+:pushlist pushlist
+:quarterpi quarterpi
+:rad2deg rad2deg
+:randfloat randfloat
+:randint randint
+:rastercolor rastercolor
+:refcall refcall
+:refreshunitloscache refreshunitloscache
+:registerformsg registerformsg
+:registerscript registerscript
+:removeaswareholder removeaswareholder
+:removelistelement removelistelement
+:removetableelement removetableelement
+:removeunitdamagemap removeunitdamagemap
+:removewhitespace removewhitespace
+# :repeat repeat
+:resetcamera resetcamera
+# :return return
+:reverselist reverselist
+:rotateobj rotateobj
+:rotateobjtowards rotateobjtowards
+:rotateobjtowardscell rotateobjtowardscell
+:rotatetowards rotatetowards
+:rotatetowardscell rotatetowardscell
+:rotateunit rotateunit
+:rotateunittowards rotateunittowards
+:rotateunittowardscell rotateunittowardscell
+:round round
+:rplcamcopyposandrot rplcamcopyposandrot
+:rplcamtween rplcamtween
+:rplcamtweenlookat rplcamtweenlookat
+:sendmsg sendmsg
+:sendmversemsg sendmversemsg
+:setadalogopen setadalogopen
+:setalllegalunitcells setalllegalunitcells
+:setbeambrightness setbeambrightness
+:setbeamcolor setbeamcolor
+:setbeamend setbeamend
+:setbeamforcelocalend setbeamforcelocalend
+:setbeamstart setbeamstart
+:setbeamvisible setbeamvisible
+:setbeamwidth setbeamwidth
+:setcameraposition setcameraposition
+:setcamerarotation setcamerarotation
+:setcameratopdown setcameratopdown
+:setcanmoveunits setcanmoveunits
+:setcelloccupiedcount setcelloccupiedcount
+:setcmodeditmenuname setcmodeditmenuname
+:setcmodplayermenuname setcmodplayermenuname
+:setcreeper setcreeper
+:setcreepercutoff setcreepercutoff
+:setcreepergraphavailable setcreepergraphavailable
+:setcreeperinrange setcreeperinrange
+:setcrimson setcrimson
+:setcustomobjectivetext setcustomobjectivetext
+:setdecalcolor setdecalcolor
+:setdecalposition setdecalposition
+:setdecalsize setdecalsize
+:setdecalvisible setdecalvisible
+:setdepartbuttonavailable setdepartbuttonavailable
+:seteggorbdata seteggorbdata
+:setfactorywares setfactorywares
+:setfieldcell setfieldcell
+:setfieldrect setfieldrect
+:setflow setflow
+:setgamemessagetext setgamemessagetext
+:setgloballist setgloballist
+:setglobaltable setglobaltable
+:setlegalunitcells setlegalunitcells
+:setlistelement setlistelement
+:setlistelementrpn setlistelementrpn
+:setmappanenabled setmappanenabled
+:setmaprotateenabled setmaprotateenabled
+:setmapzoomenabled setmapzoomenabled
+:setmeshhealth setmeshhealth
+:setmissionobjectiveenabled setmissionobjectiveenabled
+:setmissionobjectiverequired setmissionobjectiverequired
+:setmsgbutton setmsgbutton
+:setmversecreatesunitghost setmversecreatesunitghost
+:setmversesendcreeperchanges setmversesendcreeperchanges
+:setobjactive setobjactive
+:setobjcolor setobjcolor
+:setobjforward setobjforward
+:setobjlightconevisible setobjlightconevisible
+:setobjposition setobjposition
+:setobjrotation setobjrotation
+:setobjscale setobjscale
+:setobjtext setobjtext
+:setobjtextbillboard setobjtextbillboard
+:setobjtextcolor setobjtextcolor
+:setobjtextfontsize setobjtextfontsize
+:setorbitalcount setorbitalcount
+:setpause setpause
+:setprintprefixenabled setprintprefixenabled
+:setraster setraster
+:setrasterc setrasterc
+:setrastersize setrastersize
+:setregisteredscriptvar setregisteredscriptvar
+:setrplcam setrplcam
+:setrplcamcursorlock setrplcamcursorlock
+:setrplcamforward setrplcamforward
+:setrplcamposition setrplcamposition
+:setrplcamright setrplcamright
+:setrplcamrotation setrplcamrotation
+:setrplcamup setrplcamup
+:setscript1var setscript1var
+:setscriptvar setscriptvar
+:setsoylentcount setsoylentcount
+:setsoylentdelay setsoylentdelay
+:setsoylentmode setsoylentmode
+:settableelement settableelement
+:settableelementrpn settableelementrpn
+:setterraformactivecell setterraformactivecell
+:setterraformmarker setterraformmarker
+:setterrain setterrain
+:setterraininrange setterraininrange
+:setterrainline setterrainline
+:setterrainoverride setterrainoverride
+:setterrainspecial setterrainspecial
+:setthemeclifflight setthemeclifflight
+:setthemeclifflightboost setthemeclifflightboost
+:setthemecliffnormal setthemecliffnormal
+:setthemecliffnormalamt setthemecliffnormalamt
+:setthemecliffnormalscale setthemecliffnormalscale
+:setthemecliffscale setthemecliffscale
+:setthemeclifftexture setthemeclifftexture
+:setthemenormal setthemenormal
+:setthemenormalamt setthemenormalamt
+:setthemenormalscale setthemenormalscale
+:setthemeoverlayapplytocliffs setthemeoverlayapplytocliffs
+:setthemeoverlaycolor setthemeoverlaycolor
+:setthemeoverlayenabled setthemeoverlayenabled
+:setthemeoverlayoffset setthemeoverlayoffset
+:setthemeoverlaypixels setthemeoverlaypixels
+:setthemeoverlaypointfilter setthemeoverlaypointfilter
+:setthemeoverlayrectpixels setthemeoverlayrectpixels
+:setthemeoverlayscale setthemeoverlayscale
+:setthemetexture setthemetexture
+:setthemetexturedetile setthemetexturedetile
+:setthemetexturelight setthemetexturelight
+:setthemetexturelightboost setthemetexturelightboost
+:setthemetexturescale setthemetexturescale
+:settimer0 settimer0
+:settimer1 settimer1
+:settimer2 settimer2
+:settimer3 settimer3
+:settimerobeypause0 settimerobeypause0
+:settimerobeypause1 settimerobeypause1
+:settimerobeypause2 settimerobeypause2
+:settimerobeypause3 settimerobeypause3
+:settotemactivated settotemactivated
+:setundercreepereffectenabled setundercreepereffectenabled
+:setunitammo setunitammo
+:setunitammoware setunitammoware
+:setunitanticreeperdamages setunitanticreeperdamages
+:setunitarmed setunitarmed
+:setunitbuildlimit setunitbuildlimit
+:setunitbuildware setunitbuildware
+:setunitcanbuild setunitcanbuild
+:setunitcandestroy setunitcandestroy
+:setunitcanmove setunitcanmove
+:setunitcanstun setunitcanstun
+:setunitcell setunitcell
+:setunitconnectable setunitconnectable
+:setunitcreeperdamages setunitcreeperdamages
+:setunitdamagedbyac setunitdamagedbyac
+:setunitdamagedbycreeper setunitdamagedbycreeper
+:setunitdebugtext setunitdebugtext
+:setunitdestroyunevenland setunitdestroyunevenland
+:setunitenabled setunitenabled
+:setuniternsimulated setuniternsimulated
+:setunitfireoffset setunitfireoffset
+:setunitfootprintresistscreeperheight setunitfootprintresistscreeperheight
+:setunitforward setunitforward
+:setunitgrowsmesh setunitgrowsmesh
+:setunithealrate setunithealrate
+:setunithealth setunithealth
+:setunitlosenabled setunitlosenabled
+:setunitmaxammo setunitmaxammo
+:setunitmaxhealth setunitmaxhealth
+:setunitminimapimage setunitminimapimage
+:setunitminimapimagecolor setunitminimapimagecolor
+:setunitminimaptext setunitminimaptext
+:setunitminimaptimetoevent setunitminimaptimetoevent
+:setunitmodranges setunitmodranges
+:setunitmovecell setunitmovecell
+:setunitoccupiesland setunitoccupiesland
+:setunitorientation setunitorientation
+:setunitoutlinecolor setunitoutlinecolor
+:setunitoutlineenabled setunitoutlineenabled
+:setunitoutlinemode setunitoutlinemode
+:setunitoutlinewidth setunitoutlinewidth
+:setunitpacketrequestrate setunitpacketrequestrate
+:setunitpopupenabled setunitpopupenabled
+:setunitpopuptext0 setunitpopuptext0
+:setunitpopuptext1 setunitpopuptext1
+:setunitposition setunitposition
+:setunitrange setunitrange
+:setunitrequestpackets setunitrequestpackets
+:setunitrotation setunitrotation
+:setunitselectable setunitselectable
+:setunitselected setunitselected
+:setunitsettings setunitsettings
+:setunitshieldrange setunitshieldrange
+:setunitshieldvisible setunitshieldvisible
+:setunitspecialtarget setunitspecialtarget
+:setunitspecifiedtarget setunitspecifiedtarget
+:setunitspecifiedtargetoccupiesmap setunitspecifiedtargetoccupiesmap
+:setunitspecifiedtargetpathheight setunitspecifiedtargetpathheight
+:setunitspecifiedtargetpathsourceoffset setunitspecifiedtargetpathsourceoffset
+:setunitspecifiedtargetshowpath setunitspecifiedtargetshowpath
+:setunitsselectable setunitsselectable
+:setunitstuncount setunitstuncount
+:setunitsupplied setunitsupplied
+:setunitsuppresscount setunitsuppresscount
+:setunitsuppressedmovement setunitsuppressedmovement
+:setunittargetoffset setunittargetoffset
+:setunituioptions setunituioptions
+:setunituistate setunituistate
+:setunituitext setunituitext
+:setvoidheight setvoidheight
+:setwallcharged setwallcharged
+:shortestangle shortestangle
+:showadamessage showadamessage
+:showadamessageatcell showadamessageatcell
+:showadamessageatunit showadamessageatunit
+:showgamemessage showgamemessage
+:showraster showraster
+:showterrainrangeindicator showterrainrangeindicator
+:showuiindicator showuiindicator
+:sign sign
+:sign0 sign0
+:signalgenerator signalgenerator
+:sin sin
+:getspecialtargets getspecialtargets
+:split split
+:sqrmagnitude sqrmagnitude
+:sqrt sqrt
+:stacksize stacksize
+:startswith startswith
+:stopconsole stopconsole
+:stopsoundloop stopsoundloop
+:stringlength stringlength
+:stringreplace stringreplace
+:stringtolist stringtolist
+:stununit stununit
+:stununitsinrange stununitsinrange
+:sub sub
+:substring substring
+:suppresstotemactivation suppresstotemactivation
+:swap swap
+# :switch switch
+:tab tab
+:table table
+:tablen tablen
+:tan tan
+:tau tau
+:threehalvespi threehalvespi
+:threequarterpi threequarterpi
+:tocell tocell
+:tolower tolower
+:toupper toupper
+:trace trace
+:trace2 trace2
+:trace3 trace3
+:trace4 trace4
+:trace5 trace5
+:traceall traceall
+:traceallsp traceallsp
+:tracestack tracestack
+:true true
+:twopi twopi
+:ufc ufc
+:unattachbeam unattachbeam
+:uselegalunitcells uselegalunitcells
+:v2 v2
+:v3 v3
+:v4 v4
+:vector0 vector0
+:vectorangle vectorangle
+:vectoranglecell vectoranglecell
+# :while while
+:xor xor

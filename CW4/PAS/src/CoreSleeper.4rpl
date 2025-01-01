@@ -1,0 +1,378 @@
+# --CoreSleeper-- 7/6/2023 4:06:52 PM
+
+#Basic logic that is required for all sleeper units to function
+#Manages unit health, ammo, construction, emitting creeper, unit UI description, and outline.
+
+$MESH_DAMAGE_AMT:0.05 #Set to 0 to disable
+$DOES_UNIT_MOVE:1 #Slightly speeds up execution by not checking unit landed state if off
+$NO_CREEPER_DAMAGE_AMT:0.01
+$UNIT_HEAL_RATE:0.001
+
+$RESIST_DMG_AT_START:0 #Makes the unit take no damage from lack of creeper until it first encounters creeper
+$ENABLE_CONSTRUCTION:1 #Allows the unit to construct itself using creeper from under itself
+$WAIT_FOR_MITE:1 #PAS: sends a sleeper mite from the lab before building itself (Not in edit mode)
+$CONSTRUCT_MAX:5.0
+$ENABLE_AMMO:1 #Allows the unit to fill its ammo with creeper
+$RELEASE_AMMO_ON_DESTROY:1 #Releases all unused ammo as creeper when the unit is destroyed
+
+#Basic emitter function using AddCreeperInRange
+$EMIT_AMT:0
+$EMIT_RADIUS:0
+$EMIT_SQUARE:0
+$EMIT_DELAY:30
+$SCALE_EMISSION_IN_MVERSE:0 #Multiplies the output of the built-in emitter by the number of sleeper players
+
+$UNIT_DESCRIPTION:"" #Allows for longer descriptions than the game lets you put into a label field. Will do nothing if left blank.
+$UNIT_DESCRIPTION_SLOT:0 #UI slot that is the label for a description
+$UNIT_OUTLINE_COLOR:"1 1 0 1" #Parsed as a color vector (V4), will be blue instead when constructing, but change to this when build is complete
+$UNIT_OUTLINE_WIDTH:0.7
+
+$PLAYER_CAN_DESTROY:1 #Set to 0 to disable unit destruction hotkey
+
+#MVerse Auto-sync settings (syncs player interactions to the host instance automatically)
+$AUTO_SYNC:1 #If true, creates a "ghost unit" automatically in other instances that syncs with this one.
+$ALWAYS_ALLOW_SELECT:0 #Lets any player interact with and control the unit, not just the one who built it
+$SHARE_BUILD_LIMIT:0 #If true, other instance's units of this type count towards *your* build limit too.
+$SYNC_HEALTH:1
+$SYNC_UI_STATE:1 #Will automatically sync any UI changes, but WON'T CALL UICALLBACK ON OTHER INSTANCES UNITS! This has to be checked for in the unit script.
+$SYNC_SPECIFIED_TARGET:0
+
+$$dummyGUID:"b900388f-3e10-4b6c-a879-6193ff9a01cc" #Overrides certain logic for this unit type
+$$miteGUID:"41418e9d-d7cf-4c86-a295-30a080edc1a5"
+
+if(<-wait)
+	Self false SetUnitEnabled
+	Self false SetMVerseCreatesUnitGhost
+	return
+endif
+once
+	@Init
+endonce
+
+if(<-*isMVerseHost)
+	if(Self GetUnitConstructing)
+		if(<-ENABLE_CONSTRUCTION GetTimer0 eq0 &&)
+			5 SetTimer0
+			@ConstructionLogic
+		endif
+
+		if(<-MESH_DAMAGE_AMT gt0)
+			if(<-x <-z dup2 GetMeshHealth 992,000 lt) #Something damaged mesh under the unit!
+				Self 0 0 0 DestroyUnit
+			endif
+			1,000,000 SetMeshHealth
+		endif
+	else
+		if(<-DOES_UNIT_MOVE) #Check landed state
+			if(Self GetUnitMoveCell pop gte0)
+				true ->inAir #Set a flag to change the current cell when landed
+				
+				#Remove mesh from the last cell on takeoff
+				<-x <-z -1,000,000 SetMeshHealth
+				-1 ->x -1 ->z
+				return
+			endif
+			
+			if(<-inAir) #Update the mesh cell when landed
+				false ->inAir
+				
+				#Add mesh back to the cell
+				Self GetUnitCell dup2 ->z ->x
+				1,000,000 SetMeshHealth
+				return
+			endif
+		endif
+		
+		
+		if(<-MESH_DAMAGE_AMT gt0)
+			#Damage the unit if the mesh has been damaged
+			if(<-x <-z dup2 GetMeshHealth 992,000 lt) #Something damaged mesh under the unit!
+				if(<-SYNC_HEALTH)
+					SendMVerseMsg("MVerseDamaged" <-trueGUID concat <-*MESH_DAMAGE_AMT)
+				endif
+				Self <-MESH_DAMAGE_AMT DamageUnit
+			endif
+			1,000,000 SetMeshHealth
+		endif
+		
+		#Emitter
+		if(GetTimer1 eq0 IsCreeperCutOff ! &&)
+			<-x <-z <-EMIT_RADIUS <-EMIT_SQUARE <-EMIT_AMT AddCreeperInRange
+			<-EMIT_DELAY SetTimer1
+		endif
+		
+		if(GetTimer0 eq0)
+			5 SetTimer0
+			if(<-x <-z GetCreeper lte0)
+				if(<-SYNC_HEALTH)
+					SendMVerseMsg("MVerseDamaged" <-trueGUID concat <-NO_CREEPER_DAMAGE_AMT 5 mul <-resistCreeperDmg ! mul)
+				endif
+				Self <-NO_CREEPER_DAMAGE_AMT 5 mul <-resistCreeperDmg ! mul DamageUnit
+			else
+				false ->resistCreeperDmg
+			endif
+			if(<-ENABLE_AMMO)
+				@FillAmmo
+			endif
+		endif
+	endif
+endif
+
+# if move cell changes and is in map
+if(<-*mVerseOn)
+	if(<-lastTarget Self GetUnitSpecifiedTarget dup ->lastTarget neq <-SYNC_SPECIFIED_TARGET && <-mVerseSlave ! && Self GetUnitSpecifiedTarget IsV3InMap &&)
+		SendMVerseMsg("MVerseTarget" <-trueGUID concat <-lastTarget)
+	endif
+endif
+
+:ConstructionLogic
+	Self GetUnitCell GetCreeper dup ->creeper
+	if(gt0)
+		<-constructDecimal <-creeper <-CONSTRUCT_MAX min add ->constructDecimal
+		Self GetUnitCell <-CONSTRUCT_MAX neg 0 AddCreeperWithCap
+		Self <-constructDecimal floor ConstructUnit
+		"MVerseConstruct" <-trueGUID concat
+		if(Self GetUnitConstructing)
+			<-constructDecimal floor 
+		else
+			99999 #If we're built, make sure all the other instances get built as well.
+		endif
+		SendMVerseMsg
+		<-constructDecimal dup floor sub ->constructDecimal
+	endif
+
+:FillAmmo
+	if(Self GetUnitAmmo Self GetUnitMaxAmmo eq)
+		return
+	endif
+	Self GetUnitMaxAmmo Self GetUnitAmmo sub
+	<-x <-z GetCreeper min dup ->creep
+	if(gt0)
+		Self dup GetUnitAmmo <-creep add SetUnitAmmo
+		<-x <-z <-creep neg 0 AddCreeperWithCap
+	endif
+
+:Init
+	if(<-DOES_UNIT_MOVE)
+		true ->inAir
+	endif
+	Self GetUnitCell 1,000,000 SetMeshHealth
+	Self false SetMVerseCreatesUnitGhost
+	if(<-UNIT_DESCRIPTION StringLength)
+		Self <-UNIT_DESCRIPTION_SLOT <-UNIT_DESCRIPTION SetUnitUIText
+	endif
+	if(<-mVerseSlave !)
+		SendMVerseMsg("MVerseActivate" <-trueGUID concat 1)
+	endif
+	
+:Once
+	Self false SetMVerseCreatesUnitGhost
+
+	if(<-*mVerseOn)
+		List(
+		V4(1 1 0 1)
+		V4(1 1 1 1)
+		V4(0 1 0 1)
+		V4(0.8 0 1 1)
+		) ->mVerseOutlineColors #MVerse outline override
+		if(<-SCALE_EMISSION_IN_MVERSE)
+			<-EMIT_AMT <-*sleeperPlayers mul ->EMIT_AMT
+		endif
+		RegisterForMsg("MVerseConstruct" <-trueGUID concat "MVerseConstruct")
+		if(<-SYNC_HEALTH)
+			RegisterForMsg("MVerseDamaged" <-trueGUID concat "MVerseDamaged")
+		endif
+		RegisterForMsg("MVerseQuietDestroy" <-trueGUID concat "MVerseQuietDestroy")
+		RegisterForMsg("MVerseUI" <-trueGUID concat "MVerseUI")
+		RegisterForMsg("MVerseTarget" <-trueGUID concat "MVerseTarget")
+	endif
+	
+	if(Self GetUnitConstructing <-WAIT_FOR_MITE && GetEditMode ! &&)
+		Self false SetUnitEnabled
+		true ->wait
+		if(<-mVerseSlave)
+			RegisterForMsg("MVerseActivate" <-trueGUID concat "MVerseActivate")
+		else
+			if(<-*sleeperLab lt0)
+				PlaySound("ErrorBuild" 1)
+				Self 1 1 1 DestroyUnit
+			else
+				Table("UNIT_ID" Self "UNIT_NAME" Self GetUnitOfficialName "TARGET_X" Self GetUnitCell "TARGET_Z" swap) ->initParams
+				<-miteGUID <-*sleeperLab GetUnitCell <-initParams CreateUnitOnTerrain
+			endif
+		endif
+	endif
+	Self GetUnitCell ->z ->x
+	Self <-UNIT_HEAL_RATE SetUnitHealRate
+	
+	if(Self GetUnitCell GetCreeper eq0 <-RESIST_DMG_AT_START &&)
+		true ->resistCreeperDmg
+	endif
+
+	if(<-UNIT_OUTLINE_COLOR StringLength)
+		<-UNIT_OUTLINE_COLOR " " Split ReverseList ->colorList
+		<-colorList PopList <-colorList PopList <-colorList PopList <-colorList PopList V4 
+		->outlineColor
+		Self <-UNIT_OUTLINE_WIDTH SetUnitOutlineWidth
+		Self true SetUnitOutlineEnabled
+		
+		if(<-outlineColor)
+			if(<-*mVerseOn)
+				<-mVerseOutlineColors
+				if(<-SHARE_BUILD_LIMIT)
+					GetMVersePlayerNum
+				else
+					<-homeInstance
+				endif
+				dup GetMVersePlayerNum eq ->isAtHome
+				GetListElement ->v
+				if(<-isAtHome ! <-ALWAYS_ALLOW_SELECT ! &&)
+					0.2 ->v.w
+				endif
+				<-v ->outlineColor
+			endif
+			"000000000000
+			 000000000000
+			 000000000000
+			 000000000000
+			 000021120000
+			 000011110000
+			 000011110000
+			 000021120000
+			 000000000000
+			 000000000000
+			 000000000000
+			 000000000000" RemoveWhiteSpace ->miniMapImage
+			SetUnitMiniMapImage(Self <-miniMapImage)
+			--miniMapImage
+		endif
+
+		if(Self GetUnitConstructing)
+			Self V4(0 0.8 1 0.5) dup2 SetUnitOutlineColor SetUnitMiniMapImageColor
+		else
+			Self <-outlineColor dup2 SetUnitOutlineColor SetUnitMiniMapImageColor
+		endif
+	endif
+	
+	Self GetUnitType ->type
+	if(Self GetUnitType <-dummyGUID neq)
+		<-unitAmounts{Self GetUnitType} 1 add ->unitAmounts{Self GetUnitType}
+	endif
+	
+:_Selected
+	if(<-_DATA <-PLAYER_CAN_DESTROY &&)
+		RegisterForMsg("MSG_PostUpdate" "CheckDestroy")
+	else
+		DeregisterForMsg("MSG_PostUpdate")
+	endif
+
+:CheckDestroy
+	if(Self GetUnitSelected !)
+		DeregisterForMsg("MSG_PostUpdate")
+	endif
+	if(GetMappedKeyDown("Destroy" 0))
+		true ->suppress
+		Self 1 1 1 DestroyUnit
+	endif
+
+:BuildComplete
+	if(<-UNIT_OUTLINE_COLOR StringLength)
+		Self <-outlineColor dup2 SetUnitOutlineColor SetUnitMiniMapImageColor
+		<-x <-z 1,000,000 SetMeshHealth
+	endif
+	Self false SetMVerseCreatesUnitGhost
+
+:Destroyed
+	<-x <-z -1,000,000 SetMeshHealth
+	if(<-type <-dummyGUID neq)
+		<-unitAmounts{<-type} 1 sub ->unitAmounts{<-type}
+	endif
+	if(<-mVerseSlave)
+		if(<-SHARE_BUILD_LIMIT !)
+			Self GetUnitType dup GetUnitBuildLimit 1 sub SetUnitBuildLimit
+		endif
+	endif
+	if(<-SYNC_HEALTH)
+		if(<-suppress)
+			"MVerseQuietDestroy"
+		else
+			"MVerseDamaged"
+		endif
+		<-trueGUID concat 99999 SendMVerseMsg
+	endif
+
+:Awake
+	once
+		if(Self GetUnitConstructing <-WAIT_FOR_MITE &&)
+			Self <-UNIT_DESCRIPTION_SLOT "Waiting for sleeper mite." SetUnitUIText
+		else
+			if(<-UNIT_DESCRIPTION StringLength)
+				Self <-UNIT_DESCRIPTION_SLOT <-UNIT_DESCRIPTION SetUnitUIText
+			endif
+		endif
+		
+		if(GetMVersePlayerNum gte0)
+			if(-?trueGUID !) #Player-created unit
+				false ->mVerseSlave
+				@GenerateUnitID ->trueGUID
+				#Create slave units in other instances
+				GetMVersePlayerNum ->homeInstance
+				if(<-AUTO_SYNC)
+					SendMVerseMsg("CreateMVerseSlave" ListN(Self GetUnitType Self GetUnitPosition TableN("trueGUID" <-trueGUID "homeInstance" <-homeInstance 2) 3))
+					Self TableN("trueGUID" <-trueGUID 1) SetUnitSettings #Set <-trueGUID to be the msg channel postfix for all scripts on this unit
+				endif
+			else #Script-created "ghost" unit
+				if(<-SHARE_BUILD_LIMIT !)
+					Self GetUnitType dup GetUnitBuildLimit 1 add SetUnitBuildLimit
+				endif
+				true ->mVerseSlave
+				if(<-ALWAYS_ALLOW_SELECT !)
+					Self false SetUnitSelectable #This also locks the player from giving the unit commands.
+				endif
+			endif
+		endif
+	endonce
+
+:_UICallback
+	if(<-SYNC_UI_STATE)
+		<-_DATA ->slot
+		Self <-slot GetUnitUIState ->state
+		"MVerseUI" <-trueGUID concat <-slot <-state 2 ListN SendMVerseMsg
+	endif
+
+#MVerse sync functions.
+
+:MVerseConstruct
+	Self <-_DATA ConstructUnit
+
+:MVerseDamaged
+	Self <-_DATA DamageUnit
+
+:MVerseTarget
+	Self <-_DATA SetUnitSpecifiedTarget
+	
+:MVerseActivate
+	false ->wait
+	Self true SetUnitEnabled
+
+:MVerseQuietDestroy
+	Self 1 1 1 DestroyUnit
+
+:MVerseUI
+	Self <-_DATA[0] <-_DATA[1] SetUnitUIState
+
+:GenerateUnitID
+	<-*mverseUnitsCreated 1 add ->*mverseUnitsCreated
+	<-*mverseUnitsCreated 4 mul GetMVersePlayerNum 0 max add ->idNum
+	
+	#encode the idnum as a string
+	""
+	1000 0 do
+		<-*mverseEncodeList[<-idNum <-*encodeBase mod] swap concat
+		if(<-idNum <-*encodeBase gte)
+			<-idNum <-*encodeBase div ->idNum
+		else
+			break
+		endif
+	loop
+	

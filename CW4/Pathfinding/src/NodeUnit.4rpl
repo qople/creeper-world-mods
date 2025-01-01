@@ -1,0 +1,265 @@
+# --NodeUnit-- 4/4/2024 7:45:08 AM
+
+#This unit is destroyed after map load on finalize to help performance.
+#The network is stored as info only, no units involved. 
+#Modifications to the network during map runtime must be done by interacting with that, not the node units!
+
+$$height:5.5
+
+if(<-e)
+    PlaySound("Notify" 1)
+endif
+
+:WhileSelected
+    Self <-myIndex SetUnitDebugText
+
+    if(<-*updatingNodes GetGameTickCount eq)
+        @UpdateNodeButtons
+    endif
+
+    #When moved by the player, disallow movement onto cells with other nodes
+    if(Self GetUnitCell V2 <-lastPos neq)
+        if(GetUnits(Self GetUnitType Self GetUnitPosition 0 false false false 0 0 0) GetListCount 1 gt)
+            Self <-lastPos EV2 true SetUnitCell
+        else
+            Self GetUnitCell V2 ->lastPos
+            SendMsg("MoveNode" <-myIndex Self GetUnitCell V2 2 ListN)
+        endif
+    endif
+
+     4 1 do
+         if(GetKey("LeftControl" 1) GetKeyDown("Alpha" i concat 1) &&)
+            i 1 sub @RunButtonFunction
+         endif
+     loop
+    
+    if(Self GetUnitSelected !)
+        DeregisterForMSG("MSG_PreUpdate")
+    endif
+
+:UpdateNodeButtons
+    if(Self GetUnitSelected)
+        if(GetSelectedUnits GetListCount 1 eq)
+            0 ->buttonMode
+            Self 1 "Branch Node" SetUnitUIText
+            Self 2 "Dissolve Node" SetUnitUIText
+            Self 3 "Delete Node" SetUnitUIText
+        else
+            1 ->buttonMode
+            #if(<-myData[1] )
+            Self 1 "Connect Nodes" SetUnitUIText
+            Self 2 "Bisect Connection" SetUnitUIText
+            Self 3 "Combine Nodes" SetUnitUIText
+        endif
+        Self false SetUnitSelected
+        Self true SetUnitSelected
+    endif
+
+:_Selected
+    @Init
+
+    GetGameTickCount ->*updatingNodes
+
+    #Check to prevent infinite loops (don't resend the message during message sending)
+    if(<-_DATA)
+        RegisterForMSG("MSG_PreUpdate" "WhileSelected")
+    else
+        DeregisterForMSG("Msg_PreUpdate")
+    endif
+
+:GameLoaded
+    if(GetEditMode !)
+        true ->supress
+        true ->destroy
+    endif
+
+:Once
+    if(<-destroy)
+        Self 1 1 1 DestroyUnit
+    endif
+
+:Awake
+    @Init
+
+:Init
+    once
+        Self 0 "Press ctrl+[1-3]
+You can select several nodes for more options." SetUnitUIText
+        Self GetUnitCell V2 ->lastPos
+        <-*networkUnits{Self} ->myIndex
+        if(<-myIndex IsNull)
+            SendMsg("AddNodeOnUnit" Self)
+        endif
+        <-*networkUnits{Self} ->myIndex
+        <-*pathfindNetwork[<-myIndex] ->myData #Changes to this variable will affect the network list, and vice versa.
+
+        RegisterForMSG("UpdateNodeButtons" dup)
+        RegisterForMSG("SetNetworkVisible" dup)
+        RegisterForMSG("NodeIndexMoved" dup)
+
+        ListN(
+            ListN("Branch" "Dissolve" "Delete" 3)
+            ListN("Connect" "Bisect" "Combine" 3)
+            2
+        ) ->buttonFunctions
+            
+        true ->supress
+    endonce
+
+:SetNetworkVisible
+    Self "" V3(<-_DATA dup dup) SetObjScale
+    Self <-_DATA SetUnitSelectable
+
+:Destroyed
+    if(<-supress ! GetMappedKey("Destroy" 0) ||)
+        SendMsg("RemoveNode" <-myIndex)
+        <-*networkUnits Self RemoveTableElement
+    endif
+
+:_UICallback
+    <-_DATA 1 sub @RunButtonFunction
+
+:NodeIndexMoved
+    if(<-_DATA[0] <-myIndex eq)
+        <-_DATA[1] ->myIndex
+        <-myIndex ->*networkUnits{self}
+    endif
+
+:RunButtonFunction
+    ->slot
+    <-buttonFunctions[<-buttonMode][<-slot] Refcall
+
+#Creates a new node connected to this one
+:Branch
+    "AddConnection"
+    CreateUnit(Self GetUnitType Self GetUnitCell dup2 GetTerrain 1 add dup 30 FloodFillTerrain dup GetListCount 1 sub 30 min GetListElement EV2 GetTerrainVector 0)
+    "myIndex" GetScript1Var <-myIndex 2 ListN SendMsg
+
+:Dissolve
+    <-myData[1] ->neighbors
+    <-neighbors 1 0 @ConnectAll
+    Self 1 1 1 DestroyUnit
+
+:Delete
+    false ->suppress
+    Self 1 1 1 DestroyUnit
+
+:Connect
+    #This block prevents all selected units from running the same command, and limits it to one unit per game tick.
+    if(<-*lastNodeExecution GetGameTickCount eq)
+        return
+    else
+        GetGameTickCount ->*lastNodeExecution
+    endif
+
+    #Connects all selected units to all other selected units.
+    #Kind of excessive with more than 3 units selected, but I don't know a good way to interpret that instruction anyway.
+    GetSelectedUnits @AreAllConnected ->remove
+
+    GetSelectedUnits 0 <-remove @ConnectAll
+
+:Bisect
+    if(<-*lastNodeExecution GetGameTickCount eq)
+        return
+    else
+        GetGameTickCount ->*lastNodeExecution
+    endif
+
+    #Disconnect all unit connections, and keep track of which ones to add back
+    CreateList ->connectionsToAdd
+    GetSelectedUnits 0 do
+        GetSelectedUnits[i] ->unit1
+        <-unit1 "myIndex" GetScript1Var ->nodeIndex1
+        <-unit1 "myData" GetScript1Var ->node1
+        GetSelectedUnits 0 do
+            GetSelectedUnits[i] ->unit2
+            <-unit2 "myIndex" GetScript1Var ->nodeIndex2
+            <-unit2 "myData" GetScript1Var ->node2
+            if(i j neq <-node1[1] <-nodeIndex2 ListContains &&)
+                "RemoveConnection" <-nodeIndex1 <-nodeIndex2 2 ListN SendMsg
+                <-connectionsToAdd <-nodeIndex1 <-nodeIndex2 2 ListN AppendToList
+            endif
+        loop
+    loop
+
+    #Add nodes in between the two endpoints, and connect them all up
+    <-connectionsToAdd 0 do
+        <-connectionsToAdd[i][0] ->nodeIndex1
+        <-connectionsToAdd[i][1] ->nodeIndex2
+        <-*pathfindNetwork[<-nodeIndex1][0] <-*pathfindNetwork[<-nodeIndex2][0] add 0.5 mul ->avgPos
+        CreateUnitOnTerrain(Self GetUnitType <-avgPos.x 0 round <-avgPos.y 0 round 0) ->midUnit
+        "AddConnection" <-midUnit "myIndex" GetScript1Var <-nodeIndex1 2 ListN SendMsg
+        "AddConnection" <-midUnit "myIndex" GetScript1Var <-nodeIndex2 2 ListN SendMsg
+    loop
+
+:Combine
+    if(<-*lastNodeExecution GetGameTickCount eq)
+        return
+    else
+        GetGameTickCount ->*lastNodeExecution
+    endif
+
+    #Combine neighbor lists to this unit
+    GetSelectedUnits ->units
+    <-units 0 do
+        if(<-units[i] Self neq)
+            #Get neighbors to this unit's node
+            <-units[i] "myData" GetScript1Var [1] ->neighbors
+            
+            #Connect to all the neighbor nodes
+            <-neighbors 0 do
+                "AddConnection" <-myIndex <-neighbors[i] 2 ListN SendMsg
+            loop
+
+            #Destroy all other selected units
+            <-units[i] 1 1 1 DestroyUnit
+        endif
+    loop
+    SendMsg("ShowNetwork" 0)
+
+#Connects all nodes given
+#First input is the list of nodes
+#Second input is a boolean
+#   If 0, will interpret as a list of UIDs
+#   If 1, will interpret as a list of node indices
+#Third input is whether to remove connections instead of add
+:ConnectAll
+    ->remove ->connectMode ->connectUnits
+    <-connectUnits 0 do
+        <-connectUnits[i] ->node1
+        <-connectUnits 0 do
+            if(i j neq)
+                if(<-remove)
+                    "RemoveConnection"
+                else
+                    "AddConnection" 
+                endif
+                if(<-connectMode)
+                    <-connectUnits[i] <-node1 
+                else
+                    <-connectUnits[i] "myIndex" GetScript1Var <-node1 "myIndex" GetScript1Var
+                endif
+                2 ListN SendMsg
+            endif
+        loop
+    loop
+    --node1 
+
+#Takes V2(x,z), returns the node at that cell, if any.
+:GetNodeAtPosition
+    EV2 FC <-*pathfindNetwork swap GetTableElement
+
+:AreAllConnected
+    ->connectUnits
+    <-connectUnits 0 do
+        <-connectUnits[i] ->unit1
+        <-unit1 "myData" GetScript1Var ->node1
+
+        <-connectUnits 0 do
+            if(<-node1[1] <-connectUnits[i] "myIndex" GetScript1Var ListContains ! i j neq &&)
+                false
+                return
+            endif
+        loop
+    loop
+    true

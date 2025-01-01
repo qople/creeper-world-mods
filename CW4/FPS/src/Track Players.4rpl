@@ -1,0 +1,79 @@
+# --Track Players-- 6/19/2021 11:16:42 AM
+# Keeps track of how many players are in the game, and where their FPS player positions are.
+
+$UPDATE_INTERVAL:6 #How often an MVerse message is sent to update position for other instances
+
+$$markerGUID:"b03c096d-3b81-4fcb-8cbb-529df1217385" #Used to make dummy markers on other players, not shown but used for minimap images.
+
+if(GetTimer0 eq0 GetMVersePlayerNum gte0 &&)
+	<-UPDATE_INTERVAL SetTimer0
+	"PlayerOnline" ListN(GetMVersePlayerNum <-*playerPos 2) SendMVerseMsg 
+	
+	#Update your own item in the positions list with <-*playerPos if alive, Vector0 if dead
+	<-*playerPos "Move" "dead" GetRegisteredScriptVar ! mul ->*positions[GetMVersePlayerNum]
+	
+	@UpdatePlayerNum
+endif
+
+:Once
+	"PlayerOnline" GetMVersePlayerNum <-*playerPos 2 ListN dup2 SendMVerseMsg SendMsg
+	@UpdatePlayerNum
+	
+
+:Awake
+	List(V4(0.7 0.7 0 0.7), V4(1 1 1 0.7), V4(0 0.6 0 0.7), V4(1 0.1 1 0.7)) ->mverseColors
+	RegisterScript("Tracking")
+	RegisterForMsg("PlayerOnline" "PlayerOnline")
+	4 CreateListStartingSize ->*positions
+	4 CreateListStartingSize ->markers #List of dummy minimap markers for other players
+
+#Updates the positions list with the position of another mverse player
+:PlayerOnline
+	<-_DATA[0] ->playerID
+	<-_DATA[1] ->pos
+	if(<-*deadPlayers[<-playerID])
+		Vector0 #Position is false for dead players
+	else
+		<-pos 
+	endif 
+	->*positions[<-playerID]
+	
+	if(<-markers[<-playerID] dup GetUnitDestroyed)
+		pop
+		#Make a dummy marker for players that don't have one already
+		<-markerGUID <-pos 0 CreateUnit ->marker #Store to a temp var to make things easier
+		<-marker ->markers[<-playerID]
+		<-marker "head" false SetObjActive #Hide the unit
+		<-marker false SetMVerseCreatesUnitGhost
+		<-marker "000000000000
+				  000000000000
+				  000222220000
+				  002111112000
+				  021111211120
+				  211112222112
+				  211122222212
+				  211122222212
+				  022111111122
+				  000222222200
+				  000000000000
+				  000000000000" RemoveWhiteSpace SetUnitMinimapImage
+		<-marker <-mverseColors[<-playerID] SetUnitMinimapImageColor
+		<-marker
+	endif
+	
+	#Move to the position given
+	<-markers[<-playerID] <-pos SetUnitPosition
+
+#Sets the <-*numPlayers global to the number of players currently in the MVerse match.
+:UpdatePlayerNum
+	4 0 do
+		#Stop when a null element is hit
+		if(GetMVersePlayers[i] IsNull)
+			i 1 max ->*numPlayers
+			return
+		endif
+	loop
+	
+	#If all elements are defined, then there are 4 players
+	4 ->*numPlayers
+	

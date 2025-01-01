@@ -1,0 +1,8 @@
+# --Detector-- 8/11/2023 1:41:29 PM
+#All this does is send a message when unit instances are updated, so the CPACK knows when to show the custom unit refresh button.
+:Awake
+	once
+		#This message is not recieved when the unit is created due to the location of RegisterForMsg in the parent script
+		SendMsg("UnitInstanceUpdate" GetGameUpdateCount) 
+	endonce
+	

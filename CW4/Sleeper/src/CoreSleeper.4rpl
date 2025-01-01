@@ -1,0 +1,182 @@
+# --CoreSleeper-- 7/6/2023 4:06:52 PM
+
+#Basic logic that is required for all sleeper units to function
+#Manages unit health, ammo, construction, emitting creeper, unit UI description, and outline.
+
+$MESH_DAMAGE_AMT:0.03 #Set to 0 to disable
+$DOES_UNIT_MOVE:1 #Slightly speeds up execution by not checking unit landed state if off
+$NO_CREEPER_DAMAGE_AMT:0.01
+$UNIT_HEAL_RATE:0.001
+
+$RESIST_DMG_AT_START:0 #Makes the unit take no damage from lack of creeper until it first encounters creeper
+$ENABLE_CONSTRUCTION:1 #Allows the unit to construct itself using creeper from under itself
+$CONSTRUCT_MAX:10.0
+$ENABLE_AMMO:1 #Allows the unit to fill its ammo with creeper
+$RELEASE_AMMO_ON_DESTROY:1 #Releases all unused ammo as creeper when the unit is destroyed
+
+#Basic emitter function using AddCreeperInRange
+$EMIT_AMT:0
+$EMIT_RADIUS:0
+$EMIT_SQUARE:0
+$EMIT_DELAY:30
+
+$UNIT_DESCRIPTION:"" #Allows for longer descriptions than the game lets you put into a label field. Will do nothing if left blank.
+$UNIT_DESCRIPTION_SLOT:0 #UI slot that is the label for a description
+$UNIT_OUTLINE_COLOR:"1 0 0 0.5" #Parsed as a color vector (V4), will be blue instead when constructing, but change to this when build is complete
+$UNIT_OUTLINE_WIDTH:0.7
+
+$$dummyGUID:"b900388f-3e10-4b6c-a879-6193ff9a01cc" #Overrides certain logic for this unit type
+
+if(Self GetUnitEnabled !)
+	return
+endif
+once
+	@Init
+endonce
+
+if(Self GetUnitConstructing)
+	if(<-ENABLE_CONSTRUCTION GetTimer0 eq0 &&)
+		5 SetTimer0
+		@ConstructionLogic
+	endif
+
+	if(<-MESH_DAMAGE_AMT gt0)
+		if(<-x <-z dup2 GetMeshHealth 992,000 lt) #Something damaged mesh under the unit!
+			Self 0 0 0 DestroyUnit
+		endif
+		1,000,000 SetMeshHealth
+	endif
+else
+	if(<-DOES_UNIT_MOVE) #Check landed state
+		if(Self GetUnitMoveCell pop gte0)
+			true ->inAir #Set a flag to change the current cell when landed
+			
+			#Remove mesh from the last cell on takeoff
+			<-x <-z -1,000,000 SetMeshHealth
+			-1 ->x -1 ->z
+			return
+		endif
+		
+		if(<-inAir) #Update the mesh cell when landed
+			false ->inAir
+			
+			#Add mesh back to the cell
+			Self GetUnitCell dup2 ->z ->x
+			1,000,000 SetMeshHealth
+			return
+		endif
+	endif
+	
+	
+	if(<-MESH_DAMAGE_AMT gt0)
+		#Damage the unit if the mesh has been damaged
+		if(<-x <-z dup2 GetMeshHealth 992,000 lt) #Something damaged mesh under the unit!
+			Self <-MESH_DAMAGE_AMT DamageUnit
+		endif
+		1,000,000 SetMeshHealth
+	endif
+	
+	#Emitter
+	if(GetTimer1 eq0 IsCreeperCutOff ! &&)
+		<-x <-z <-EMIT_RADIUS <-EMIT_SQUARE <-EMIT_AMT AddCreeperInRange
+		<-EMIT_DELAY SetTimer1
+	endif
+	
+	if(GetTimer0 eq0)
+		5 SetTimer0
+		if(<-x <-z GetCreeper lte0)
+			Self <-NO_CREEPER_DAMAGE_AMT 5 mul <-resistCreeperDmg ! mul DamageUnit
+		else
+			false ->resistCreeperDmg
+		endif
+		if(<-ENABLE_AMMO)
+			@FillAmmo
+		endif
+	endif
+endif
+
+
+:ConstructionLogic
+	Self GetUnitCell GetCreeper dup ->creeper
+	if(gt0)
+		<-constructDecimal <-creeper <-CONSTRUCT_MAX min add ->constructDecimal
+		Self GetUnitCell <-CONSTRUCT_MAX neg 0 AddCreeperWithCap
+		Self <-constructDecimal floor ConstructUnit
+		<-constructDecimal dup floor sub ->constructDecimal
+	endif
+
+:FillAmmo
+	if(Self GetUnitAmmo Self GetUnitMaxAmmo eq)
+		return
+	endif
+	<-x <-z GetCreeper dup ->creep
+	if(gt0)
+		Self dup GetUnitAmmo <-creep add SetUnitAmmo
+		<-x <-z 0 false SetCreeper
+	endif
+
+:init
+	if(<-DOES_UNIT_MOVE)
+		true ->inAir
+	endif
+	Self GetUnitCell 1,000,000 SetMeshHealth
+
+:Once
+	Self GetUnitCell ->z ->x
+	Self <-UNIT_HEAL_RATE SetUnitHealRate
+	
+	if(Self GetUnitCell GetCreeper eq0 <-RESIST_DMG_AT_START &&)
+		true ->resistCreeperDmg
+	endif
+
+	if(<-UNIT_OUTLINE_COLOR StringLength)
+		<-UNIT_OUTLINE_COLOR " " Split ReverseList ->colorList
+		<-colorList PopList <-colorList PopList <-colorList PopList <-colorList PopList V4 ->outlineColor
+		Self <-UNIT_OUTLINE_WIDTH SetUnitOutlineWidth
+		Self true SetUnitOutlineEnabled
+		
+		if(<-outlineColor)
+			"000000000000
+			 000000000000
+			 000000000000
+			 000000000000
+			 000021120000
+			 000011110000
+			 000011110000
+			 000021120000
+			 000000000000
+			 000000000000
+			 000000000000
+			 000000000000" RemoveWhiteSpace ->miniMapImage
+			SetUnitMiniMapImage(Self <-miniMapImage)
+			--miniMapImage
+		endif
+
+		if(Self GetUnitConstructing)
+			Self V4(0 0.8 1 0.5) dup2 SetUnitOutlineColor SetUnitMiniMapImageColor
+		else
+			Self <-outlineColor dup2 SetUnitOutlineColor SetUnitMiniMapImageColor
+		endif
+	endif
+	
+	Self GetUnitType ->type
+	if(Self GetUnitType <-dummyGUID neq)
+		<-unitAmounts{Self GetUnitType} 1 add ->unitAmounts{Self GetUnitType}
+	endif
+
+
+:BuildComplete
+	if(<-UNIT_OUTLINE_COLOR StringLength)
+		Self <-outlineColor dup2 SetUnitOutlineColor SetUnitMiniMapImageColor
+	endif
+
+:Destroyed
+	<-x <-z -1,000,000 SetMeshHealth
+	if(<-type <-dummyGUID neq)
+		<-unitAmounts{<-type} 1 sub ->unitAmounts{<-type}
+	endif
+
+:Awake
+	if(<-UNIT_DESCRIPTION StringLength)
+		Self <-UNIT_DESCRIPTION_SLOT <-UNIT_DESCRIPTION SetUnitUIText
+	endif

@@ -1,0 +1,342 @@
+# --Terp-- 11/22/2023 6:04:15 PM
+# Grows mesh within the unit's range towards its specified target. Has an auto mode for the closest unit.
+# Based off of the original "Grow Mesh.4rpl" but more complicated
+
+$SPEC_CHANCE:0.05
+$SPEC_AMT:1
+$SPEC_TIME:3 #Delay between mesh grow checks
+$TERRAIN_MOD:1.5 #Chance is multiplied by this going downhill, divided going uphill
+$TOWARDS_LAB_MOD:10.0 #Multiplier to spec chance when moving towards the rift lab
+$TERP_TIME:25 #How long it takes to terp a cell
+$MAX_QUEUE_SIZE:5 #Max number of terps the unit will plan ahead
+
+$AMMO_USE:2.0 #Creeper used per cell
+
+if(GetUnitConstructing(Self))
+	return
+else if(Self GetUnitMoveCell pop lte0 dup ->landed)
+	Self false SetUnitCanMove
+	if(<-lastLanded !)
+		0 SetTimer1
+		@BeginTerping
+	endif
+	<-landed ->lastLanded
+else
+	<-landed ->lastLanded
+	return
+endif endif
+
+switch
+	Self 0 GetUnitUIState ->mode
+
+	case(<-mode 2 eq) #Move on target switch
+		Self GetUnitSpecifiedTarget	<-lastTarget neq if
+			@MoveTarget
+			if(Self GetUnitSpecifiedTarget EV3 swap pop @IsCellBuildable)
+				Self true SetUnitCanMove
+				Self dup GetUnitSpecifiedTarget EV3 swap pop SetUnitMoveCell
+				<-terpBeam false SetBeamVisible
+			else
+				PlaySound("PlanetView2" 1)
+			endif
+			Self 0 <-lastMode SetUnitUIState
+			Self <-lastTarget SetUnitSpecifiedTarget
+		endif
+	endcase
+	
+	<-mode ->lastMode
+	
+	case(<-mode eq0) #auto
+		Self GetUnitSpecifiedTarget	<-lastTarget neq if
+			Self 0 1 SetUnitUIState #Set mode to manual when the player adjusts the target
+		endif
+		#Every 10 seconds, set target to the closest player unit
+		if(GetTimer2 eq0)
+			300 SetTimer2
+			GetUnitsInRange(Self GetUnitPosition 100 false false false 2 1 1) dup if
+				[0] GetUnitPosition Self swap SetUnitSpecifiedTarget
+			endif
+		endif
+		Self false SetUnitSpecifiedTargetShowPath
+	endcase	
+endswitch
+	
+if(<-*isMVerseHost)
+
+	Self GetUnitSpecifiedTarget ->lastTarget
+
+	#Unit functions
+	if(<-landed)
+		if(GetTimer0 eq0 <-terpQueue GetListCount <-MAX_QUEUE_SIZE lt && Self GetUnitAmmo <-AMMO_USE gte &&)
+			if(<-terpQueue GetListCount eq0)
+				<-error 1 add ->error
+				if(<-error 150 eq)
+					-150 ->error
+					@BeginTerping #Reset the terp lists if we get stuck for a while
+				endif
+			endif
+			Self GetUnitSpecifiedTarget EV3 swap pop V2 ->labPos
+			<-SPEC_TIME SetTimer0
+			<-SPEC_AMT 0 do
+				if(<-specList GetListCount eq0)
+					<-backupList Copy ->specList
+				endif
+				if(<-specList[<-index] UFC dup2 Self GetUnitCell DistanceCell Self GetUnitRange lte)
+					# if(dup2 GetCreeper 1 gte)
+						@ExpandSpec
+					# endif
+				else
+					<-specList <-index RemoveListElement
+				endif
+				ClearStack
+			loop
+		endif
+	endif
+endif
+
+if(<-landed)
+	if(GetTimer1 eq0)
+		@TerpCell
+	else if(GetTimer1 1 eq)
+		@ClearCell
+	endif endif
+endif
+
+:MoveTarget
+	Self GetUnitSpecifiedTarget ToCell ->targetZ ->targetX
+	FloodFillTerrain(<-targetX <-targetZ 1 21 @CellsInFloodFillRange(20)) ->snapList
+
+	<-snapList 0 do
+		if(<-snapList[i] EV2 @IsCellBuildable)
+			Self <-snapList[i] EV2 GetTerrainVector SetUnitSpecifiedTarget
+			break
+		endif
+	loop
+
+:ExpandSpec
+	->centZ ->centX
+	0 ->adjacentNum
+	CreateList ->mverseList
+	2 -1 do
+		2 -1 do
+			if(i j xor)
+				if(i <-centX add j <-centZ add GetTerrainSpecial dup)
+					if(<-*MESH_SLOT eq)
+						<-adjacentNum 1 add ->adjacentNum
+					endif
+				else pop if(randFloat i j @SpecChance lte)
+					i <-centX add j <-centZ add
+					Self dup GetUnitAmmo <-AMMO_USE sub SetUnitAmmo
+					FC 
+					dup <-terpQueue swap dup2 ListContains ! if 
+						dup "Terp" <-trueGUID concat swap SendMVerseMsg
+						PrependToList
+					else 
+						pop pop 
+					endif
+					<-specList swap dup2 ListContains ! if <-index 1 add swap InsertListElement else pop pop endif
+					<-adjacentNum 1 add ->adjacentNum
+				endif endif
+			endif
+		loop
+	loop 
+	if(<-adjacentNum 2 gte)
+		if(<-adjacentNum 4 lt)
+			if(<-backupList <-specList[<-index] ListContains !)
+				<-backupList <-specList[<-index] AppendToList
+			endif
+		endif
+		<-specList <-index RemoveListElement
+	else
+		<-index 1 add ->index
+	endif
+	if(<-index <-specList GetListCount gte)
+		0 ->index
+	endif
+	# if(<-mverseList GetListCount)
+		# "MVerseGrowMesh" <-mverseList SendMVerseMsg
+	# endif
+
+:SpecChance
+	->j ->i
+	<-SPEC_CHANCE
+
+	if(<-centX <-centZ V2 <-labPos @SimpleDist <-i <-centX add <-j <-centZ add V2 <-labPos @SimpleDist gte <-labPos &&)
+		<-TOWARDS_LAB_MOD mul
+	endif
+	i <-centX add j <-centZ add GetTerrain <-centX <-centZ GetTerrain 
+	if(dup2 lt)
+		pop pop <-TERRAIN_MOD mul
+	else if(gt)
+		<-TERRAIN_MOD div
+	endif endif
+
+#Max of x and z difference
+:SimpleDist
+	sub EV2 abs swap abs max
+
+:TerpCell
+	#Get the first cell value that is not currently terped
+	while <-terpQueue PopList dup IsNull ->null UFC dup2 GetTerrainSpecial <-*MESH_SLOT eq <-null ! && repeat
+		pop pop
+	endwhile
+	<-TERP_TIME SetTimer1
+	if(<-null)
+		return
+	endif
+	dup2 ->terpZ ->terpX
+	GetTerrainVector dup <-terpBeam swap SetBeamEnd
+	<-terpBeam true SetBeamVisible
+	<-vertBeam true SetBeamVisible
+	SendMsg("TerpingCell" swap)
+	
+:ClearCell
+	<-terpX <-terpZ <-*MESH_SLOT SetTerrainSpecial
+	<-terpBeam false SetBeamVisible
+	<-vertBeam false SetBeamVisible
+
+# :MVerseGrowMesh
+	# <-_DATA ->mverseList
+	# <-mverseList 0 do 
+		# <-mverseList[i] UFC <-*MESH_SLOT SetTerrainSpecial
+	# loop
+
+:BuildComplete
+	@Init
+	
+:Init
+	0 ->error
+	Self DestroyAllAttachedBeams
+	CreateBeam("purple" 1.5 2) ->vertBeam
+	CreateBeam("purple" 1.5 2) ->terpBeam
+	
+	<-vertBeam Self "" AttachBeam
+	<-vertBeam true SetBeamForceLocalEnd
+	<-vertBeam Vector0 SetBeamStart
+	<-vertBeam V3(0 2 0) SetBeamEnd
+	<-vertBeam false SetBeamVisible
+	
+	<-terpBeam Self "" AttachBeam
+	<-terpBeam V3(0 2 0) SetBeamStart
+	<-terpBeam false SetBeamVisible
+	Self true SetUnitGrowsMesh
+	RegisterForMsg("TerpingCell" "AddTerpCell")
+	@BeginTerping
+
+:BeginTerping
+	0 ->index
+	Self GetUnitCell <-*MESH_SLOT SetTerrainSpecial
+	Self GetUnitCell 1,000,000 SetMeshHealth
+	CreateList ->backupList
+	CreateList ->specList
+	CreateList ->terpQueue
+	
+	#Create lists
+	#This can be greatly improved upon for performance with a region-based cache, but I don't want to make that yet.
+	Self GetUnitRange ->range
+	Self GetUnitCell ->z ->x
+	
+	FloodFillTerrain(<-x <-z 0 22 @CellsInFloodFillRange(<-range 1.5 mul AsInt)) ->cells
+	<-cells 0 do
+		<-cells[i] EV2 ->j ->i
+		if(<-i <-j GetTerrainSpecial <-*MESH_SLOT eq)
+			<-i <-j @AdjacentSpec ->adjacentNum
+			if(<-adjacentNum 4 lt) #Room for another mesh to grow off this cell
+				<-backupList <-i <-j <-mapX mul add AppendToList
+				if(<-adjacentNum 2 lte)
+					<-specList <-i <-j <-mapX mul add AppendToList
+				endif
+			endif
+		else
+			<-cells i RemoveListElement
+		endif
+	loop
+	if(<-specList GetListCount eq0)
+		<-backupList ->specList
+	endif
+
+:CellsInFloodFillRange
+	dup dup mul 2 mul swap 2 mul add
+
+:AdjacentSpec
+	->centZ ->centX
+	0
+	2 -1 do
+		2 -1 do
+			if(i j xor)
+				if(i <-centX add j <-centZ add GetTerrainSpecial <-*MESH_SLOT eq)
+					1 add
+				endif
+			endif
+		loop
+	loop 
+	
+:Once
+	if(<-*isMVerseHost)
+		GetMapSize ->mapZ ->mapX
+		Self GetRiftLab GetUnitPosition dup ->lastTarget SetUnitSpecifiedTarget
+		Self false SetUnitSpecifiedTargetShowPath
+		Self 0 SetUnitSpecifiedTargetPathHeight
+		if(Self GetUnitConstructing !)
+			@Init
+		endif
+	else
+		CreateList ->terpQueue
+		RegisterForMsg("Terp" <-trueGUID concat "MVerseQueue")
+	endif
+
+:AddTerpCell
+	<-_DATA EV3 swap pop dup2 FC ->cellFlat ->cellZ ->cellX
+	if(<-cellX <-cellZ Self GetUnitCell DistanceCell Self GetUnitRange lte)
+		
+		if(<-specList <-cellFlat ListContains !)
+			<-specList <-cellFlat AppendToList
+		endif
+		if(<-backupList <-cellFlat ListContains !)
+			<-backupList <-cellFlat AppendToList
+		endif
+	endif
+
+:IsCellBuildable
+	dup2 ->cellZ ->cellX
+	GetTerrain dup ->centerTerrain
+	<-cellX <-cellZ GetTerrainSpecial <-*MESH_SLOT eq || dup if
+		<-cellZ 2 add <-cellZ 1 sub do
+			<-cellX 2 add <-cellX 1 sub do
+				i j GetTerrain <-centerTerrain eq i j GetCellOccupiedCount ! && && i j GetTerrainSpecial <-*CONTAMINANT_SLOT neq &&
+				dup ! if
+					return
+				endif
+			loop
+		loop
+	endif
+
+:_Selected
+	if(<-_DATA)
+		# RegisterForMsg("MSG_PreUpdate" "WhileSelected")
+	else
+		GetGameTickCount 4 add ->deregisterTime
+	endif
+	
+:WhileSelected
+	# Self GetUnitSpecifiedTarget ->specTarget
+	
+	# if(Self GetUnitSpecifiedTarget <-lastTarget neq)
+		# PlaySound("Notify" 1)
+		# if(Self GetUnitSpecifiedTarget EV3 swap pop @IsCellBuildable !)
+			# Self <-lastTarget SetUnitSpecifiedTarget
+			# Self true SetUnitSelected
+			# DeregisterForMsg("MSG_PreUpdate")
+			# PlaySound("ErrorBuild" 1)
+		# endif
+	# endif
+	
+	# if(GetGameTickCount <-deregisterTime eq)
+		# --deregisterTime
+		# DeregisterForMsg("MSG_PreUpdate")
+	# endif
+
+:MVerseQueue
+	# Self <-_DATA SetUnitDebugText
+	<-terpQueue <-_DATA PrependToList
+	

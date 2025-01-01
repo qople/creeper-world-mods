@@ -1,0 +1,66 @@
+# --Mortar-- 6/23/2023 3:34:22 PM
+
+$FIRE_RATE:60
+$DAMAGE_AMT:20.0
+$RANGE:20.0
+$PROJ_SPEED:0.3
+$AMMO_MULT:1.0
+$REQUIRE_LOS:0
+$LONG_WAIT_TIME:150 #Wait time when no target is found
+$ARC_HEIGHT:20.0
+
+$$TARGET_REFRESH_RATE:4 #Shots between refreshing target list
+$$bulletGUID:"172f7c2a-5e4e-43bd-bbb1-5eaf0d20dec5"
+
+if(Self GetUnitConstructing GetTimer1 || Self GetUnitMoveCell pop gte0 ||)
+	true ->needTarget
+	0 ->units
+	return #Don't fire when building, moving, or long wait timer is on
+endif
+
+if(<-needTarget)
+	@FindTarget
+endif
+
+if(<-targetUnit)
+	@Fire
+endif
+
+:FindTarget
+	if(<-shotsToRetarget ! <-units ! ||)
+		GetUnitsInRange(Self GetUnitPosition <-RANGE false false false 2 0 1) ->units
+		<-TARGET_REFRESH_RATE ->shotsToRetarget
+		if(<-units !)
+			0 ->targetUnit
+			true ->needTarget
+			<-LONG_WAIT_TIME SetTimer1
+			return
+		endif
+	endif
+	<-units dup GetListCount dup 3 sub 0 max swap RandInt GetListElement dup ->targetUnit
+	GetUnitPosition ->targetPos
+	false ->needTarget
+	
+
+:Fire
+	if(Self GetUnitAmmo <-AMMO_USE lt GetTimer0 ||)
+		return
+	endif
+	
+	#Create the bullet
+	<-targetPos.y Self GetUnitPosition[1] max <-ARC_HEIGHT add ->arcHeight
+	"targetPos" <-targetPos "DAMAGE_AMT" <-DAMAGE_AMT "PROJ_SPEED" <-PROJ_SPEED "ARC_HEIGHT" <-arcHeight Table ->initParams
+	<-bulletGUID Self GetUnitPosition <-initParams CreateUnit
+	
+	Self "Movement.4rpl" "lastActive" GetGameUpdateCount SetScriptVar
+
+	<-FIRE_RATE SetTimer0
+	true ->needTarget
+	<-shotsToRetarget 1 sub <-targetUnit GetUnitDestroyed ! mul ->shotsToRetarget
+	Self dup GetUnitAmmo <-AMMO_USE sub SetUnitAmmo
+
+:Once
+	true ->needTarget
+	0 ->shotsToRetarget
+	<-DAMAGE_AMT <-AMMO_MULT mul ->AMMO_USE
+

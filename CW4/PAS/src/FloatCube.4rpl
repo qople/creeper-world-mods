@@ -1,0 +1,78 @@
+# --FloatCube-- 12/6/2023 9:34:59 AM
+
+#All values set on creation
+$$destination:-1 #Set to V3 on creation
+$$value:1
+$$type:-1
+$$speed:0.5
+
+$$microriftGUID:"6e68137e-f89a-4013-834e-86af9968b5c3"
+
+#Randomly alter speed over time
+<-speed RandInt(-5 5) 0.01 mul add 0.5 1 clamp ->speed
+# Self <-delta SetUnitDebugText
+if(GetTimer0 eq0)
+	<-updateRate SetTimer0
+	<-pos <-destination <-speed <-updateRate mul 2 0 0 0 0 MoveTowardsAndAvoid ->pos
+	Self <-pos SetUnitPosition
+	# <-nextPos <-pos sub 0.2 mul ->delta
+
+	# Self <-pos <-delta add dup ->pos SetUnitPosition
+	if(Self GetUnitCell 600 mul add <-destination ToCell 600 mul add eq)
+		if(<-path GetListCount)
+			Self <-path[0] SetUnitPosition
+			Self GetUnitPosition ->pos
+			<-path[1] ->destination
+			<-path 0 RemoveListElement
+			<-path 0 RemoveListElement
+		else
+			SendMVerseMsg("AddResource" ListN(<-type <-value 2))
+			SendMsg("AddResource" ListN(<-type <-value 2))
+			Self 1 1 1 DestroyUnit
+		endif
+	endif
+endif
+
+:Awake
+	once
+		1 <-*sleeperAnimations ! 9 mul add ->updateRate
+		Self <-updateRate mod SetTimer0
+		# <-pos <-destination <-speed <-updateRate mul 2 0 0 0 0 MoveTowardsAndAvoid ->pos
+		if(<-destination -1 eq)
+			Self 1 1 1 DestroyUnit
+		endif
+		<-destination.x ->TARGET_X
+		<-destination.z ->TARGET_Z
+		
+		if(<-type 1 eq)
+			Self "Cube" V4(0.1 1 0.1 1) SetObjColor
+		else if(<-type eq0)
+			Self "Cube" V4(1 0.2 0 1) SetObjColor
+		endif endif
+		Self GetUnitPosition ->pos
+	endonce
+	@FindPath
+	
+
+:FindPath
+	#Can't travel through m-rifts if there are less than two
+	if(<-microriftGUID 1 GetUnitsByType GetListCount 2 lt)
+		CreateList ->path
+		return
+	endif
+	
+	#When traveling through m-rifts, there is only one path that is the most efficient:
+	#Go in through the closest to you, and out through the closest to the destination
+	#(mostly, maybe not if the terrain has a lot of cliffs, but we can ignore that for the sake of speed.)
+	#So we can just check that one path instead of using an actual pathfinding algorithm.
+	
+	Self GetUnitPosition <-destination Distance ->baseDist
+	
+	GetUnits(<-microriftGUID Self GetUnitPosition 1000 true false false 0 1 0)[0] ->nearRift
+	GetUnits(<-microriftGUID <-destination 1000 true false false 0 1 0)[0] ->farRift
+	
+	#Check the rift travel distance
+	if(Self GetUnitPosition <-nearRift GetUnitPosition Distance <-farRift GetUnitPosition <-destination Distance add <-baseDist lt)
+		<-farRift GetUnitPosition V3(0 2 0) add <-destination List ->path
+		<-nearRift GetUnitPosition V3(0 2 0) add ->destination
+	endif

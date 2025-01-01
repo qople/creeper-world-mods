@@ -1,0 +1,58 @@
+# --BFG-- 3/13/2024 2:55:14 PM
+#Comma separated, whitespace ignored.
+#List of all weapons added by this script
+$$weaponsAdded:"bfg"
+ 
+#List of custom attributes those weapons should have on initialization
+#Custom attributes in an "other" field are always included. This only matters for script input vars.
+$$customAttributes:"ConvertRadius, Cooldown"
+ 
+#List stat vars here. Format as weaponAttributeName. weaponOther is supported.
+$bfgRate:30
+$bfgConvertRadius:6
+$bfgCooldown:1800
+$bfgProjSpeed:1
+$bfgMaxRange:50
+$$bfgBulletGUID:"2bb03b80-f279-48cb-a09d-a7f14029f979"
+$bfgOther:""
+
+#Don't allow firing when on cooldown
+if(<-*activeWeapon "bfg" eq)
+	<-*doomCrosshair "bfgBarFront" V3(1 GetTimer0 <-*weaponAttributes{"bfg"}{"Cooldown"} AsFloat div sub 1 1) SetObjScale
+	if(GetTimer0)
+		2 ->*fireTimer
+	endif
+endif
+
+if(GetTimer0 1 eq)
+	PlaySound("MissionSpaceRegionNavSelect" 1)
+endif
+
+:Once
+	@SetHiddenAttributes
+	@InitializeWeapons
+	
+	RegisterForMsg("WeaponFired" "Fire")
+	
+:SetHiddenAttributes
+	#Hidden Stats (Affect visuals, not balance)
+	#Options are Color, Trail, FireSound, FireVolume, HitSound, HitVolume,
+	#EffectName, EffectScale, Path
+	V3(0.8 0.8 2) ->bfgColor
+	0 ->bfgPath
+	"EggBurst" ->bfgFireSound
+	0.7 ->plasmagunFireVolume
+
+:Fire
+	if(<-*activeWeapon "bfg" eq)
+		<-*weaponAttributes{"bfg"}{"Cooldown"} SetTimer0
+	endif
+ 
+#==============
+ 
+#Required for the weapon pack to work.
+:InitializeWeapons
+	Split(RemoveWhiteSpace(<-weaponsAdded) ",") ->weaponsAdded
+	RegisterScript(<-weaponsAdded[0])
+	SendMsg("Initialize" <-weaponsAdded[0])
+	

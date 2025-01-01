@@ -1,0 +1,120 @@
+# --ballista-- 3/13/2024 5:22:46 PM
+#Modified from an old abandoned project from 2/28/2021 3:18:04 PM
+
+#Comma separated, whitespace ignored.
+#List of all weapons added by this script
+$$weaponsAdded:"ballista"
+
+#List of custom attibutes those weapons should have on initialization
+#Custom attributes in an "other" field are always included. This only matters for script input vars.
+$$customAttributes:"CutWidth, Penetration, MaxCharge, FireCost, Recharge, MaxDmg"
+
+#List stat vars here
+$ballistaRate:50
+$ballistaCutWidth:2 #Radius around the beam that gets cut
+$ballistaMaxDmg:3.0 #Depth of creeper that stops the beam
+$ballistaPenetration:7.0 #How many cells the beam continues for after stopping
+$ballistaMaxRange:50
+
+$ballistaMaxCharge:1000
+$ballistaFireCost:1.0	#Charge used up per shot
+$ballistaRecharge:10.0	#Charge regained every update
+$ballistaOther:"" #Supports all default attributes. Effect occurs where the beam stops.
+
+$$beamWidth:10.0
+$$beamFadeTime:45
+$$ballistaCrosshairGUID:"7b13633a-20f7-4675-a370-ba8c64f4675f"
+
+#basic weapon logic that should always run
+if(<-beamTime lte0) #If not firing
+	if(GetTimer0) #Fade the beam instead of immediately destroying it
+		GetTimer0 <-beamFadeTime AsFloat div ->fadeAmount
+		<-beam <-beamWidth <-fadeAmount mul SetBeamWidth
+	else
+		<-beam false SetBeamVisible #or DestroyBeam
+	endif
+endif
+
+<-beamTime 1 sub ->beamTime
+
+:once
+	#Weapon stats that are gotten by :GetWeaponStats
+	"MaxCharge Recharge FireCost MaxRange CutWidth Penetration" " " Split ->neededStats
+	<-ballistaMaxCharge ->charge #Start with full charge
+	-1 ->ballistaPath #disable the base weapon logic
+	@InitializeWeapons
+	@GetWeaponStats
+	
+	#make the weapon-specific crosshair, and make sure there's only one
+	getUnitsByType(<-ballistaCrosshairGUID 0) ->extraCrosshairs
+	<-extraCrosshairs getListCount 0 do
+		<-extraCrosshairs[i] true true true destroyUnit
+	loop
+	CreateUnit(<-ballistaCrosshairGUID Vector0 0) ->crosshair
+	
+	RegisterForMsg("WeaponFired" "Fire")
+	RegisterForMsg("CrosshairUpdated" "TargetCrosshair")
+	RegisterForMsg("ItemCollected" "GetWeaponStats")
+	
+	DestroyAllBeams #Might not play well with other scripts using beams...
+	CreateBeam("blue" 2 3) ->beam
+	
+:GetWeaponStats
+	#Get current weapon stats from the stats table
+	#Stores them to the maching vars, but with Capitalized Names
+	<-neededStats GetListCount 0 do
+		<-neededStats[i] ->attribute
+		<-*weaponAttributes{"ballista"}{<-attribute} <-attribute ->!
+	loop
+
+#Fire the weapon
+:Fire
+	#Only do something if the ballista is active
+	if(<-*activeWeapon "ballista" eq)
+		#Damage (targeting is done in :TargetCrosshair)
+		ClipCreeperLine(<-*playerPos v3(<-endPos.x 0 round <-endPos.y <-endPos.z 0 round) <-CutWidth true false)
+		
+		PlaySoundAtPosition("Sci Fi Explosion 05" 0.7 <-*playerPos)
+		<-beamFadeTime SetTimer0 #Start the beam fade timer
+		<-Rate 1 add ->beamTime #And the "Am I still firing?" timer
+		
+		#Support for any default attributes on the weapon
+		SendMsg("WeaponEffect" ListN(<-*activeWeapon <-endPos))
+	endif
+
+:TargetCrosshair
+	if(<-*activeWeapon "ballista" eq)
+		#Handle targeting in here to make sure visuals line up when high FPS is on
+		#Because the crosshair position is based on the targeting function
+		<-*playerPos dup ->startPos ->endPos
+		
+		#Simple raycast function that stops when it is at least <-MaxDmg below the creeper.
+		<-MaxRange 0 do
+			<-endPos <-*playerForward add ->endPos
+			if(<-endPos.y <-endPos.x <-endPos.z false GetExactTerrain lt)
+				<-startPos <-endPos true GetTerrainLOS ->endPos
+				break
+			endif
+			if(<-endPos ToCell GetTerrain <-endPos ToCell GetCreeper add <-endPos.y sub <-MaxDmg gte)
+				<-endPos <-*playerForward <-Penetration mul add ->endPos
+				break
+			endif
+		loop
+		
+		#Move the crosshair to the target position
+		<-*doomCrosshair "ballistaBall" <-endPos true SetObjPosition
+		
+		#Beam visuals while firing
+		if(<-beamTime gte0)
+			<-beam <-startPos V3(0 1 0) sub SetBeamStart
+			<-beam <-endPos SetBeamEnd
+			<-beam <-beamWidth SetBeamWidth
+			SetBeamVisible(<-beam true)
+		endif
+	endif
+
+#Required for the weapon pack to work.
+:InitializeWeapons
+  Split(RemoveWhiteSpace(<-weaponsAdded) ",") ->weaponsAdded
+  RegisterScript(<-weaponsAdded[0])
+  SendMsg("Initialize" <-weaponsAdded[0])

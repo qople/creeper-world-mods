@@ -1,0 +1,40 @@
+# --Mortar Bullet-- 6/23/2023 6:12:33 PM
+
+#Detonate early on hitting terrain or shield
+if(<-pos.x <-pos.z 0 GetExactTerrainWithShield <-pos.y gt)
+	if(<-pos.x <-pos.z 0 GetExactTerrainWithShield <-pos.x <-pos.z 0 GetExactTerrain neq)
+		Self <-startPos ToCell <-DAMAGE_AMT AddCreeper #Deposit creeper back onto the mortar that launched it to keep creeper economy stable\
+	else
+		Self GetUnitCell <-DAMAGE_AMT AddCreeper
+	endif
+	Self 0 0 0 DestroyUnit
+endif
+<-counter 1 add ->counter
+Self <-pos SetUnitPosition
+#Detonate properly if it reaches the target
+if(Self GetUnitUpdateCount <-travelTime gte)
+	Self dup <-targetPos SetUnitPosition
+	Self GetUnitCell <-DAMAGE_AMT AddCreeper
+	0 0 0 DestroyUnit
+endif
+
+#Move the unit up every update
+<-pos
+Self BallisticArcPos(<-startPos <-fireVelocity <-gravity <-counter) dup ->pos SetUnitPosition
+<-pos sub self swap SetUnitForward
+
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	0 ->counter
+	Self GetUnitPosition dup ->startPos ->pos
+	if(<-targetPos !)
+		Self 1 1 1 DestroyUnit
+	endif
+	if(<-*sleeperAnimations)
+		Self "" 0 1.8 CreateTrail
+	endif
+	#Calculate time to impact
+	<-pos <-PROJ_SPEED <-targetPos <-ARC_HEIGHT BallisticArcLateral ->travelTime ->gravity ->fireVelocity
+
+	Self <-targetPos 360 RotateUnitTowards
+	

@@ -1,0 +1,517 @@
+# --Transition-- 5/10/2021 12:31:42 PM
+$require_All:0 #Determines whether to use "and" or "or" logic if several triggers are attached. 
+
+$RECLAIM_REQ:40.0 #Same as vanilla "reclaim %"
+$RECLAIM_CHARGE:450 #Time the reclaim objective takes to charge, in frames (30/s)
+
+#Requirements for collect, totems, and nullify objectives. Format is as follows:
+#	0 means require all (same as vanilla)
+#	A positive number means collect, activate, or nullify/destroy that many (e.g. "$COLLECT_NUM:2" means "collect 2 infocaches")
+#	A negative number means collect, activate, or nullify/destroy ALL EXCEPT that many ("$COLLECT_NUM:-2" means "collect all infocaches except 2"
+$COLLECT_NUM:0
+$TOTEM_NUM:0
+$NULLIFY_NUM:0
+
+#===============
+#CUSTOM OBJECTIVES (4RPL required past this point)
+
+#Custom objective information
+$custom_start_text:"Missing description in unit settings" #Text shown on loading the level, before playing
+
+#Text shown while the level is running. 
+#-Any instance of "<percentage>" will be replaced with the percentage complete 
+#	(With the "%" at the end of the number)
+#-Any instance of "<rawval>" will be replaced with the value you last gave when updating progress.
+#-Any instance if "<amtleft>" will be replaced with the amount remaining (goal - amount complete)
+$custom_running_text:"Custom: <percentage>" 
+$custom_goal:1.0 #The goal for the custom objective. Used to calculate the percentage completion value.
+
+#When any message is sent on this channel, the custom objective is updated 
+#with the given portion of completion (A float, from 0 up to the "<-custom_goal" value given above)
+#Changing this to a different channel for each transition will increase performance slightly,
+#Calling this message more often than UPDATE_INTERVAL (below) will not update the objective text faster.
+#But shouldn't affect it much unless there are a lot of transitions, and the message is being called very frequently.
+$custom_channel:"SetObjectiveProgress" 
+
+$$levelGUID:"627724b4-1a7b-4e6b-9764-e66ddf5edd1e" #GUID of the level units
+
+$$UPDATE_INTERVAL:5 #Delay between objective checking
+
+#=====================
+
+#For optimization reasons, the main script body is left blank.
+
+
+
+#Runs every frame while the active map is on the start of the transition. 
+#This makes it so only actively running transisions' scripts load, 
+#effectively eliminating script initialization based lag from the cpack no matter how many transitions are on the level.
+:WhileActive
+if(GetTimer0 eq0 GetPause ! &&)
+	Self
+	#Unit timers still obey pause, even though this function runs in MSG_PostUpdate, which does not obey pause.
+	<-UPDATE_INTERVAL SetTimer0
+	if(@ConditionsMet <-done ! &&)
+		<-endUnit "nextUp" 1 SetScript1Var
+		if(<-startUnit "completed" GetScript1Var !)
+			SendMsg("levelComplete" <-*activeMap)
+		endif
+		#Set the start 
+		<-startUnit "completed" dup2 GetScript1Var dup eq0 if pop 99999999 endif "timePassed" @ObjVar min 1 max SetScript1Var
+		PlaySound("MissionObjective" 1)
+		SendMsg("UpdateLevels" 0)
+		if(<-hidden)
+			Self "" <-scale SetObjScale
+			false ->hidden
+		endif
+		true ->done
+		if(<-end lt0)
+			<-endUnit "completed" GetGameUpdateCount 1 max SetScript1Var
+			5 true AcquireMissionObjective
+		endif
+	endif
+endif
+
+#=======================
+
+:Once
+	if(<-*activeMap <-start eq)
+		if(GetEditMode !)
+			<-endUnit "showTitle" true SetScript1Var
+			<-endUnit true SetUnitSelected
+			<-endUnit false SetUnitSelected
+		endif
+	endif
+
+:ConditionsMet
+	CreateList ->progress #Used by the objective script to generate the objective progress percentage text
+	<-require_All
+	
+	0 ->result
+	if(<-triggers "reclaim" ListContains)
+		"reclaimPercent" @ObjVar ->curReclaim
+		<-curReclaim <-RECLAIM_REQ lt <-reclaimComplete ! && if #Charge reclaim
+			<-reclaimTimer <-UPDATE_INTERVAL add ->reclaimTimer
+			<-progress <-reclaimTimer <-RECLAIM_CHARGE AsFloat div 0 1 clamp AppendToList
+			if(<-reclaimTimer <-RECLAIM_CHARGE gte)
+				true ->reclaimComplete
+				1 ->result
+			endif
+		else
+			if(<-reclaimComplete)
+				<-progress 1 AppendToList
+			else
+				<-progress 1 <-curReclaim <-RECLAIM_REQ sub 100 <-RECLAIM_REQ sub AsFloat div sub 0 1 clamp 0.999 mul AppendToList
+				<-reclaimTimer <-UPDATE_INTERVAL sub 0 max ->reclaimTimer
+			endif
+		endif
+		<-result if(<-require_All) && else || endif
+		0 ->result
+	else
+		<-progress -1 AppendToList
+	endif
+	
+	if(<-triggers "collect" ListContains)
+		if(<-COLLECT_NUM gt0)
+			"cachesGone" @ObjVar
+		else
+			"cachesLeft" @ObjVar neg
+		endif
+		<-COLLECT_NUM sub neg <-COLLECT_NUM dup lte0 if "baseCaches" @ObjVar add endif AsFloat div 1 swap sub 0 1 clamp dup <-progress swap AppendToList
+		1 gte if
+			1 ->result
+		endif
+		<-result if(<-require_All) && else || endif
+		0 ->result
+	else
+		<-progress -1 AppendToList
+	endif
+	
+	if(<-triggers "totems" ListContains)
+		if(<-TOTEM_NUM gt0)
+			"totemsGone" @ObjVar
+		else
+			"totemsLeft" @ObjVar neg
+		endif
+		<-TOTEM_NUM sub neg 
+		<-TOTEM_NUM dup lte0 if "totem" 0 GetUnitsByType GetListCount 1 max add endif AsFloat div 1 swap sub 0 1 clamp dup <-progress swap AppendToList
+		1 gte if
+			1 ->result
+		endif
+		<-result if(<-require_All) && else || endif
+		0 ->result
+	else
+		<-progress -1 AppendToList
+	endif
+	
+	if(<-triggers "nullify" ListContains)
+		if(<-NULLIFY_NUM gt0)
+			"enemiesGone" @ObjVar
+		else
+			"enemiesLeft" @ObjVar neg
+		endif
+		<-NULLIFY_NUM sub neg
+		<-NULLIFY_NUM dup lte0 if "totalEnemies" @ObjVar 1 max "killedEnemies" @ObjVar add add endif AsFloat div 1 swap sub dup <-progress swap AppendToList
+		1 gte if
+			1 ->result
+		endif
+		<-result if(<-require_All) && else || endif
+		0 ->result
+	else
+		<-progress -1 AppendToList
+	endif
+	
+	if(<-triggers "custom" ListContains)
+		<-progress <-customObjectiveProgress 0 1 clamp AppendToList
+		<-customObjectiveProgress 1 gte if(<-require_All) && else || endif
+	else
+		<-progress -1 AppendToList
+	endif
+	
+	--result
+	
+	return
+
+#Reads a variable from the objective global script
+:ObjVar
+	"Objectives" swap GetRegisteredScriptVar
+
+#Builds a long string containing all starting objective information.
+:GenerateStartingText
+	#Top line "To this level"
+	"To " <-endUnit "shownTitle" GetScript1Var LF " " StringReplace concat
+	
+	#Add info for if all or any are required
+	if(<-triggers GetListCount eq0)
+		" (none)"
+	else if(<-triggers GetListCount 1 eq)
+		""
+	else if(<-require_All)
+		" (all)"
+	else
+		" (any)"
+	endif endif endif LF "<size=11><i>" concat4
+	
+	#Add objective descriptions from settings
+	
+	if(<-triggers "reclaim" ListContains) #Reclaim
+		"Reclaim " 100 <-RECLAIM_REQ sub "% of land" LF concat4 concat
+	endif
+	
+	if(<-triggers "collect" ListContains) #Collect
+		if(<-COLLECT_NUM eq0)
+			"Collect all infocaches" LF concat3
+		else if(<-COLLECT_NUM lt0)
+			"Collect all but " <-COLLECT_NUM neg " infocaches" concat4 LF concat
+		else if(<-COLLECT_NUM gt0)
+			"Collect " <-COLLECT_NUM " infoCaches" concat4 LF concat
+		endif endif endif
+	endif
+	
+	if(<-triggers "totems" ListContains) #totems
+		<-unit "TOTEM_NUM" GetScript1Var ->COLLECT_NUM 
+		if(<-TOTEM_NUM eq0)
+			"Power all totems" LF concat3
+		else if(<-TOTEM_NUM lt0)
+			"Power all but " <-TOTEM_NUM neg " totems" concat4 LF concat
+		else if(<-TOTEM_NUM gt0)
+			"Power " <-TOTEM_NUM " totems" concat4 LF concat
+		endif endif endif
+	endif
+	
+	if(<-triggers "nullify" ListContains) #Nullify
+		if(<-NULLIFY_NUM eq0)
+			"Nullify all enemies" LF concat3
+		else if(<-NULLIFY_NUM lt0)
+			"Nullify all but " <-NULLIFY_NUM neg " enemies" concat4 LF concat
+		else if(<-NULLIFY_NUM gt0)
+			"Nullify " <-NULLIFY_NUM " enemies" concat4 LF concat
+		endif endif endif
+	endif
+	
+	if(<-triggers "time" ListContains) #Time
+		"Survive " <-time GetTimeString LF concat4
+	endif
+	
+	if(<-triggers "custom" ListContains) #Custom
+		<-custom_start_text LF concat3
+	endif
+	
+	"</i></size>" concat
+	->startText
+	#SetMsgButton(0 true <-msgText V3(1 1 1) "" "")
+	
+#Handles all the UI interaction
+:_UICallback
+	if(<-_DATA 1 eq)
+		@StartMove
+	else if(<-_DATA 2 eq)
+		@UpdateText
+	else if(<-_DATA 3 eq)
+		Self 2 GetUnitUIOptions ->options
+		<-options[Self 2 GetUnitUIState] ->option
+		if(Split(<-trigger ", ") <-option ListContains)
+			StringReplace(<-trigger <-option ", " concat "") ->trigger
+		else
+			<-trigger <-option ", " concat3 ->trigger
+		endif
+		<-trigger ", " split ->triggers
+		@UpdateText
+		--options
+		--option
+		@SaveSettings
+	endif endif endif
+
+:StartMove
+	<-start ->prevStart
+	<-end ->prevEnd
+	<-startUnit ->prevStartUnit
+	<-endUnit ->prevEndUnit
+	0 ->targeted
+	--start
+	--end
+	--startUnit
+	--endUnit
+	"" ->startLevel
+	"" ->endLevel
+	"" ->endTitle
+
+:_Selected
+	@Awake
+	Self 0 <-start " -> " <-end concat3 SetUnitUIText
+	if(<-_DATA ! GetEditMode &&)
+		@SaveSettings
+	endif
+
+:UpdateText
+	Self 2 GetUnitUIOptions ->options
+	<-options[Self 2 GetUnitUIState] ->option
+	if(Split(<-trigger ", ") <-option ListContains)
+		Self 3 "Remove trigger" SetUnitUIText
+	else
+		Self 3 "Add trigger" SetUnitUIText
+	endif
+	
+	if(<-trigger StringLength)
+		Self 5 <-trigger SetUnitUIText
+	else
+		Self 5 "None" SetUnitUIText
+	endif
+	
+:WhilePaused
+	if(<-targeted !) #While dragging to place
+		GetPointerTerrainCoords GetTerrainVector ->pos
+		GetUnits(<-levelGUID <-pos 515 true false false 0 0 0) [0] ->nearUnit
+		if(<-start !)
+			<-nearUnit "shownTitle" GetScript1Var LF " " StringReplace ->startTitle
+			<-nearUnit "id" GetScript1Var ->startLevel
+		else if(<-end !)
+			<-nearUnit "shownTitle" GetScript1Var LF " " StringReplace ->endTitle
+			<-nearUnit "id" GetScript1Var ->endLevel
+		endif endif
+		self <-startTitle " -> " <-endTitle concat3 SetUnitDebugText
+		if(0 1 GetMouseButton <-startUnit ! &&)
+			# self GetUnitCell ->startZ ->startX
+			<-startLevel ->start
+			<-nearUnit ->startUnit
+		endif
+		if(0 1 GetMouseButtonUp)
+			# Self GetUnitCell ->endZ ->endX
+			<-endLevel ->end
+			<-nearUnit ->endUnit
+			self 999 ConstructUnit
+			1 ->targeted
+			self "" SetUnitDebugText
+			@SaveSettings
+		endif
+		if(GetMappedKeyDown("Cancel" 1))
+			if(Self GetUnitConstructing)
+				Self 1 1 1 DestroyUnit
+			else
+				<-prevStart ->start
+				<-prevEnd ->end
+				<-prevStartUnit ->startUnit
+				<-prevEndUnit ->endUnit
+				1 ->targeted
+				Self 999 ConstructUnit
+				Self "" SetUnitDebugText
+				@SaveSettings
+			endif
+		endif
+	endif
+	if(Self GetUnitSelected) #Only selectable in edit mode
+		Self 0 <-start " -> " <-end concat3 SetUnitUIText
+		if(GetKey("LeftControl" 1) GetKey("LeftCommand" 1) || GetKeyDown("Space" 1) && <-targeted &&)
+			@StartMove
+		endif
+	endif
+	
+	@SetStartEnd
+	<-lastStart <-startX <-startZ <-mapX mul add dup ->lastStart neq
+			<-lastEnd <-endX <-endZ <-mapX mul add dup ->lastEnd neq  
+			<-override || || if
+		@SetPosition
+	endif
+	once
+		@SetPosition
+	endonce
+
+:SetStartEnd
+	#The EV3 swap pop stuff is because GetUnitCell is a little off outside the map.
+	if(<-startUnit)
+		<-startUnit GetUnitPosition EV3 swap pop ->startZ ->startX
+		if(<-endUnit)
+			<-endUnit GetUnitPosition EV3 swap pop ->endZ ->endX
+		else
+			GetPointerTerrainCoords ->endZ ->endX
+		endif
+	else
+		GetPointerTerrainCoords dup2 ->startZ ->startX ->endZ ->endX
+	endif
+
+:SetPosition
+	Self <-startX <-endX avg2 <-startZ <-endZ avg2 dup2 GetTerrain 0 max swap V3 SetUnitPosition
+	Self V3(0 <-startZ <-endZ sub <-endX <-startX sub atan2 rad2deg mul 0) SetUnitRotation
+	
+	Self GetEditMode SetUnitSelectable
+	
+	#Scale to stretch the arrow to
+	V3(<-startX <-startZ <-endX <-endZ DistanceCell 5.0 div 1 max 1 1) ->scale
+	<-scale V3(1 1 1) eq ->override
+	
+	if(GetUnits(Self dup GetUnitType swap GetUnitPosition 0.1 false false false 0 0 0) GetListCount 1 gt) #If there are units on top of this one
+		#When on top of another transition unit, use the bent arrow
+		#and hide the straight one
+		Self "Straight" V3(0 0 0) SetObjScale
+		"Bend"
+	else
+		Self "Bend" V3(0 0 0) SetObjScale
+		"Straight"
+	endif
+	""
+	if(<-targeted !) #While placing it down
+		swap #Changes whether the hitbox adjusts too
+	endif
+
+	
+	Self swap <-scale SetObjScale
+	Self swap V3(1 1 1) SetObjScale
+	if(<-hidden)
+		Self "" Vector0 SetObjScale
+	endif
+
+:SaveSettings
+	Self GetUnitSettings ->*index{self}
+
+:LoadSettings
+	once
+		if(<-*index{self} IsNull !)
+			self <-*index{self} SetUnitSettings
+		endif
+	endonce
+
+:UpdateCustomObjective
+	<-_DATA ->rawCustomProgress
+	<-rawCustomProgress <-custom_goal div ->customObjectiveProgress
+	<-custom_running_text 
+	"<percentage>" <-customObjectiveProgress 100 mul 0 round 100 min "%" concat StringReplace 
+	"<rawval>" <-rawCustomProgress StringReplace 
+	"<amtleft>" <-custom_goal <-rawCustomProgress sub 0 max StringReplace
+	->customText
+
+#Called when the map is changed so objectives are cleared if/when the map is returned to
+:Update
+	if(<-start -3 eq GetEditMode ! &&)
+		true ->hidden
+		Self "" Vector0 SetObjScale
+	else if(<-*MAP_SPOILER_MODE 3 lt GetEditMode ! &&)
+		false ->hidden
+		Self "" <-scale SetObjScale
+	endif endif
+	false ->reclaimComplete
+	false ->done
+	0 ->reclaimTimer
+	0 ->customObjectiveProgress
+	CreateList ->progress
+	<-base_custom_text ->custom_running_text
+	if(<-_DATA <-start eq)
+		if(<-hidden)
+			Self "" <-scale SetObjScale
+			false ->hidden
+		endif
+		if(GetEditMode !)
+			# Self "enabling" SetUnitDebugText
+			true ->overrideEnd
+			<-endUnit "showTitle" dup2 GetScript1Var 1 add SetScript1Var
+		endif
+		RegisterForMsg("MSG_PostUpdate" "WhileActive")
+	else
+		# Self "nothing" SetUnitDebugText
+		DeregisterForMsg("MSG_PostUpdate")
+		if(GetEditMode ! <-overrideEnd &&)
+			# Hide unit if level is not complete and spoiler mode is gte 3
+			if(<-*MAP_SPOILER_MODE 3 gte GetEditMode ! && <-startUnit "completed" GetScript1Var ! &&)
+				true ->hidden
+				Self "" Vector0 SetObjScale
+			endif
+			<-endUnit "showTitle" dup2 GetScript1Var 1 sub 0 max SetScript1Var
+		endif
+		false ->overrideEnd
+	endif
+	
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	once
+		<-custom_running_text ->base_custom_text
+		0 ->customObjectiveProgress
+		Self 6 LF "Unit settings has advanced options" concat SetUnitUIText
+		#Self "Main" V3(0 0.01 0) 0 SetObjPosition
+		Self GetEditMode SetUnitSelectable
+		if(GetEditMode) #Don't spend execution time checking for moving when out of edit mode
+			RegisterForMsg("MSG_PreUpdate" "WhilePaused")
+		else
+			DeregisterForMsg("MSG_PreUpdate")
+		endif
+		RegisterForMsg("SetMap" "Reset")
+		RegisterForMsg("UpdateTransitions" "Update")
+		RegisterForMsg(<-custom_channel "UpdateCustomObjective")
+		
+		Self GetUnitSettings #Kept on the stack to keep changes to the script settings
+
+		@LoadSettings 
+		
+		Self swap SetUnitSettings #Restore the script inputs
+		
+		
+		Self <-trigger "0" "" StringReplace ->trigger
+		Split(<-trigger ", ") ->triggers
+		if(<-*activeMap <-start eq)
+			RegisterForMsg("MSG_PostUpdate" "WhileActive")
+			<-endUnit "showTitle" dup2 GetScript1Var 1 add SetScript1Var
+			true ->overrideEnd
+			<-endUnit true SetUnitSelected
+			<-endUnit false SetUnitSelected
+		else
+			DeregisterForMsg("MSG_PostUpdate")
+		endif
+		
+		@UpdateText
+		GetMapSize ->mapZ ->mapX
+		SendMsg(<-custom_channel 0)
+		if(<-*MAP_SPOILER_MODE 3 gte GetEditMode ! &&)
+			true ->hidden
+			Self "" Vector0 SetObjScale
+		endif
+		
+		if(GetEditMode)
+			@SetStartEnd
+			@SetPosition
+		endif
+	endonce 
+	@GenerateStartingText
+
+#Make sure to update the position in GameLoaded so unit positions work right
+:GameLoaded
+	@SetStartEnd
+	@SetPosition
+	@GenerateStartingText

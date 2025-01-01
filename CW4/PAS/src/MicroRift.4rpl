@@ -1,0 +1,155 @@
+# --MicroRift-- 11/14/2023 8:37:28 PM
+$range:1
+$$updateRate:5
+
+# Self 0 0 SetUnitUIState
+#Animate the rifts
+Self "Circle" V3(90 InvocationCount 3 mul 0) false SetObjRotation #The square object (Not actually a circle)
+<-bSpeed <-bRot add ->bRot
+Self "Ball" <-bRot false SetObjRotation
+
+if(Self GetUnitConstructing ! <-*isMVerseHost &&)
+	if(GetGameUpdateCount <-updateRate mod eq0)
+		@Input
+		RegisterForMsg("MSG_PostUpdate" "Output")
+	else if(GetGameUpdateCount <-updateRate mod 1 eq)
+		0 ->*mRiftCreep
+	endif endif
+endif 
+
+:Input
+	if(<-input)
+		Self GetUnitCell <-range true true false GetCreeperInRange <-*mRiftCreep add ->*mRiftCreep
+	endif
+
+:Output
+	if(<-*mRiftOutputs !) #Freeze the network if there are no outputs
+		return
+	endif
+	
+	if(<-input)
+		Self GetUnitCell <-range true
+		if(<-output) #Set creeper to network depth at input-and-output rifts
+			<-*mRiftCreep <-*mRiftOutputs div 9 div
+		else #Remove creeper at input-only rifts
+			0
+		endif
+		false SetCreeperInRange
+	else if(<-output) #Add creeper to all output-only rifts
+		Self GetUnitCell <-range true <-*mRiftCreep <-*mRiftOutputs div 9 div AddCreeperInRange
+	endif endif
+	DeregisterForMsg("MSG_PostUpdate")
+
+:_UICallback
+	<-_DATA @HandleUI
+
+:HandleUI
+	if(dup eq0)
+		if(Self 0 GetUnitUIState eq0)
+
+			true ->input
+			true ->output
+		else if(Self 0 GetUnitUIState 1 eq)
+			if(<-output)
+				if(<-*mRiftOutputs 1 lte)
+					PlaySound("PlanetView2" 1)
+					if(<-input)
+						Self 0 0 SetUnitUIState
+					else
+						Self 0 2 SetUnitUIState
+					endif
+					Self false SetUnitSelected
+					Self true SetUnitSelected
+					return
+				endif
+			endif
+			true ->input
+			false ->output
+		else
+			false ->input
+			true ->output
+		endif endif
+	endif
+	
+	if(1 eq)
+		if(Self GetUnitSelected dup ->selected !)
+			Self true SetUnitSelected
+		endif
+		Self GetUnitType 0 GetUnitsByType ->units
+		<-units 0 do
+			<-units[i] dup GetUnitSelected 1 add @SetMRiftState
+		loop
+		Self false SetUnitSelected
+		if(<-selected)
+			Self true SetUnitSelected
+		endif
+	endif
+	@CalculateOutputs
+
+:SetMRiftState
+	->state ->unit
+	if(<-unit 0 GetUnitUIState <-state eq)
+		return
+	endif
+	if(<-state eq0)
+		# if(<-unit "MicroRift.4rpl" "output" GetScriptVar ! <-unit GetUnitConstructing ! &&)
+			# <-*mRiftOutputs 1 add ->*mRiftOutputs
+		# endif
+		<-unit "MicroRift.4rpl" "output" true SetScriptVar
+		<-unit "MicroRift.4rpl" "input" true SetScriptVar
+	else if(<-state 1 eq)
+		# if(<-unit "MicroRift.4rpl" "output" GetScriptVar <-unit GetUnitConstructing ! &&)
+			# # if(<-*mRiftOutputs 1 lte <-unit self eq &&)
+				# # PlaySound("PlanetView2" 1)
+				# # if(<-unit "MicroRift.4rpl" "intput" GetScriptVar)
+					# # <-unit 0 0 SetUnitUIState
+				# # else
+					# # <-unit 0 2 SetUnitUIState
+				# # endif
+				# # <-unit false SetUnitSelected
+				# # <-unit true SetUnitSelected
+				# # return
+			# # endif
+			# <-*mRiftOutputs 1 sub ->*mRiftOutputs
+		# endif
+		<-unit "MicroRift.4rpl" "output" false SetScriptVar
+		<-unit "MicroRift.4rpl" "input" true SetScriptVar
+	else 
+		# if(<-unit "MicroRift.4rpl" "output" GetScriptVar ! <-unit GetUnitConstructing ! &&)
+			# <-*mRiftOutputs 1 add ->*mRiftOutputs
+		# endif
+		<-unit "MicroRift.4rpl" "output" true SetScriptVar
+		<-unit "MicroRift.4rpl" "input" false SetScriptVar
+	endif endif
+
+	<-unit 0 <-state SetUnitUIState
+	
+:CalculateOutputs
+	0 ->*mRiftOutputs
+	Self GetUnitType 1 GetUnitsByType ->units
+	<-units 0 do
+		if(<-units[i] "MicroRift.4rpl" "output" GetScriptVar)
+			<-*mRiftOutputs 1 add ->*mRiftOutputs
+		endif
+	loop
+	
+:BuildComplete
+	if(<-output)
+		<-*mRiftOutputs 1 add ->*mRiftOutputs
+	endif
+
+:Destroyed
+	if(<-output Self GetUnitConstructing ! &&)
+		<-*mRiftOutputs 1 sub ->*mRiftOutputs
+	endif
+
+:Once
+	true ->input
+	true ->output
+	V3(pi -7 3) ->bSpeed
+	Vector0 ->bRot
+	RegisterForMsg("MVerseUI" <-trueGUID concat "MVerseUI")
+
+:MVerseUI
+	<-_DATA[0] @HandleUI
+	

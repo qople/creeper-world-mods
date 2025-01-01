@@ -1,0 +1,379 @@
+# --UpgradeInterface-- 11/10/2023 12:42:51 PM
+$$cannonGUID:"7716cce0-2e1b-4dc0-8629-9af8704a42ee"
+$$mortarGUID:"95ee007b-8cf5-4c71-88e7-44655d06d295"
+$$missileGUID:"681d8666-7042-4266-b644-c2ee8738a73f"
+$$shieldGUID:"9919fcd4-fee1-4c13-be8a-3f131ebb4ae1"
+$$berthaGUID:"71bc997d-aa68-4f89-a879-9b7999425e00"
+$$mriftGUID:"6e68137e-f89a-4013-834e-86af9968b5c3"
+$$terpGUID:"f14a4d26-3ea8-4477-a66b-753f635d732d"
+$$pylonGUID:"ab9b2cfa-e208-4fea-9bee-9c2cab2116a8"
+$$porterGUID:"35f9b3ad-b560-46aa-a6bf-4e0d75b7a304"
+$$sprayerGUID:"9ee8017a-e9de-43ca-bd75-b73333b67b95"
+$$bomberGUID:"96bd2053-f65a-4358-aafa-f24584cba1bc"
+$$acBomberGUID:"ff73d5bb-3c2c-45ad-922c-d4b1dd05f75f"
+
+$$descriptionPanelGUID:"8c62702e-1922-4669-be24-18b4e3eafcb8"
+
+$$systemButtons:3 #Number of buttons that should always be shown, no matter which page (3 total for close, pgup, and pgdn)
+
+$msgButtonSlot:0
+
+if(<-open !)
+	# PlaySound("Notify" 1)
+	SetMsgButton(<-msgButtonSlot true "<size=19>RESOURCES<br><size=25><align=" DQ "left" DQ concat4 "><color=#f44>" concat <-*sleeperResources[0] AsInt "</color><br><color=#2f2>" <-*sleeperResources[1] AsInt "</color>" concat4 concat V4(0 0 0 0.4) "OpenUpgrader" 1)
+endif
+
+#Called every frame advance while the upgrader is open
+:Update
+	Self "Redon" <-*sleeperResources[0] AsInt SetObjText
+	Self "Greenar" <-*sleeperResources[1] AsInt SetObjText
+	@SetPosition
+	GetSelectedUnits ->lastSelected
+		
+:Awake
+	once
+		#System buttons (always shown, not attached to a page)
+		"69dd31ac-2f59-4e40-a524-b05bbd15d44d" #PgUp (DO NOT MOVE THIS FROM INDEX 0)
+		"719d7637-7483-44b6-af18-bfb8562e9ed6" #PgDn (DO NOT MOVE THIS FROM INDEX 1)
+		"a90a47c1-0c44-4307-b5cf-46ac80521156" #Close
+		
+		#Upgrade buttons (4 per page)
+		
+		#Page 0 (tutorials)
+		"e8b52683-4ba9-40fe-a8af-f19c6d40d312" #Tower placement
+		"89ec4152-7da4-42f2-a962-a3fa63f51f47" #Factory
+		"2e297143-b88d-489d-88bc-473e85aa9a38" #Upgrader info
+		"6a83d287-45d0-4b32-8cc3-96425efdc6e1" #Unit Placement
+		
+		#Page 1 (struct)
+		"dff91886-4734-4067-bfc3-183d766d1b6f" #Pylon
+		"1ced7c4a-05e9-4c1b-a71d-06463289cef6" #Terp
+		"911d1b40-90b3-4fb9-a3eb-a133dba7e7de" #Porter
+		""
+		
+		#Page 2 (weapons)
+		"99cd3d38-12b9-4894-a1c3-9ee2cd4b0fcf" #Cannon
+		"e23d5c6c-a448-40a0-94bb-c841a9c41198" #Mortar
+		"5d2f0d83-e385-4463-9373-e93306a6127e" #Sprayer
+		"168f2016-dc85-4901-87e4-7f903e7f6de7" #Missile
+		
+		#Page 3 (air)
+		"5d324429-aeee-4c5f-9246-a9477f2c87bc" #Bomber
+		"d774c5fd-eb7a-4dd0-9b92-f888412b3ea3" #AC bomber
+		""
+		""
+		
+		#Page 3 (special)
+		"b05e61e6-7229-4b23-8494-eeffe498436f" #Bertha
+		"64267d64-fcc5-4a17-95af-a4d0db85ffcc" #M-Rift
+		"32b7ab12-8785-431a-a76b-16513e2cdf52" #Shield
+		"" #Empty string means no button
+		
+		#Page 3
+		"4385b3f9-7b9b-4601-bb0e-ae64c11ab2ef" #Creeper cap
+		""
+		""
+		""
+		true ->open
+		List ->buttonGUIDs
+		if(GetGameTickCount eq0) #Clean up on first game load
+			<-buttonGUIDs 0 do
+				<-buttonGUIDs[i] 0 GetUnitsByType ->units
+				<-units 0 do
+					<-units[i] 1 1 1 DestroyUnit
+				loop
+			loop
+			Self 1 1 1 DestroyUnit
+		endif
+		
+		Self GetUnitType 0 GetUnitsByType ->units
+		<-units 0 do
+			if(<-units[i] self neq)
+				<-units[i] 1 1 1 DestroyUnit
+			endif
+		loop
+		
+		#Page headers
+		"Tutorials" "Struct" "Weapons" "Air" "Special" "Passive" List ->headers
+		
+		#System messages
+		RegisterForMsg("MSG_FrameAdvance" "Update")
+		RegisterForMsg("CloseUpgrader" "CloseUpgrader")
+		RegisterForMsg("OpenUpgrader" "OpenUpgrader")
+		RegisterForMsg("OpenDescription" "OpenDescription")
+		RegisterForMsg("ChangePage" "ChangePage")
+
+		#Upgrade messages
+		RegisterForMsg("UnlockCannon" "UnlockCannon")
+		RegisterForMsg("UnlockMortar" "UnlockMortar")
+		RegisterForMsg("UnlockMissile" "UnlockMissile")
+		RegisterForMsg("UnlockShield" "UnlockShield")
+		RegisterForMsg("UnlockBertha" "UnlockBertha")
+		RegisterForMsg("UnlockMRift" "UnlockMRift")
+		RegisterForMsg("UnlockTerp" "UnlockTerp")
+		RegisterForMsg("UnlockPylon" dup)
+		RegisterForMsg("UnlockPorter" dup)
+		RegisterForMsg("UnlockSprayer" dup)
+		RegisterForMsg("UnlockBomber" dup)
+		RegisterForMsg("UnlockACBomber" dup)
+		
+		RegisterForMsg("IncreaseCreeperCap" "IncreaseCreeperCap")
+		
+		0 ->page
+		<-buttonGUIDs GetListCount <-systemButtons sub 4.0 div ceil 1 sub ->maxPages
+		Self "Title" "<color=#e0f>" <-headers[<-page] "</color>" concat3 SetObjText
+		Vector0 ->offset
+		1 ->scale
+		0 ->scaleSteps
+		V3(1 1 1) ->scaleVect
+		false ->descriptionOpen
+		Self "Redon" <-*sleeperResources[0] AsInt SetObjText
+		Self "Greenar" <-*sleeperResources[1]  AsInt SetObjText
+		Table("IS_PANEL" true) ->descriptionParams
+		@CreateButtons
+	endonce
+
+:SetPosition
+	if(Self GetUnitSelected)
+		true ->dragging
+		Self false SetUnitSelected
+		false ->lastEquals
+		false ->lastMinus
+		@ResetSelection
+	endif
+	
+	if(<-dragging)
+		GetMouseDelta 0.053 mul <-offset add ->offset
+		
+		#Scaling
+		GetKey("LeftBracket" 0) ->minus
+		GetKey("RightBracket" 0) ->equals
+		<-scaleSteps <-minus <-lastMinus ! && sub <-equals <-lastEquals ! && add -5 5 clamp ->scaleSteps
+		if(GetCameraTopDown !)
+			1.1 <-scaleSteps pow ->scale
+			<-scale dup dup V3 ->scaleVect
+			Self "" <-scaleVect SetObjScale
+			<-buttons 0 do
+				<-buttons[i] "" <-scaleVect SetObjScale
+			loop
+		endif
+		<-equals ->lastEquals
+		<-minus ->lastMinus
+		
+		if(GetMouseButton(0 0) !)
+			false ->dragging
+		endif
+	endif
+	
+	#Calculate the position offsets.
+	if(GetCameraTopDown)
+		true ->lastTopDown
+		RPLCamCopyPosAndRot
+		GetCameraPosition ->camPos
+		<-camPos.y 16 sub 6.15 div ->scale
+		Self <-camPos <-offset.x <-scale mul GetRplCamRight mul add <-offset.y <-scale mul GetRplCamUp mul add V3(0 -3 0) add SetUnitPosition
+		GetCameraRotation ->rot
+		Self V4(90 <-rot.y 0 0) SetUnitRotation
+		<-scale 1.1 <-scaleSteps pow mul dup dup V3 ->scaleVect
+		Self "" <-scaleVect SetObjScale
+		<-buttons 0 do
+			<-buttons[i] "" <-scaleVect SetObjScale
+		loop
+	else
+		if(<-lastTopDown)
+			0 ->lastTopDown
+			0 ->lastScale
+			1.1 <-scaleSteps pow ->scale
+			<-scale dup dup V3 ->scaleVect
+			Self "" <-scaleVect SetObjScale
+			<-buttons 0 do
+				<-buttons[i] "" <-scaleVect SetObjScale
+			loop
+		endif
+		RPLCamCopyPosAndRot
+		Self GetRplCamPosition GetRplCamForward 5 mul <-offset.x GetRplCamRight mul add <-offset.y GetRplCamUp mul add <-scale div add SetUnitPosition
+		Self GetRplCamForward SetUnitForward
+	endif
+	
+	Self GetUnitPosition ->pos
+	<-pos <-lastPos sub ->speed
+	Self <-pos <-speed add SetUnitPosition
+	Self "" <-pos 1 SetObjPosition
+	# Self "Title" <-pos <-speed add SetObjText
+	
+	<-pos ->lastPos
+	
+	#Move all the buttons to match
+	#There is one frame of motion predition on the hitbox, so that it lines up properly while moving. Don't ask me why this is necessary, I couldn't tell you.
+	<-activeButtons 0 do
+		<-activeButtons[i] <-pos <-speed add SetUnitPosition
+		<-activeButtons[i] Self GetUnitRotation SetUnitRotation
+		<-activeButtons[i] "Base" <-pos 1 SetObjPosition
+	loop
+	
+	#Move the description panel
+	if(<-descriptionOpen)
+		<-pos GetRplCamRight <-offset.x sign 1.4 mul mul <-scaleVect mul sub ->dPos
+		<-descriptionUnit <-dPos 2 mul <-lastDPos sub SetUnitPosition
+		<-descriptionUnit Self GetUnitRotation SetUnitRotation
+		<-descriptionUnit "Base" <-dPos 1 SetObjPosition
+		<-descriptionUnit "" <-scaleVect SetObjScale
+		<-dPos ->lastDPos
+	endif
+
+:ResetSelection
+	<-lastSelected 0 do
+		<-lastSelected[i] true SetUnitSelected
+	loop
+
+:CreateButtons
+	<-buttonGUIDs 0 do
+		
+		<-buttonGUIDs[i] 0 GetUnitsByType ->units
+		<-units 0 do
+			<-units[i] 1 1 1 DestroyUnit
+		loop
+		<-buttonGUIDs[i] V3(-1000 -1000 -1000) <-buttonParams CreateUnit
+	loop
+	List ->buttons
+	""
+	7 1 do
+		<-buttons[i]
+	loop
+	List ->activeButtons
+
+:ChangePage
+	<-page <-_DATA add 0 <-maxPages clamp ->nextPage
+	if(<-nextPage <-page eq)
+		return
+	endif
+	
+	#Deactivate current page's buttons
+	2 <-activeButtons 1 sub do
+		<-activeButtons[i] -1000 -1000 -1000 V3 SetUnitPosition
+		<-activeButtons i RemoveListElement
+	loop
+	
+	#Activate next page's buttons
+	<-nextPage ->page
+	
+	<-page 4 mul <-systemButtons add dup 4 add swap do
+		<-activeButtons <-buttons[i] AppendToList
+	loop
+	
+	if(<-page eq0)
+		<-activeButtons[0] -1000 -1000 -1000 V3 SetUnitPosition
+		"" ->activeButtons[0]
+	else
+		<-buttons[0] ->activeButtons[0]
+	endif
+	
+	if(<-page <-maxPages eq)
+		<-activeButtons[1] -1000 -1000 -1000 V3 SetUnitPosition
+		"" ->activeButtons[1]
+	else
+		<-buttons[1] ->activeButtons[1]
+	endif
+
+	Self "Title" "<color=#e0f>" <-headers[<-page] "</color>" concat3 SetObjText
+	
+:Destroyed
+	<-buttons 0 do
+		<-buttons[i] 1 1 1 DestroyUnit
+	loop
+
+:CloseUpgrader
+	false ->open
+	DeregisterForMsg("MSG_FrameAdvance")
+	Self V3(-1000 -1000 -1000) SetUnitPosition
+	<-buttons 0 do
+		<-buttons[i] V3(-1000 -1000 -1000) SetUnitPosition
+	loop
+	SendMsg("OpenDescription" "" "" "" 3 ListN)
+
+:OpenUpgrader
+	SetMsgButton(<-msgButtonSlot false "" "" Vector0 0)
+	true ->open
+	RegisterForMsg("MSG_FrameAdvance" "Update")
+	@CloseDescription
+
+:OpenDescription
+	if(<-lastUnit <-_DATA[2] neq)
+		@CloseDescription
+		<-_DATA[2] ->lastUnit
+	endif
+	<-_DATA[0] ->effectName
+	<-_DATA[1] ->descriptionBody
+	
+	if(<-effectName ! <-descriptionOpen &&)
+		@CloseDescription
+	else if(<-descriptionOpen !)
+		true ->descriptionOpen
+		<-descriptionPanelGUID Vector0 <-descriptionParams CreateUnit ->descriptionUnit
+	endif
+		<-descriptionUnit "VALUE" <-effectName SetScript1Var
+		<-descriptionUnit "Text" <-descriptionBody SetObjText
+	endif
+
+:CloseDescription
+	<-descriptionUnit 1 1 1 DestroyUnit
+	false ->descriptionOpen
+
+#Genericized version of the unit unlock callback function
+:UnlockUnit
+	->data ->GUID
+	<-GUID dup GetUnitBuildLimit <-GUID 0 GetUnitsByType GetListCount max <-data add SetUnitBuildLimit
+	
+	@ResetSelection
+
+:UnlockCannon
+	<-cannonGUID "CANNON" 1 SetCMODPlayerMenuName
+	<-cannonGUID <-_DATA @UnlockUnit
+
+:UnlockMortar
+	<-mortarGUID "MORTAR" 1 SetCMODPlayerMenuName
+	<-mortarGUID <-_DATA @UnlockUnit
+
+:UnlockShield
+	<-shieldGUID "SHIELD" 3 SetCMODPlayerMenuName
+	<-shieldGUID <-_DATA @UnlockUnit
+
+:UnlockMissile
+	<-missileGUID "MISSILE" 1 SetCMODPlayerMenuName
+	<-missileGUID <-_DATA @UnlockUnit
+
+:UnlockBertha
+	<-berthaGUID "BERTHA" 3 SetCMODPlayerMenuName
+	<-berthaGUID <-_DATA @UnlockUnit
+
+:UnlockMRift
+	<-mriftGUID "M-RIFT" 3 SetCMODPlayerMenuName
+	<-mriftGUID <-_DATA @UnlockUnit
+	
+:UnlockTerp
+	<-terpGUID "TERP" 0 SetCMODPlayerMenuName
+	<-terpGUID <-_DATA @UnlockUnit
+	
+:UnlockPylon
+	<-pylonGUID "PYLON" 0 SetCMODPlayerMenuName
+	<-pylonGUID <-_DATA @UnlockUnit
+	
+:UnlockPorter
+	<-porterGUID "PORTER" 0 SetCMODPlayerMenuName
+	<-porterGUID <-_DATA @UnlockUnit
+	
+:UnlockSprayer
+	<-sprayerGUID "SPRAYER" 1 SetCMODPlayerMenuName
+	<-sprayerGUID <-_DATA @UnlockUnit
+	
+:UnlockBomber
+	<-bomberGUID "BOMBER" 2 SetCMODPlayerMenuName
+	<-bomberGUID <-_DATA @UnlockUnit
+	
+:UnlockACBomber
+	<-acBomberGUID "AC BOMBER" 2 SetCMODPlayerMenuName
+	<-acBomberGUID <-_DATA @UnlockUnit
+	
+:IncreaseCreeperCap
+	GetCreeperCutoff <-_DATA add SetCreeperCutoff
+	

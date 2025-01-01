@@ -1,0 +1,95 @@
+# --UpgradeButton-- 11/10/2023 1:27:35 PM
+$EFFECT:""
+$DESCRIPTION:""
+$VALUE:0.0
+$COST:100
+$WARE:0 #0 for redon, 1 for greenar
+$MAX_BUYS:5 #Times the upgrade can be bought (-1 for unlimited)
+$COST_INCREASE:50
+$TITLE:""
+$SYNC_EFFECT:0 #Applies the effect to other mverse players as well when true
+
+$$panelGUID:"e16cc11e-a877-46a4-9e70-762c22058b0a"
+
+#These values are automatically displayed to the player if the button has appropriately named objects:
+#"TimesBought" object has text for "timesBought/MAX_BUYS"
+#"Amount" object has "VALUE" on it, with a + or - before it
+#"Cost" object has "COST"
+#"Ware" object has color changed to match redon or greenar cubes
+#"Description" has "DESCRIPTION" for object text
+
+:_Selected
+	if(<-_DATA)
+		if(-?IS_PANEL ! <-DESCRIPTION StringLength &&) #Set on creation
+			if(<-currentEffect <-EFFECT eq)	
+				Self "ButtonBase" <-baseColor SetObjColor
+				SendMsg("OpenDescription" "" "" Self 3 ListN) #Close the description panel
+			else
+				SendMsg("OpenDescription" <-EFFECT <-DESCRIPTION Self 3 ListN)
+				Self "ButtonBase" V3(0 0.4 0.8) SetObjColor
+				<-EFFECT ->currentEffect
+			endif
+			PlaySound("Click" 1)
+		else
+			@BuyUpgrade
+		endif
+		Self false SetUnitSelected
+	endif
+
+:Awake
+	once
+		Self GetUnitType 0 GetUnitsByType ->units
+		<-units 0 do
+			if(<-units[i] self neq)
+				<-units[i] 1 1 1 DestroyUnit
+			endif
+		loop
+		"" ->currentEffect
+		if(-?IS_PANEL !)
+			RegisterForMsg("BuyUpgrade" "TryBuyUpgrade")
+			RegisterForMsg("OpenDescription" "SaveEffect")
+		endif
+		0 ->timesBought
+		Self "ButtonBase" GetObjColor ->baseColor
+		Self "Amount" if(<-VALUE gt0) "+" else "-" endif <-VALUE concat SetObjText
+		Self "Cost" <-COST SetObjText
+		Self "Ware" if(<-WARE) V3(0.1 1 0.1) else V3(1 0.2 0.2) endif SetObjColor
+		Self "TimesBought" <-timesBought if(<-MAX_BUYS gt0) "/" <-MAX_BUYS concat3 endif SetObjText
+		Self "Description" <-DESCRIPTION SetObjText
+		Self "Title" <-TITLE SetObjText
+	endonce
+
+:SaveEffect
+	<-_DATA[0] ->currentEffect
+	if(<-_DATA[0] !)
+		"" ->currentEffect
+		Self "ButtonBase" <-baseColor SetObjColor
+	endif
+
+:TryBuyUpgrade
+	if(<-_DATA <-EFFECT eq)
+		@BuyUpgrade
+	endif
+	
+:BuyUpgrade
+	if(-?IS_PANEL)
+		<-EFFECT <-VALUE SendMsg
+		return
+	endif
+	if(<-*sleeperResources[<-WARE] <-COST gte <-timesBought <-MAX_BUYS neq &&)
+		<-timesBought 1 add ->timesBought
+		Self "TimesBought" <-timesBought if(dup <-MAX_BUYS eq) "<color=red>" swap concat endif if(<-MAX_BUYS gt0) "/" <-MAX_BUYS concat3 endif SetObjText
+		<-EFFECT <-VALUE SendMsg
+		if(<-SYNC_EFFECT)
+			<-EFFECT <-VALUE SendMVerseMsg
+		endif
+		if(<-COST)
+			"UseResources" <-WARE <-COST V2 SendMsg
+		endif
+		<-COST <-COST_INCREASE add ->COST
+		Self "Cost" <-COST SetObjText
+		PlaySound("Click" 1)
+	else
+		PlaySound("PlanetView2" 1)
+	endif
+	

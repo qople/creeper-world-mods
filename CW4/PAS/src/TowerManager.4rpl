@@ -1,0 +1,364 @@
+# --TowerManager-- 11/8/2023 9:12:36 PM
+#Manages unit placement, and tower lines on hide connection mode
+
+$NEVER_LOWER_TOWER_LIMIT:1
+$CREEP_CELLS_PER_TOWER:325
+
+$USE_SNAP_BUILD:1 #shift+click to build all possible units in an area up to the build limit.
+$SNAP_BUILD_RANGE:5
+$MIN_CREEP:0.1 #Minimum depth to build with snap-build
+
+$$towerGUID:"bb6bc715-2a73-475d-afa9-05a0a27788b9"
+$$pylonGUID:"ab9b2cfa-e208-4fea-9bee-9c2cab2116a8"
+$$resourceTapGUID:"bb15af4d-9daf-4b69-a98c-1bd7185d3e7e"
+$$labGUID:"2e7958d9-a5d3-4064-9955-789ee09ef063" #To manage timer on destroy
+$$upgraderGUID:"4ad21e2b-b820-44fd-8334-893eb1b0f17d" #Upgrade interface base GUID
+
+#All units that can be built using the snap tool (shift-click)
+#Interpreted using this format, so stick to it if you add more units
+
+#Units that can be used with the snap tool.
+#GUID / FOOTPRINT / SPACING / NAME /
+#Footprint is the size of the unit (2 is 3x3, 3 is 5x5, etc)
+#Spacing is additional space between the unit and any other units during placement (to prevent a large cluster of building units from interfering with each other)
+#Name is just used to make this list easier to read.
+$$snapUnits:"
+7716cce0-2e1b-4dc0-8629-9af8704a42ee	/2/2/CANNON/
+95ee007b-8cf5-4c71-88e7-44655d06d295	/2/2/MORTAR/
+9919fcd4-fee1-4c13-be8a-3f131ebb4ae1	/2/2/SHIELD/
+9ee8017a-e9de-43ca-bd75-b73333b67b95	/2/2/SPRAYER/
+681d8666-7042-4266-b644-c2ee8738a73f	/2/2/MISSILE/
+71bc997d-aa68-4f89-a879-9b7999425e00	/3/0/BERTHA/
+f14a4d26-3ea8-4477-a66b-753f635d732d	/2/0/TERP/
+35f9b3ad-b560-46aa-a6bf-4e0d75b7a304	/3/0/PORTER/
+96bd2053-f65a-4358-aafa-f24584cba1bc	/4/2/BOMBER/
+ff73d5bb-3c2c-45ad-922c-d4b1dd05f75f	/4/2/ACBOMBER/
+"
+
+# <-*sleeperLab <-snapUnits SetUnitDebugText
+if(GetTimer0 1 eq)
+	<-labGUID "RIFT LAB" 4 SetCMODPlayerMenuName
+	<-labGUID 1 SetUnitBuildLimit
+	PlaySound("Achievement" 1)
+endif
+
+# switch
+
+if(GetBuildUnit <-labGUID eq)
+	GetPointerTerrainCoords ->cursorZ ->cursorX
+	if(<-cursorX <-lastX neq <-cursorZ <-lastZ neq || <-lastUnit <-labGUID neq ||)
+		true UseLegalUnitCells
+		false SetAllLegalUnitCells
+		<-cursorZ 16 add <-cursorZ 15 sub do
+			<-cursorX 16 add <-cursorX 15 sub do
+				if(i j GetCreeper gt0)
+					i j V2
+				endif
+			loop
+		loop
+		List true SetLegalUnitCells
+		<-cursorX ->lastX
+		<-cursorZ ->lastZ
+	endif
+else if(<-lastUnit <-labGUID eq)
+	false UseLegalUnitCells
+endif endif
+
+if(GetBuildUnit <-resourceTapGUID eq)
+	if(<-lastUnit <-resourceTapGUID neq)
+		CreateList ->resoBeams
+		true UseLegalUnitCells
+		false SetAllLegalUnitCells
+		<-resourceTypes 0 do
+			<-resourceTypes[i] 0 GetUnitsByType ->units
+			<-units 0 do				
+				if(<-resourceTapGUID <-units[i] GetUnitPosition 1 false false false 0 0 0 GetUnits !)
+					<-units[i] GetUnitCell ->cellZ ->cellX
+
+					switch
+						case(j 0 eq)
+							"green"
+						endcase
+						case(j 1 eq)
+							"red"
+						endcase
+						case(j "2" eq)
+							"blue"
+						endcase
+					endswitch
+					
+					1 2 CreateBeam ->beam
+					<-resoBeams <-beam AppendToList
+					<-beam <-units[i] GetUnitPosition SetBeamStart
+					<-cellX 0.5 add <-cellZ 0.5 add false false GetExactCreeperHeight ->resHeight pop pop pop
+					<-beam V3(<-cellX <-resHeight 10 add <-cellZ) SetBeamEnd
+				
+					<-cellZ 4 add <-cellZ 3 sub do
+						<-cellX 4 add <-cellX 3 sub do
+							i j dup2 GetCellOccupiedCount V3
+						loop
+					loop
+				endif
+			loop
+		loop
+		List ->cells
+		<-cells 0 do
+			<-cells[i] EV2 0 SetCellOccupiedCount
+		loop
+		<-cells true SetLegalUnitCells
+	endif
+	# true ->tapSelected
+else if(<-lastUnit <-resourceTapGUID eq)
+	<-resoBeams 0 do
+		<-resoBeams[i] DestroyBeam
+	loop
+	--resoBeams
+	false UseLegalUnitCells
+	# false ->tapSelected
+	<-cells 0 do
+		<-cells[i] EV3 SetCellOccupiedCount
+	loop
+	-5 ->cellX
+	-5 ->cellZ
+endif endif
+
+if(GetBuildUnit <-towerGUID eq GetBuildUnit <-pylonGUID eq ||)
+	# true ->towerSelected
+	<-x <-z 
+	GetPointerTerrainCoords ->z ->x
+	if(<-z neq swap <-x neq ||) #When the pointer cell changes
+		@UpdateBeams
+	endif
+else if(<-lastUnit <-towerGUID eq <-lastUnit <-pylonGUID eq ||)
+	# false ->towerSelected
+	<-beams 0 do
+		<-beams[i] DestroyBeam
+	loop
+	CreateList ->beams
+endif endif
+
+if(<-snapUnits GetBuildUnit ListContains)
+	if("LeftShift" 1 GetKey "RightShift" 1 GetKey || GetMouseButton(0 1) &&)
+		@SnapBuild
+	endif
+endif
+
+GetBuildUnit ->lastUnit
+
+<-towerGUID GetCreeperCoverage swap pop <-CREEP_CELLS_PER_TOWER div if(<-NEVER_LOWER_TOWER_LIMIT) <-maxLimit max dup ->maxLimit endif SetUnitBuildLimit
+
+<-towerList 0 do
+	if(<-towerTimers[i] GetGameUpdateCount lte)
+		<-towerList[i] DestroyAllAttachedBeams
+		<-towerTimers i RemoveListElement
+		<-towerList i RemoveListElement
+		break
+	endif
+loop
+
+:UpdateBeams
+	if(GetBuildUnit <-towerGUID eq)
+		true ->buildingTower
+		"TOWER_" ->prefix
+	else
+		false ->buildingTower
+		"PYLON_" ->prefix
+	endif
+	
+	<-prefix "height" concat <-! ->height
+	<-prefix "CONNECTION_DIST" concat <-! ->CONNECTION_DIST
+	<-prefix "connection_limit" concat <-! ->connection_limit
+	<-prefix "MAX_CONNECTIONS" concat <-! ->MAX_CONNECTIONS
+	#Destroy all previous beams
+	#Not the most optimized, but easier than moving all them and destroying any extras
+	<-beams 0 do
+		<-beams[i] DestroyBeam
+	loop
+	CreateList ->beams
+	
+	#Create new beams from all nearby towers to the next tower to be built
+	<-x <-z GetTerrainVector ->centerPos
+	@FindTowers ->nearbyTowers
+	<-nearbyTowers GetListCount ->connections
+	<-nearbyTowers 0 do
+		<-nearbyTowers[i] ->endUnit
+			
+		#Create the beam to visualize connections
+		if(GetBuildUnit <-towerGUID eq)
+			switch
+				case(<-connections <-MAX_CONNECTIONS lte)
+					"white"
+				endcase
+				case(<-connections <-connection_limit lt)
+					"orange"
+				endcase
+				"red"
+			endswitch
+			1 3 
+		else
+			"yellow" 1 4
+		endif
+		CreateBeam ->beam
+		<-beams <-beam AppendToList
+		SetBeamStart(<-beam <-height <-centerPos <-endUnit GetUnitPosition add 0.5 mul add)
+		SetBeamEnd(<-beam <-centerPos <-height add)
+		
+		#Second half (close to placed unit)
+		<-endUnit "Tower.4rpl" "connections" GetScriptVar 1 add ->centerConnections
+		if(GetBuildUnit <-towerGUID eq)
+			switch
+				case(<-connections <-MAX_CONNECTIONS lte)
+					"white"
+				endcase
+				case(<-connections <-connection_limit lt)
+					"orange"
+				endcase
+				"red"
+			endswitch
+			1 3 
+		else
+			"yellow" 1 4
+		endif
+		CreateBeam ->beam
+		<-beams <-beam AppendToList
+		SetBeamStart(<-beam <-height <-centerPos <-endUnit GetUnitPosition add 0.5 mul add)
+		SetBeamEnd(<-beam <-endUnit GetUnitPosition <-height add)
+	loop
+	
+:FindTowers
+	GetBuildUnit <-centerPos <-CONNECTION_DIST false true false 0 0 0 GetUnits ->nearbyTowers
+	-1 <-nearbyTowers GetListCount 1 sub do
+		<-nearbyTowers[i] GetUnitPosition <-height add <-centerPos <-height add true GetTerrainLOS ->hit
+		if(<-hit.y gte0)
+			<-nearbyTowers i RemoveListElement
+		endif
+	loop
+	<-nearbyTowers
+
+:HandleTap
+
+	<-cellZ 2 add <-cellZ 1 sub do
+		<-cellX 2 add <-cellX 1 sub do
+			i j dup2 GetCellOccupiedCount if(<-foundUnit) <-foundUnit add else 1 sub endif SetCellOccupiedCount
+		loop
+	loop
+	
+	GetPointerTerrainCoords GetTerrainVector 0.5 false false false 2 1 2 GetUnitsInRange ->units
+	GetPointerTerrainCoords ->cellZ ->cellX 
+	0 ->foundUnit
+	
+	<-units 0 do
+		if(<-resourceTypes <-units[i] GetUnitType ListContains)
+			<-foundUnit 1 add ->foundUnit
+			<-cellZ 2 add <-cellZ 1 sub do
+				<-cellX 2 add <-cellX 1 sub do
+					i j dup2 GetCellOccupiedCount 1 sub SetCellOccupiedCount
+				loop
+			loop
+		endif
+	loop
+	
+	if(<-foundUnit !)
+		<-cellZ 2 add <-cellZ 1 sub do
+			<-cellX 2 add <-cellX 1 sub do
+				i j V2
+			loop
+		loop
+	endif
+
+:Once
+	-5 ->cellX
+	-5 ->cellZ
+	V3(0 4 0) ->TOWER_height
+	CreateList ->towerList
+	CreateList ->towerTimers
+	RegisterForMsg("TowerConnected" "TowerConnected")
+	RegisterForMsg("UpdateConnections" "UpdateConnections")
+	RegisterForMsg("LabDestroyed" "LabDestroyed")
+	"greenarmother" "resourcered" "resourceblue" List ->resourceTypes
+
+	CreateUnit(<-towerGUID -10 -10 -10 V3 0) ->endUnit
+	<-endUnit "Tower.4rpl" "MAX_CONNECTIONS" GetScriptVar ->TOWER_MAX_CONNECTIONS
+	<-endUnit "Tower.4rpl" "connection_limit" GetScriptVar ->TOWER_connection_limit
+	<-endUnit "Tower.4rpl" "CONNECTION_DIST" GetScriptVar  ->TOWER_CONNECTION_DIST
+	<-endUnit 1 1 1 DestroyUnit
+
+	CreateUnit(<-pylonGUID -10 -10 -10 V3 0) ->endUnit
+	<-endUnit "Pylon.4rpl" "CONNECTION_DIST" GetScriptVar  ->PYLON_CONNECTION_DIST
+	V3(0 <-endUnit "Pylon.4rpl" "CONN_HEIGHT" GetScriptVar 0) ->PYLON_height
+
+	<-endUnit 1 1 1 DestroyUnit
+	<-upgraderGUID 0 GetUnitsByType dup ->list 0 do
+		<-list[i] 1 1 1 DestroyUnit
+	loop
+	
+	CreateList ->snapFootprints
+	CreateList ->snapSpacing
+	
+	<-snapUnits RemoveWhiteSpace "/" split ->list
+	<-list 4 div 0 do
+		<-list [i 4 mul]
+		<-snapFootprints <-list [i 4 mul 1 add] AppendToList
+		<-snapSpacing <-list [i 4 mul 2 add] 1 sub AppendToList
+	loop
+	List
+	->snapUnits
+	--list
+	@CellsInFloodFillRange(<-SNAP_BUILD_RANGE) ->snapListSize
+
+:TowerConnected
+	<-towerList <-_DATA AppendToList
+	<-towerTimers GetGameUpdateCount 150 add AppendToList
+
+:UpdateConnections
+	CreateList ->towerList
+	CreateList ->towerTimers
+
+:LabDestroyed
+	600 SetTimer0
+
+:IsCellBuildable
+	dup2 ->snapZ ->snapX
+	GetTerrain dup ->centerTerrain
+	dup if
+		<-snapZ <-spacing 1 add add <-snapZ <-spacing sub do
+			<-snapX <-spacing 1 add add <-snapX <-spacing sub do
+				if(<-snapX i sub abs <-footprint lt <-snapZ j sub abs <-footprint lt &&)
+					i j GetTerrain <-centerTerrain eq && i j GetTerrainSpecial <-*CONTAMINANT_SLOT neq && i j GetCreeper <-MIN_CREEP gte &&
+				endif
+				i j GetCellOccupiedCount ! &&
+				dup ! if
+					return
+				endif
+			loop
+		loop
+	endif
+
+:CellsInFloodFillRange
+	dup dup mul 2 mul swap 2 mul add
+
+:SnapBuild
+	if(GetPointerTerrainCoords 600 mul add <-lastCursor neq)
+		GetPointerTerrainCoords 600 mul add ->lastCursor #Not FC, but faster and equally usable for checking if either coord has changed
+		<-snapUnits GetBuildUnit GetListIndex ->index #Find the index of the selected build unit
+		<-snapFootprints[<-index] dup ->footprint #footprint size
+		
+		#Override spacing when control is held down, else use the spacing from the stored list.
+		if(GetKey("LeftControl" 0) GetKey("RightControl" 0) || !)
+			<-snapSpacing[<-index] add ->spacing
+		else
+			1 sub ->spacing
+		endif
+		
+		#Flood fill to find all cells in the area
+		FloodFillTerrain(GetPointerTerrainCoords 1 21 <-snapListSize) ->snapList
+		
+		#Check through all those nearby cells and check if any are buildable. If they are, build a unit on that cell.
+		<-snapList 0 do
+			if(<-snapList[i] EV2 @IsCellBuildable GetBuildUnit GetUnitCount GetBuildUnit GetUnitBuildLimit lt &&)
+				PlaySoundAtPosition("UnitPlace" 1 GetBuildUnit <-snapList[i] EV2 0 CreateUnitOnTerrain GetUnitPosition)
+				break
+			endif
+		loop
+	endif
+	

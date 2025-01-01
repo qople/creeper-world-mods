@@ -1,0 +1,217 @@
+# --MVerseSupport-- 12/24/2023 10:29:41 AM
+#Controls startup of an MVerse session, energy multiplication, and the alternate objective for the human player in vs mode.
+
+$LOCKED_PLAYER_UNITS:"type type" #List of human units that are locked to the player in PVP mode
+$enableScaling:1 #Default value for energy scaling.
+$ALLOW_SCALING_TOGGLE:1 #Allows the scaling toggle, which will also override the MVERSE_SCALING variable in Autopilot's RiftLab.4rpl.
+
+$$labGUID:"2e7958d9-a5d3-4064-9955-789ee09ef063"
+$$towerGUID:"bb6bc715-2a73-475d-afa9-05a0a27788b9"
+$$cannonGUID:"7716cce0-2e1b-4dc0-8629-9af8704a42ee"
+$$resTapGUID:"bb15af4d-9daf-4b69-a98c-1bd7185d3e7e"
+$$factoryGUID:"4dbfec7b-0949-478e-8a0f-21aad4589ecd"
+
+if(GetGameUpdateCount eq0 GetBuildUnit StringLength && GetMVersePlayerNum gte0 &&)
+	cancel
+endif
+
+if(GetMVersePlayerNum eq0)
+	if(GetGameUpdateCount eq0)
+		1 true 
+		if(<-*playingAsHumans)
+			"Playing as humans, against all other players as the Sleeper. Click to switch. <br><size=10>As the host, you will have more load on your CPU." V4(0.6 0.3 0 1)
+		else
+			"Playing as the Sleeper, co-op with other players. Click to switch. <br><size=10>As the host, you will have more load on your CPU." V4(0 0 0.6 1)
+		endif
+		"ChangeSide" 0 SetMsgButton
+		
+		2 true
+		if(<-allowPause)
+			"Pausing is allowed for all players."
+		else
+			"Players are not allowed to pause the game once it starts."
+		endif
+		V4(0 0 0 1) "TogglePause" 0 SetMsgButton
+		
+		if(<-ALLOW_SCALING_TOGGLE)
+			3 true
+			if(<-enableScaling)
+				"Humans' energy, and AI speed and build limits in co-op, will be multiplied by the number of sleeper players.<br><size=10>May be performance intensive in co-op."
+			else
+				"Energy and AI will remain the same as in single player."
+			endif
+			V4(0 0 0 1) "ToggleScaling" 0 SetMsgButton
+		endif
+	endif
+	if(GetGameUpdateCount 1 eq GetMVersePlayerNum lte0 &&)
+		1 false "" Vector0 "" "" SetMsgButton
+		2 false "" Vector0 "" "" SetMsgButton
+		3 false "" Vector0 "" "" SetMsgButton
+		if(<-*playingAsHumans)
+			@SetToHumans
+		endif
+		
+		<-*playingAsHumans neg
+		4 0 do
+			if(GetMVersePlayers[i] IsNull !)
+				1 add
+			endif
+		loop
+		->*sleeperPlayers
+		GetMversePlayerNum lte0 ->*isMVerseHost
+		GetMversePlayerNum gte0 ->*mVerseOn
+		SendMVerseMsg("MVerseStart" ListN(<-allowPause <-*sleeperPlayers 2))
+	endif
+else if(GetGameUpdateCount 1 eq)
+	1 false "" Vector0 "" "" SetMsgButton
+	2 false "" Vector0 "" "" SetMsgButton
+	3 false "" Vector0 "" "" SetMsgButton
+	1 ->*sleeperPlayers
+	true ->*isMVerseHost
+	false ->*mVerseOn
+else if(GetMVersePlayerNum gt0 GetGameUpdateCount eq0 &&)
+	once
+		SetMsgButton(1 true "The host is selecting settings. Please wait for all players to unpause before placing any units." V4(0 1 0 1) "" "")
+	endonce
+endif endif endif
+
+if(<-*playingAsHumans)
+	if(GetTimer0 eq0)
+		30 SetTimer0
+		@CheckForWin
+	endif
+endif
+
+#Energy scaling
+if(<-*mverseOn GetPause ! &&)
+	GetRiftLab false SetMVerseCreatesUnitGhost
+	if(<-enableScaling)
+		if(GetMVersePlayerNum gt0)
+			if(GetTimer0 eq0)
+				15 SetTimer0
+				SendMVerseMsg("MVerseEnergy" GetEnergyGeneration GetMVersePlayerNum 2 ListN)
+			endif
+		else
+			<-bonusEnergy GenerateEnergy
+		endif
+	endif
+	
+	if(GetRiftLab GetUnitMoveCell pop gte0 <-*isMVerseHost &&)
+		SendMVerseMsg("LabMoved" GetRiftLab GetUnitMoveCell FC)
+	endif
+
+endif
+
+:Once
+	1 ->*sleeperPlayers
+	true SetTimerObeyPause0
+	1 false "" Vector0 "" "" SetMsgButton
+	2 false "" Vector0 "" "" SetMsgButton
+	false ->*isMVerseHost
+	false ->*playingAsHumans
+	true ->allowPause
+	true ->enableScaling
+	0 ->bonusEnergy
+	0 0 0 0 List ->mverseEnergy
+	0 ->lastEnergy
+	RegisterForMsg("TogglePause" dup)
+	RegisterForMsg("MVerseStart" dup)
+	RegisterForMsg("ToggleScaling" dup)
+	RegisterForMsg("MVerseEnergy" dup)
+	RegisterForMsg("ChangeSide" dup)
+	RegisterForMsg("LabMoved" dup)
+
+:MVerseStart
+	<-_DATA[0] ->allowPause
+	<-_DATA[1] ->*sleeperPlayers
+	
+	if(<-allowPause !)
+		RegisterForMsg("MSG_FrameAdvance" "Unpause")
+	endif
+	GetMversePlayerNum eq0 ->*isMVerseHost
+	GetMversePlayerNum gte0 ->*mVerseOn
+
+:ChangeSide
+	<-*playingAsHumans ! ->*playingAsHumans
+
+:TogglePause
+	<-allowPause ! ->allowPause
+	if(<-allowPause)
+		DeregisterForMsg("MSG_FrameAdvance")
+	else
+		RegisterForMsg("MSG_FrameAdvance" "Unpause")
+	endif
+
+:ToggleScaling
+	<-enableScaling ! ->enableScaling
+	"RiftLabAI" "MVERSE_SCALING" <-enableScaling SetRegisteredScriptVar
+
+:Unpause
+	if(GetGameUpdateCount)
+		false SetPause
+	endif
+	if(GetPause) #Don't let people build while on the game pause menu (which we can't and don't want to disable)
+		<-timePaused 1 add ->timePaused
+		if(<-timePaused 30 gte)
+			Cancel
+		endif
+	else
+		0 ->timePaused
+	endif
+
+:SetToHumans
+	#Disable sleeper units
+	"lab" "tower" "cannon" "guid" "resTap" "factory" List ->sleeperUnits
+	<-sleeperUnits 0 do
+		<-sleeperUnits[i] "GUID" concat <-! ->guid
+		<-guid 0 GetUnitsByType dup ->units
+		0 do
+			<-units[i] 0 0 0 DestroyUnit
+		loop
+		
+		<-guid "" 0 SetCMODPlayerMenuName
+	loop
+	--units
+	--sleeperUnits
+	--guid
+	
+	#Enable player units
+	<-LOCKED_PLAYER_UNITS " " Split ->LOCKED_PLAYER_UNITS
+	"factory" "ernportal"
+	"tower" "pylon" "miner" "greenarrefinery" "terp" "porter"
+	"cannon" "mortar" "sprayer" "sniper" "missilelauncher" "nullifier"
+	"runway" "bomberpad" "acbomberpad" "rocketpad"
+	"platform" "shield" "microrift" "beacon"
+	List ->vanillaUnits
+	<-vanillaUnits 0 do
+		if(<-LOCKED_PLAYER_UNITS <-vanillaUnits[i] ListContains !)
+			<-vanillaUnits[i] true SetUnitCanBuild
+		endif
+	loop
+	
+	SetCustomObjectiveText("Eradicate the Sleeper")
+
+:CheckForWin
+	if(<-labGUID 0 GetUnitsByType GetListCount eq0)
+		if(<-flag)
+			5 true AcquireMissionObjective
+		endif
+	else
+		true ->flag
+	endif
+
+
+
+:MVerseEnergy
+	if(<-enableScaling GetMVersePlayerNum eq0 &&)
+		<-_DATA[0] ->amt
+		<-_DATA[1] ->instance
+		if(<-instance <-*playingAsHumans gt)
+			<-bonusEnergy <-mverseEnergy[<-instance] sub <-amt add ->bonusEnergy
+			<-amt ->mverseEnergy[<-instance]
+		endif
+	endif
+
+:LabMoved
+	GetRiftLab <-_DATA UFC SetUnitMoveCell
+	

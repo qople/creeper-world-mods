@@ -1,0 +1,99 @@
+# --plasma rifle-- 3/13/2024 2:42:35 PM
+# Mostly a copy of the vanilla sprayer, since that's basically what it became. Will likely be expanded later with other features to separate it though.
+#Comma separated, whitespace ignored.
+#List of all weapons added by this script
+$$weaponsAdded:"plasmagun"
+ 
+#List of custom attributes those weapons should have on initialization
+#Custom attributes in an "other" field are always included. This only matters for script input vars.
+$$customAttributes:""
+ 
+#List stat vars here. Format as weaponAttributeName. weaponOther is supported.
+$plasmagunRate:5
+$plasmagunProjSpeed:3
+$plasmagunAcDepth:0.5
+$plasmagunAcDist:2
+$plasmagunAcCap:1000.0
+$plasmagunMaxRange:800 #Hide this one. Modifying in other field still takes precedence
+$plasmagunOther:""
+
+#wind up/cool down for fire rate
+if(<-*activeWeapon "chaingun" eq <-*isFPMode &&)
+	<-chaingunStats{"Rate"} ->Rate
+	if(GetMouseButton(0 1) <-Rate <-MaxRate gt &&)
+		<-Rate <-WindUp mul <-MaxRate max ->chaingunStats{"Rate"}
+		SendMsg("ItemCollected" 0)
+	else if(<-Rate <-BaseRate lt GetMouseButton(0 1) ! &&)
+		<-Rate <-WindUp div <-BaseRate min ->chaingunStats{"Rate"}
+		SendMsg("ItemCollected" 0)
+	endif endif
+	
+else if(<-Rate <-BaseRate lt)
+	<-BaseRate ->chaingunStats{"Rate"}
+	SendMsg("ItemCollected" 0)
+endif endif
+
+:Once
+	@SetHiddenAttributes
+	@InitializeWeapons
+	
+	#Necessary if any new effects are added
+	RegisterForMsg("WeaponEffect" "DoCustomEffects")
+
+	RegisterForMsg("ItemCollected" "GetWeaponAttributes")
+	@GetWeaponAttributes
+	
+	RegisterForMsg("WeaponFired" "Fire")
+	
+	#Make the weapon visually different from others
+	RegisterForMsg("CrosshairUpdated" "CrosshairAppearance")
+ 
+:SetHiddenAttributes
+	#Hidden Stats (Affect visuals, not balance)
+	#Options are Color, Trail, FireSound, FireVolume, HitSound, HitVolume,
+	#EffectName, EffectScale, Path
+	V3(0.8 0.8 2) ->plasmagunColor
+	0 ->plasmagunPath
+	"SprayerFire" ->plasmagunFireSound
+	2 ->plasmagunFireVolume
+
+:Fire
+		
+	
+:DoCustomEffects
+	#Put data into more readable vars
+	<-_DATA[0] ->weapon
+	<-_DATA[1] ->effectPosition
+	
+	#Read whatever attributes are needed for this effect
+	#Repeat if necessary
+	<-*weaponAttributes {<-weapon} {"SomeAttribute"} ->someAttribute
+	
+	#Then create the effect.
+ 
+#Make a visual indicator by either modifying the existing crosshair's attributes
+#Or by hiding it and making your own. 
+:CrosshairAppearance
+	<-_DATA ->crosshair
+
+#Called whenever the ItemCollected message is sent.
+#Stores the attributes of myweapon to variables with matching names.
+#Note the variable names are Capitalized.
+:GetWeaponAttributes
+	#If you don't need all the attributes, feel free to replace this with a smaller list.
+	<-*weaponAttributes{<-*activeWeapon} GetTableKeys ->neededStats
+	
+	<-neededStats GetListCount 0 do
+		<-neededStats[i] ->attribute
+		<-*weaponAttributes{<-*activeWeapon}{<-attribute} <-attribute ->!
+	loop
+ 
+#==============
+ 
+#Required for the weapon pack to work.
+:InitializeWeapons
+	Split(RemoveWhiteSpace(<-weaponsAdded) ",") ->weaponsAdded
+	RegisterScript(<-weaponsAdded[0])
+	SendMsg("Initialize" <-weaponsAdded[0])
+	<-*weaponAttributes{"chaingun"} ->chaingunStats
+	

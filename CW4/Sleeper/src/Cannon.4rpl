@@ -1,0 +1,72 @@
+# --Cannon-- 6/22/2023 4:37:20 PM
+#Weapon targeting and firing for the cannon unit.
+
+$FIRE_RATE:12
+$DAMAGE_AMT:3.0
+$RANGE:10.0
+$PROJ_SPEED:1.0
+$AMMO_MULT:1.0
+$REQUIRE_LOS:1
+$LONG_WAIT_TIME:150 #Wait time when no target is found
+$SHIELD_DESTROY_CHANCE:0.3 #Chance a cannon bullet is destroyed every frame it is inside of one
+
+#The cannon fires between this many shots at its target before retargeting to save on performance
+$MIN_RETARGET_SHOTS:4 #Inclusive
+$MAX_RETARGET_SHOTS:9 #Not inclusive
+$$bulletGUID:"dac50ddd-0809-42f0-91bb-9054c5518597"
+
+if(Self GetUnitConstructing GetTimer1 || Self GetUnitMoveCell pop gte0 ||)
+	true ->needTarget
+	0 ->targetUnit
+	return #Don't fire when building, moving, or long wait timer is on
+endif
+
+if(<-needTarget)
+	@FindTarget
+endif
+
+if(<-targetUnit)
+	if(GetObjFacingAngle(Self "Cannon" <-targetPos) 1 lt)
+		@Fire
+	else
+		RotateObjTowards(Self "Cannon" <-targetPos 2)
+	endif
+endif
+
+:FindTarget
+	GetUnitsInRange(Self GetUnitPosition V3(0 1.1 0) add <-RANGE true false true 2 0 1) ->units
+	if(<-units !)
+		0 ->targetUnit
+		true ->needTarget
+		<-LONG_WAIT_TIME SetTimer1
+		return
+	endif
+	
+	<-units[0] dup ->targetUnit
+	GetUnitPosition ->targetPos
+	false ->needTarget
+	RandInt(<-MIN_RETARGET_SHOTS <-MAX_RETARGET_SHOTS) 1 max ->shotsToRetarget
+
+:Fire
+	if(Self GetUnitAmmo <-AMMO_USE lt GetTimer0 ||)
+		return
+	endif
+	
+	#Create the bullet
+	"targetPos" <-targetPos V3(RandFloat 0.5 sub 3 mul RandFloat 0.5 sub 3 mul 0.5 add RandFloat 0.5 sub 3 mul) add "DAMAGE_AMT" <-DAMAGE_AMT "PROJ_SPEED" <-PROJ_SPEED "SHIELD_DESTROY_CHANCE" <-SHIELD_DESTROY_CHANCE Table ->initParams
+	<-bulletGUID Self "FirePos" 1 GetObjPosition <-initParams CreateUnit
+	
+	Self "Movement.4rpl" "lastActive" GetGameUpdateCount SetScriptVar
+
+	<-FIRE_RATE SetTimer0
+	<-shotsToRetarget 1 sub dup ->shotsToRetarget
+	if(! <-targetUnit GetUnitDestroyed ||)
+		true ->needTarget
+	endif
+	Self dup GetUnitAmmo <-AMMO_USE sub SetUnitAmmo
+
+
+:Once
+	true ->needTarget
+	<-DAMAGE_AMT <-AMMO_MULT mul ->AMMO_USE
+	

@@ -1,0 +1,281 @@
+# --Misc Settings-- 3/10/2021 4:31:09 PM
+# More will probably be added as time goes on.
+# Also creates the wall tool and DPS monitor units on game start,
+# and acts as the setup for the CPACK, since it should be set to run before all the other globals.
+
+# Whether to use terrain override on 19 and 20 height terrain
+$useWallOverride:1 
+
+# How quickly to update the wall overrides during gameplay. Has no effect if useWallOverride is 0.
+# Does a rolling update over the map with this period, in frames. 0 turns it off.
+$wallUpdateRate:0
+
+$chargeTotems:1
+$allow_totem_discharge:0
+
+# initiates a cancel action whenever a build unit is selected. Intended for hybrid levels.
+# 0 never cancels, 1 cancels only in first person mode, and 2 always cancels.
+# THIS IS IGNORED IN EDIT MODE!
+# Modes are:
+# 0: default behavior
+# 1: Overrides build selection in first person
+# 2: Overides build selection in and out of first person
+# 3: Same as 1, but also overrides unit selection
+# 4: Same as 2, but also overrides unit selection
+$selectionMode:0
+
+#List of unit types that are always selectable, even when the script's selectable override is on.
+#Comma separated.
+$selectableWhitelist:""
+$buildWhitelist:""
+
+#Comma separated, whitespace ignored. List of player numbers to allow FPS mode for.
+#-1 is single player, 0 is MVerse host, 1-3 are the other players.
+$MVERSE_PLAYERS:"-1, 0, 1, 2, 3" 
+
+$$auriToolsUpgraderGUID:"d438436c-1ea5-4690-8dc9-4d8dc39ee6da"
+$$wallToolGUID:"a3c554d4-cee6-4d32-8031-d938fd99f40d"
+$$dpsMonitorGUID:"3f8f6f75-93dc-450e-bf9c-0a03bd9fc5a5"
+$$textDisplayGUID:"f085715f-1e6e-4ab6-919f-6279797b88e3"
+$$itemGUID:"d12d4163-732a-4b7c-b5ac-1dcf8f70aa1b"
+$$bulletGUID:"d611b424-2ce0-4317-a1e8-c5097c840d29"
+
+#-----------------------
+# Debug and version info
+# If you modify this script more than changing the above parameters, Update these. 
+# If you don't, leave them, even if you modified another script in the CPACK.
+
+# Current version of this script. If you branch someone else's version, add a period 
+# and start a new number ("10" -> "10.0"). If you edit your own version, add 1 to the last number ("10.0" -> "10.1")
+$$Script_Version:"5" 
+
+# The authors who have directly modified this script. There should be one name for each number in the script version.
+# If you don't want to attach your name, anything that separates your version from other possible branches works.
+$$Edit_History:"qople,"  
+
+$$Intended_Version:"1.6.0" #The CPACK version this script is intended for. The CPACK version is in the settings section of FpsCore.
+
+#Any other info that should be printed on startup, such as dependencies.
+#This is printed as-is (no extra formatting).
+$$Notes:"" 
+
+#-----------------------
+# Global CPACK info. Should match what is in the CPACK's settings section.
+$$CPACK_Version:"1.6.0"
+
+#=======================
+if(<-lastEditMode GetEditMode dup ->lastEditMode neq) #Watch for a switch in edit mode
+	"(" GetGameUpdateCount GetTimeString ")	Editor " if(GetEditMode) "opened" else "closed" endif concat4 Print
+endif
+
+if(GetPause !)
+	#Update overrides during gameplay
+	<-wallUpdateNum 0 do
+		<-index dup <-mapX mod <-index <-mapX div #About 30-40% faster than UFC
+		if(dup2 GetTerrain 19 gte)
+			2000
+		else
+			0
+		endif
+		SetTerrainOverride
+		1 add <-mapArea mod ->index
+	loop
+	
+	#Power and depower totems (Note: Not very well-optimized, spends more resources than it needs to on far-away totems)
+	if(<-chargeTotems)
+		<-totems 0 do
+			<-totems[i] ->totem
+			if(<-totem GetUnitEnabled !)
+				#Reset charge and charge rate when disabled
+				<-totem 0 dup2 SetUnitAmmo SetTotemActivated
+				0 ->collectSpeed[i]
+			else if(<-totem dup GetUnitCell GetCreeper gt0)
+				#Decrease charge when in creeper
+				<-collectSpeed[i] 0.005 sub -0.1 <-allow_totem_discharge mul max ->collectSpeed[i]
+				<-totem false SetTotemActivated
+			else
+				if(<-totem GetUnitAmmo 0 approximately)
+					<-collectSpeed[i] 0 max ->collectSpeed[i]
+				endif
+				
+				if(<-totem GetUnitCell <-*playerPos ToCell DistanceCell 15 lte)
+					#Charge while the player is nearby (15 cell radius)
+					<-collectSpeed[i] 0.001 add 
+					if(dup lt0 )#Increase charge acceleration when rate is negative
+						0.001 add
+					endif
+				else
+					#Decrease absolute charge rate when nothing is nearby
+					<-collectSpeed[i] dup sign 0.002 mul sub
+					if(dup abs 0.002 lte)
+						pop 0 
+					endif
+				endif
+				->collectSpeed[i]
+			endif endif
+			if(<-totem GetUnitAmmo <-totem GetUnitMaxAmmo Approximately)
+				<-collectSpeed[i] 0 min ->collectSpeed[i]
+				if(<-lastAmmo[i] <-totem GetUnitMaxAmmo Approximately !)
+					StopSoundLoop(<-totem)
+					PlaySoundAtPosition("Sci Fi Explosion 13" 8 GetUnitPosition(<-totem))
+				endif
+			else if(<-collectSpeed[i] gt0)
+				PlaySoundLoop("hum1" 1 <-totem)
+			else if(<-collectSpeed[i] lte0) 
+				StopSoundLoop(<-totem)
+			endif endif endif
+			
+			#Set the ammo taking changes into account
+			<-totem GetUnitAmmo ->lastAmmo[i]
+			<-totem dup GetUnitAmmo 
+			<-collectSpeed[i] dup ->lastCollectSpeed[i] add SetUnitAmmo
+		loop
+	endif
+endif
+
+:Frame
+	#Override build selection
+	if(<-*isFPMode GetPause ! <-selectionMode 2 mod && && <-selectionMode 2 mod ! || GetEditMode ! <-selectionMode && &&)
+		if(IsBuildUnitSelected)
+			if(<-buildWhitelist GetBuildUnit ListContains !)
+				Cancel
+				<-lastSelected GetListCount 0 do
+					<-lastSelected[i] true SetUnitSelected
+				loop
+			endif
+		endif
+	endif
+	
+	#Override unit selection
+	if(GetSelectedUnits GetListCount <-selectionMode 2 gt GetEditMode ! && &&)
+		#Look through all selected units
+		GetSelectedUnits ->selectedUnits
+		<-selectedUnits GetListCount 0 do
+			if(<-selectableWhitelist <-selectedUnits[i] GetUnitType ListContains !)
+				Cancel
+				<-lastSelected GetListCount 0 do
+					<-lastSelected[i] true SetUnitSelected
+				loop
+			endif
+		loop
+	endif 
+
+	GetSelectedUnits ->lastSelected
+
+#Creates a unit and deletes all other units of that type.
+:CreateUniqueUnit
+	->initParams ->pos ->GUID
+	GetUnitsByType(<-GUID 0) ->extraUnits
+	<-extraUnits GetListCount 0 do
+		<-extraUnits[i] true true true DestroyUnit
+	loop
+	CreateUnit(<-GUID <-pos <-initParams) return 
+
+:Once
+	false SetPrintPrefixEnabled
+	true SetPrintPrefixEnabled
+	getMapSize ->mapZ ->mapX
+	RegisterForMsg("MSG_FrameAdvance" "Frame")
+	GetMapSize dup2 ->mapZ ->mapX mul ->mapArea
+
+	@CreateUniqueUnit(<-wallToolGUID V3(<-mapX 2.0 div 10 add 0 -5) 0)
+	@CreateUniqueUnit(<-dpsMonitorGUID V3(<-mapX 2 div 10 sub 0 -5) 0)
+	@CreateUniqueUnit(<-textDisplayGUID V3(<-mapX 2 div -5 <-mapZ 2 div) 0)
+
+	#Find how fast to update walls
+	if(<-wallUpdateRate gt0 <-useWallOverride &&)
+		<-mapArea <-wallUpdateRate AsFloat div ceil ->wallUpdateNum
+	else
+		0 ->wallUpdateNum
+	endif
+	
+	#Wall override
+	<-mapZ 0 do
+		<-mapX 0 do
+			i j
+			if(dup2 GetTerrain 19 gte <-useWallOverride &&)
+				2000
+			else
+				0
+			endif
+			SetTerrainOverride
+		loop 
+	loop
+
+	#Turn the whitelist string into a list
+	Split(<-selectableWhitelist ",") ->selectableWhitelist
+	Split(<-buildWhitelist ",") ->buildWhitelist
+	<-selectableWhitelist <-dpsMonitorGUID AppendToList 
+	<-selectableWhitelist <-auriToolsUpgraderGUID AppendToList 
+	
+	#Set up for totem charging
+	if(<-chargeTotems)
+		GetUnitsByType("totem" 0) ->totems
+		CreateListStartingSize(<-totems GetListCount) ->collectSpeed
+		CreateListStartingSize(<-totems GetListCount) ->lastCollectSpeed 
+		CreateListStartingSize(<-totems GetListCount) ->lastAmmo
+	endif 
+	<-allow_totem_discharge 0 1 clamp AsInt ->allow_totem_discharge
+
+:GameLoaded
+
+	<-CPACK_Version ->*fpsCoreVersion 
+
+	false SetPrintPrefixEnabled
+	"FpsCore: Version " <-*fpsCoreVersion 
+	if(GetEditMode)
+		" (Editor)"
+	else
+		" (Finalized)"
+	endif
+	LF concat4 print
+	
+	once
+		#Get debug info for other scripts by making a unit with logic disabled, then reading script vars.
+		CreateUnit(<-itemGUID Vector0 TableN("suppress" true 1)) dup "Item.4rpl" @SendDebugInfo 1 1 1 DestroyUnit
+		CreateUnit(<-bulletGUID Vector0 TableN("suppress" true 1)) dup "bullet.4rpl" @SendDebugInfo 1 1 1 DestroyUnit
+		
+		-1 "Misc Settings.4rpl" @SendDebugInfo
+	endonce	
+	true SetPrintPrefixEnabled
+
+#Do this before any other FPS scripts
+:Awake
+	once
+		#MVerse mode
+		<-MVERSE_PLAYERS RemoveWhiteSpace "," split ->MVERSE_PLAYERS
+		<-MVERSE_PLAYERS 0 do
+			<-MVERSE_PLAYERS[i] AsInt ->MVERSE_PLAYERS[i]
+		loop
+		<-MVERSE_PLAYERS GetMVersePlayerNum ListContains ->*allowFPS
+	endonce
+	
+:SendDebugInfo
+	swap
+	if(dup lt0)
+		pop ->scriptName
+		<-Script_Version ->version
+		<-Edit_History ->history
+		<-Intended_Version ->intended
+		<-Notes ->other
+	else
+		->unit ->scriptName
+		<-unit <-scriptName "Script_Version" GetScriptVar ->version
+		<-unit <-scriptName "Edit_History" GetScriptVar ->history
+		<-unit <-scriptName "Intended_Version" GetScriptVar ->intended
+		<-unit <-scriptName "Notes" GetScriptVar ->other
+	endif
+	
+	<-scriptName ": Version " <-version LF concat4
+	"Edit History: " <-history LF concat4
+	"Made for FpsCore v" <-intended concat3
+	if(<-other RemoveWhiteSpace StringLength)
+		LF <-other concat3
+	endif
+	
+	#Check if the version matches
+	if(<-intended RemoveWhiteSpace <-*fpsCoreVersion RemoveWhiteSpace neq)
+		LF "VERSION MISMATCH: CPACK version (" <-*fpsCoreVersion ") does not match intended version." concat4 concat
+	endif
+	
+	LF concat print 

@@ -1,0 +1,142 @@
+# --Porter-- 12/11/2023 11:27:39 AM
+$EMIT_AMT:50
+$EMIT_DELAY:15
+
+$$carrierGUID:"6d6b7b95-b081-4ef8-975d-57bfe3e11275"
+$$podGUID:"7b4901fd-ad6a-498b-86df-f48d86600d96"
+
+#This unit took longer to network than all others combined. Apologies for any spaghetti.
+
+if(GetTimer1 1 eq)
+	Self false SetUnitSpecifiedTargetShowPath
+endif
+
+if(<-send)
+	false ->send
+	"Send" <-trueGUID concat 0 SendMVerseMsg
+endif
+if(GetTimer0 eq0 Self GetUnitConstructing ! && <-*isMVerseHost &&)
+	5 SetTimer0
+	@AbsorbAmmo
+	if(Self GetUnitAmmo Self GetUnitMaxAmmo eq <-ready && Self GetUnitSpecifiedTarget IsV3InMap &&)
+		@SendPod
+	endif
+endif
+
+#Change the carrier's target along with ours
+if(Self GetUnitSpecifiedTarget <-lastTarget neq)
+	30 SetTimer1
+	if(<-mVerseSlave !)
+		Self false SetUnitSpecifiedTargetOccupiesMap
+		Self dup GetUnitSpecifiedTarget SetUnitSpecifiedTarget
+		@MoveTarget
+	endif
+	Self GetUnitSpecifiedTarget ->lastTarget
+	if(<-carrier "PodCarrier.4rpl" "state" GetScriptVar 2 eq)
+		<-carrier "PodCarrier.4rpl" "target" <-lastTarget SetScriptVar
+	endif
+endif
+
+#Absorbs creeper from a 3x3 area and adds it to the unit's ammo
+:AbsorbAmmo
+	if(Self GetUnitAmmo Self GetUnitMaxAmmo eq)
+		return
+	endif
+	
+	Self GetUnitCell 1 true true false GetCreeperInRange ->creep
+	Self GetUnitCell 1 true 0 false SetCreeperInRange
+	if(<-creep gt0)
+		Self dup GetUnitAmmo <-creep add SetUnitAmmo
+	endif 
+
+:SendPod
+	Self 0 SetUnitAmmo
+	
+	if(<-*isMVerseHost)
+		true ->send
+	endif
+	
+	#Send the carrier by setting some variables
+	<-carrier "PodCarrier.4rpl" "pod" <-pod SetScriptVar
+	<-carrier "PodCarrier.4rpl" "state" 2 SetScriptVar
+	<-carrier "PodCarrier.4rpl" "target" Self GetUnitSpecifiedTarget SetScriptVar
+	
+	false ->ready
+	@CreatePod
+
+:MoveTarget
+	Self GetUnitSpecifiedTarget ToCell ->targetZ ->targetX
+	FloodFillTerrain(<-targetX <-targetZ 1 21 @CellsInFloodFillRange(20)) ->snapList
+
+	Self true SetUnitSpecifiedTargetOccupiesMap
+	<-snapList 0 do
+		if(<-snapList[i] EV2 @IsCellBuildable)
+			Self <-snapList[i] EV2 GetTerrainVector SetUnitSpecifiedTarget
+			break
+		endif
+	loop
+
+:IsCellBuildable
+	dup2 ->snapZ ->snapX
+	GetTerrain dup ->centerTerrain
+	dup if
+		<-snapZ 2 add <-snapZ 1 sub do
+			<-snapX 2 add <-snapX 1 sub do
+				i j GetTerrain <-centerTerrain eq && i j GetTerrainSpecial <-*CONTAMINANT_SLOT neq &&
+				i j GetCellOccupiedCount ! &&
+				dup ! if
+					return
+				endif
+			loop
+		loop
+	endif
+
+:CellsInFloodFillRange
+	dup dup mul 2 mul swap 2 mul add
+
+:Once
+	Table(
+		"PORTER_BASE" Self
+		"EMITAMT" <-EMIT_AMT
+		"EMIT_DELAY" <-EMIT_DELAY
+		"MAX_EMISSION" Self GetUnitMaxAmmo
+	) ->initParams
+	
+	true ->ready
+	Self true SetUnitSpecifiedTargetOccupiesMap
+	Self GetUnitCell ->myZ ->myX 
+	<-EMIT_DELAY 1 add ->EMIT_DELAY
+	if(<-*isMVerseHost !)
+		"Send" <-trueGUID concat "SendPod" RegisterForMsg
+		"Pod" <-trueGUID concat "MVerseCreatePod" RegisterForMsg
+		"PodDestroyed" <-trueGUID concat "MVerseDestroyPod" RegisterForMsg
+	endif
+
+:BuildComplete
+	<-carrierGUID Self GetUnitPosition <-initParams CreateUnit ->carrier
+	<-carrier ->initParams{"POD_CARRIER"}
+	@CreatePod
+
+:CreatePod
+	if(<-*isMVerseHost)
+		<-podGUID Self GetUnitPosition <-initParams CreateUnit ->pod
+		if(<-*mVerseOn)
+			SendMVersemsg("Pod" <-trueGUID concat <-pod GetUnitTrueGUID)
+		endif
+	endif
+
+:MVerseCreatePod
+	<-_DATA ->initParams{"trueGUID"}
+	CreateUnit(<-podGUID Self GetUnitPosition <-initParams) ->pod
+	# <-pod "PorterPod.4rpl" "POD_CARRIER" Self SetScriptVar
+
+:Destroyed
+	<-carrier 0 0 0 DestroyUnit
+	<-pod 0 0 0 DestroyUnit
+
+:MVerseDestroyPod
+	# Self <-_DATA UFC GetTerrainVector SetUnitDebugText
+	# <-podGUID <-_DATA UFC GetTerrainVector 1 false false false 0 0 0 GetUnits [0] 1 1 1 DestroyUnit
+	# <-carrier "PodCarrier.4rpl" "cellOpen" true SetScriptVar
+	# # <-pod 1 1 1 DestroyUnit
+	

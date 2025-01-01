@@ -1,0 +1,101 @@
+# --Sleeper Globals-- 6/22/2023 4:38:14 PM
+# Sets global vars used for a variety of sleeper scripts
+$MESH_SLOT:6
+$CONTAMINANT_SLOT:8
+
+$DELAY_PER_MITE:6
+
+$$labGUID:"2e7958d9-a5d3-4064-9955-789ee09ef063"
+$$factoryGUID:"4dbfec7b-0949-478e-8a0f-21aad4589ecd"
+
+:Once
+	if(<-labGUID GetUnitCount eq0)
+		-1 ->*sleeperLab
+	endif
+	if(<-factoryGUID GetUnitCount eq0)
+		-1 ->*sleeperFactory
+	endif
+	CreateTable ->*missilesOnRoute #Table of the number of missiles targeting units
+	--*shieldList #Re-initialized when a shield is created for the first time
+	<-*mapZ 0 do
+		<-*mapX 0 do
+			if(i j GetTerrainSpecial <-*MESH_SLOT neq i j GetMeshHealth -1000000 neq &&)
+				i j -1000000 SetMeshHealth
+			endif
+		loop
+	loop
+
+	#Upgrade information
+	#Name (Sent as message to the creeper lab)
+	List(
+		ListN("UnlockShield" "UnlockStash" "UnlockCrystal", 3) #Tier 1 upgrades (Redon)
+		ListN("BeginMesh" "UnlockMissile" "UnlockBertha", 3) #Tier 2 upgrades (cost greenar)
+	) ->*upgrades
+	
+	#Cost
+	List(
+		ListN(100 400 500, 3) #shield, stash, crystal (same order as above) (REDON)
+		ListN(200 400 500, 3) #mesh, missile, bertha (GREENAR)
+	) ->*upgradeCosts
+	
+	RegisterForMsg("DeployField" "DeployField")
+	RegisterForMsg("SetShieldList" dup)
+	RegisterForMsg("LabDestroyed" "LabDestroyed")
+	
+	0 ->*mRiftOutputs
+	0 ->*mverseUnitsCreated
+	0 ->*nextMiteFrame
+	<-DELAY_PER_MITE ->*DELAY_PER_MITE
+	"01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ`~!@#$%^&*()-_=+[{]}\|;:',<.>/?" StringToList dup ->*mverseEncodeList GetListCount ->*encodeBase
+
+#Initializes the shield list for all MVerse players whenever one player initializes it.
+:SetShieldList
+	<-_DATA ->list
+	<-list[0] ->FIELD_RADIUS
+	<-list[1] ->FIELD_MAX_STRENGTH
+
+	<-FIELD_RADIUS 1 add dup neg 1 add do
+		<-FIELD_RADIUS 1 add dup neg 1 add do
+			i j V2
+			if(dup SqrMagnitude <-FIELD_RADIUS dup mul gt)
+				pop Vector0
+			else
+				dup Magnitude <-FIELD_RADIUS div 3 pow mul 
+			endif
+		loop
+	loop
+	List ->*shieldList
+	--list
+
+#Receives MVerse messages for syncing shield fields across instances.
+:DeployField
+	#Interpret coordinate and deploy values from the sent data (encoded as one int to save net space)
+	# <-_DATA dup 2 mod ->deployed
+	# 2 div UFC ->z ->x
+	
+	# #Create the fields, one pushing AC outwards, the other pulling creeper inwards.
+	# <-x <-z <-*shieldList <-FIELD_RADIUS 2 mul 1 add <-FIELD_MAX_STRENGTH neg 0 1 <-deployed SetFieldRect #Creeper
+	# <-x <-z <-*shieldList <-FIELD_RADIUS 2 mul 1 add <-FIELD_MAX_STRENGTH 0 2 <-deployed SetFieldRect #AC
+
+:Awake
+	<-MESH_SLOT ->*MESH_SLOT
+	<-CONTAMINANT_SLOT ->*CONTAMINANT_SLOT
+	GetMapSize dup2 ->*mapZ ->*mapX mul ->*mapSize
+	"CreateMVerseSlave" "CreateMVerseSlave" RegisterForMsg
+
+#Creates an MVerse slave unit.
+:CreateMVerseSlave
+	<-_DATA ->list
+	<-list[0] ->GUID
+	<-list[1] ->position
+	<-list[2] ->initParams
+	true ->initParams{"mVerseSlave"}
+	
+	# if(<-GUID <-lastGUID eq <-position <-lastPosition eq && GetGameUpdateCount <-lastUpdate eq &&)
+		# return
+	# endif
+	<-GUID <-position <-initParams CreateUnit pop
+	<-GUID ->lastGUID
+	<-position ->lastposition
+	GetGameUpdateCount ->lastUpdate
+	--list

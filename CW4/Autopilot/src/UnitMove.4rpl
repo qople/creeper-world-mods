@@ -1,0 +1,209 @@
+# --UnitMove-- 3/31/2021 11:34:13 AM
+$moveRequirement:2
+$moveCooldown:15
+
+if(GetMVersePlayerNum gt0 <-*playingAsHumans ||)
+	return
+endif
+
+"Weapon Move" @StartMeasure
+if(<-*autopilotDelay eq0)
+	if(<-index lt0)
+		@RefreshWeaponList
+	else
+		<-*numPlayers 1 max 0 do
+			<-weaponList[<-index] ->unit
+			<-index 1 sub ->index
+			<-unit GetUnitDestroyed if
+				RemoveTableElement(<-lastPos <-unit)
+				RemoveTableElement(<-*moveModes <-unit)
+				RemoveTableElement(<-timeToMove <-unit)
+				RemoveTableElement(<-*reserves <-unit)
+			else if(<-*moveModes{<-unit})
+				@MoveLogic
+			endif endif
+		loop
+			
+	endif
+endif
+"Weapon Move" @EndMeasure
+
+if(GetTimer1 eq0)
+	5 SetTimer1
+	"Return Weapons" @StartMeasure
+	<-lastPos GetTableCount 0 do
+		<-lastPos[i] ->unit
+		if(<-unit GetUnitMoveCell pop -1 eq)
+			<-unit true SetUnitSupplied
+			<-lastPos <-unit RemoveTableElement
+		else if(<-unit GetUnitMoveCell FromCell <-lastPos{<-unit} neq)
+			<-unit <-lastPos{<-unit} EV3 swap pop SetUnitMoveCell
+		endif endif
+	loop
+	"Return Weapons" @EndMeasure
+endif
+"Total" @EndMeasure
+
+:StartMeasure
+	"StartMeasure" swap SendMsg
+
+:EndMeasure
+	"EndMeasure" swap SendMsg
+
+:MoveLogic
+	if(<-*reserves{<-unit})
+		if(<-unit GetUnitAmmo <-lastAmmo{<-unit} lt if(RandFloat 0.2 lt) <-unit GetUnitCell 20 false true false GetCreeperInRange <-unit GetUnitConnectedToRiftLab && || endif)
+			<-unit true SetUnitArmed
+			<-*reserves <-unit RemoveTableElement
+		endif
+	else if(<-unit GetUnitMoveCell FromCell IsV3InMap !)
+		if(<-unit GetUnitType "shield" eq)
+			if(<-unit GetUnitCell 10 false true false GetCreeperInRange 50 lt <-unit GetUnitAmmo 2 lte ||)
+				<-timeToMove{<-unit} 1 add dup ->timeToMove{<-unit}
+				if(<-moveRequirement gte)
+					if(GetUnitHealth(<-unit) 1.5 gt)
+						3 
+					else
+						0.5	
+					endif
+					->minC
+					true ->deepest
+				endif
+			else
+				0 ->timeToMove{<-unit}
+			endif
+		
+		else if(<-unit GetUnitAmmo <-lastAmmo{<-unit} eq)
+			<-timeToMove{<-unit} 1 add dup ->timeToMove{<-unit}
+			if(<-moveRequirement gte)
+				<-unit GetUnitType "mortar" neq ->minC
+				false ->deepest
+			endif
+		else
+			0 ->timeToMove{<-unit}
+		endif endif
+	endif endif
+	if(<-timeToMove{<-unit} <-moveRequirement gte)
+		if(<-unit GetUnitConnectedToRiftLab !)
+			<-unit GetUnitPosition ->unitPos
+			-1 ->unitPos.w
+			if(GetTimer0 eq0)
+				30 SetTimer0
+				false ->unitPos.w
+			endif
+			"Focus" <-unitPos SendMsg
+			@NearestLabConnector(<-unitPos) <-unitPos sub normalize ->diff
+			@GetNearestBuildCell(<-unitPos <-diff 10 mul add ToCell 3 3 0 500) ->bZ ->bX
+			if(<-canBuild)
+				@MoveUnit
+			else
+				<-*weaponFocus ToCell 3 3 <-minC 100 @GetNearestBuildCell ->bZ ->bX
+				if(<-canBuild)
+					@MoveUnit
+				endif
+			endif
+		else
+			SetUnitPosition(<-*LOS <-unit GetUnitPosition)
+			<-*LOS 20 SetUnitRange
+			RefreshUnitLOSCache(<-*LOS)
+			FindUnitEnemy(<-*LOS <-deepest 0) dup2 V2 IsV2InMap ! if
+				pop pop 
+				if(<-unit GetUnitType "shield" eq)
+					<-unit false SetUnitArmed
+				endif
+				true ->*reserves{<-unit} #Add unit to reserves
+				if(<-*autopilotDebug)
+					<-unit "<size=8>reserve" SetUnitDebugText
+				endif
+				-1 -1
+			endif
+			dup2 ->bZ ->bX
+			if(V2 IsV2InMap)
+				@GetNearestBuildCell(<-bX <-bZ 3 3 <-minC 100) ->bZ ->bX
+				if(<-canBuild)
+					@MoveUnit
+				endif
+			endif
+		endif
+		0 ->timeToMove{<-unit}
+	endif
+
+	<-unit GetUnitAmmo ->lastAmmo{<-unit}
+	<-unit GetUnitHealth 0.5 lte <-unit GetUnitMoveCell FromCell IsV3InMap ! && if
+		#Move the unit back toward the rift lab
+		<-unit GetUnitPosition ->unitPos
+		@NearestLabConnector(<-unitPos) <-unitPos sub normalize ->diff
+		@GetNearestBuildCell(<-unitPos <-diff 10 mul add ToCell 3 3 0 500) ->bZ ->bX
+		if(<-canBuild)
+			@MoveUnit
+		endif
+	endif
+
+:MoveUnit
+	SetUnitMoveCell(<-unit <-bX <-bZ)
+	<-unit dup GetUnitAmmo eq0 SetUnitSupplied
+	<-unit <-bX <-bZ FromCell ->lastPos{<-unit}
+	<-*autopilotDelay <-*AP_BUILD_TIME add ->*autopilotDelay
+	
+:NearestLabConnector
+	->centerPos
+	if(GetUnitsByType("microrift" 1))
+		GetUnits("microrift" <-centerPos 200 true false false 0 1 0) [0] GetUnitPosition return
+	endif
+	GetRiftLab GetUnitPosition return
+
+:GetNearestBuildCell
+	->maxCells ->MaxCreep ->UnitZ ->UnitX ->centZ ->centX
+	false ->canBuild
+	FloodFillTerrain(<-centX <-centZ 1 21 <-maxCells) ->terrain
+	<-terrain GetListCount 0.2 mul 0 do
+		<-terrain[i 5 mul] EV2 <-UnitX <-UnitZ <-MaxCreep @CellBuildable if
+			true ->canBuild
+			<-terrain[i 5 mul] EV2 break
+		endif
+	loop
+	if(<-canBuild !)
+		-1 -1
+	endif
+	return
+
+:CellBuildable
+	->maxCreep ->unitZ ->unitX ->cellZ ->cellX
+	<-cellX <-cellZ GetTerrain ->centerTerrain
+	true
+	<-cellZ <-unitZ 0.5 mul ceil add <-cellZ <-unitZ 0.5 mul AsInt sub do
+		<-cellX <-unitX 0.5 mul ceil add <-cellX <-unitX 0.5 mul AsInt sub do
+			i j GetTerrain dup <-centerTerrain eq i j GetCellOccupiedCount ! i j GetCreeper <-maxCreep lte && && && &&
+			dup ! if
+				return
+			endif
+		loop
+	loop
+	return
+
+:RefreshWeaponList
+	GetUnitsByType("cannon" 1) ->weaponList
+	GetUnitsByType("mortar" 1) ->mortars
+	GetUnitsByType("sprayer" 1) ->sprayers
+	GetUnitsByType("shield" 1) ->shields
+	<-mortars GetListCount 0 do
+		<-weaponList <-mortars[i] AppendToList
+	loop
+	--mortars 
+	<-sprayers GetListCount 0 do
+		<-weaponList <-sprayers[i] AppendToList
+	loop
+	--sprayers
+	<-shields GetListCount 0 do
+		<-weaponList <-shields[i] AppendToList
+	loop
+	--shields
+	<-weaponList GetListCount 1 sub ->index
+
+:Awake
+	CreateTable ->lastPos
+	CreateTable ->timeToMove 
+	CreateTable ->lastAmmo 
+	RegisterScript("UnitMove")
+
+	

@@ -1,0 +1,173 @@
+# --Cache-- 3/10/2021 3:21:10 PM
+#Updates the AI's cache globals for things like where 7x7 units can be placed.
+#This will lag the game quite a bit, which is why it's not done at runtime.
+#Make sure you save after you hear the sound, which means it's finished.
+$resourceSlot:1
+$resoMin:3
+$timeGoal:25 #time in ms the script uses to cache each frame
+
+$$controlPanelGUID:"c9d6a9fb-a830-4c63-875a-7604c38e9ea5"
+$$losGUID:"36fc2e04-5c28-49d5-9743-9355105b9c02" #used for FindUnitEnemy
+$$towerWatcherGUID:"d0c846ec-d9c0-4432-80d8-5e652e6c1d1b" #Checks for destroyed towers
+$$moveManageGUID:"620d2cb1-23fd-446f-a24d-f86d40b7de99" #Performs movement checks
+$$mainAiGUID:"b6edebe3-3d75-4513-b957-f93f60889855" #Has the main script
+
+if(GetRiftLab gt0 GetEditMode <-*noAutoCache ! && <-forceCache || && GetGameUpdateCount eq0 &&)
+	if(<-startCache)
+		false ->startCache
+		false ->cacheComplete
+		GetRiftLab GetUnitCell 1 21 9999999 FloodFillTerrain ReverseList ->orderedCells
+		CreateList ->*largeUnitSpaces
+		CreateList ->*resoList
+		ListN(16 0 do 0 loop 16) ->tempList
+		@CreateGreenarLists
+		1000 ->cellsPerUpdate
+	endif
+	ElapsedTime ->start
+	99999999 0 do #exits after <-timeGoal milliseconds
+		if(<-index GetMapSize mul lt)
+			<-orderedCells PopList EV2 dup2 ->cellz ->cellx
+			<-cellx <-cellz GetTerrain dup ->centerTerrain
+			<-cellz 4 add <-cellz 3 sub do
+				<-cellx 4 add <-cellx 3 sub do
+					i j GetTerrain dup <-centerTerrain eq && &&
+					dup ! if
+						break
+					endif
+				loop
+				dup ! if
+					break
+				endif
+			loop
+			if
+				<-*largeUnitSpaces <-cellx <-cellz v2 AppendToList
+			endif
+			
+			0 ->resoNum
+			<-cellz 2 sub <-cellz 1 add do
+				<-cellx 3 sub <-cellx 2 add do
+					if(i j dup2 GetTerrain dup <-centerTerrain neq swap lte0 ||)
+						-1 ->resoNum
+						break
+					endif
+					if(GetTerrainSpecial <-resourceSlot eq)
+						<-resoNum 1 add ->resoNum
+					endif
+				loop
+				if(<-resoNum lt0)
+					break
+				endif
+			loop
+			
+			if(<-resoNum gte0)
+				"greenarmother" <-cellx <-cellz GetTerrainVector 20 false false false 0 0 0 GetUnits dup
+				
+				if("greenarmother" <-cellx <-cellz GetTerrainVector 10 false false false 0 0 0 GetUnits ! &&)
+					[0]
+					<-*greenarCells swap GetTableElement <-cellx <-cellz v2 AppendToList
+				else 
+					pop
+				endif
+			endif
+			if(<-resoNum <-resoMin gte)
+				#Put the list element in the right place so the list is created pre-sorted
+				<-*resoList <-tempList[<-resoNum] v4(<-cellx <-cellz <-resoNum 0) InsertListElement
+				<-resoNum 1 add 0 do #Increment insert points to match the insert moving elements over
+					<-tempList[i] 1 add ->tempList[i]
+				loop
+			endif
+			
+			if(<-darkTowerNum)
+				"darktower" 0 GetUnitsByType ->units
+				<-units 0 do
+					<-units[i] ->unit
+					<-unit GetUnitCell ->unitZ ->unitX
+					<-unit GetUnitSettings{"Width"} ->width
+					<-unit GetUnitSettings{"Depth"} ->depth
+					<-unit GetUnitSettings{"Square"} ->square
+					
+					if(<-square)
+						<-cellx <-unitX sub abs <-width lt <-cellz <-unitZ sub abs <-depth lte &&
+					else
+						<-cellx <-unitX sub abs <-width AsFloat div dup mul
+						<-cellz <-unitZ sub abs <-depth AsFloat div dup mul add sqrt 1 lte
+					endif
+					if
+						<-cellx <-cellz dup2 GetCellOccupiedCount 99 add SetCellOccupiedCount
+						break
+					endif
+				loop
+			endif
+			
+			<-index 1 add ->index
+			if(ElapsedTime <-start sub <-timeGoal gt)
+				break
+			endif
+		else
+			if(<-cacheComplete !)
+				true ->cacheComplete
+				SendMsg("Autopilot_CacheComplete" 0)
+				if(<-forceCache !)
+					PlaySound("Achievement" 1)
+					SetMSGButton(0 false "" V4(1 1 1 1) "empty" "")
+				endif
+				--tempList
+				--orderedCells
+			endif
+			return
+		endif
+	loop
+	if(<-forceCache)
+		if(IsGameMessageShowing)
+			SetGameMessageText(0 "Setting up Autopilot.")
+		else
+			SetMSGButton(0 true "Setting up Autopilot." LF <-index " / " GetMapSize mul "; " <-index GetMapSize mul AsFloat div 100 mul 1 round "%" concat4 concat4 concat V4(1 1 1 1) "" "")
+		endif
+	else
+		SetMSGButton(0 true "Caching map data. Do not finalize." LF <-index " / " GetMapSize mul "; " <-index GetMapSize mul AsFloat div 100 mul 1 round "%" concat4 concat4 concat V4(1 1 1 1) "SkipCache" " ")
+	endif
+endif
+
+:Once
+	true ->startCache
+	"darktower" 0 GetUnitsByType GetListCount ->darkTowerNum
+	RegisterForMsg("SkipCache" "SkipCache")
+	RegisterForMsg("Autopilot_ForceCache" "ForceCache")
+	false ->forceCache
+	@CreateUniqueUnit(<-losGUID Vector0 0) ->*LOS
+	@CreateUniqueUnit(<-controlPanelGUID Vector0 0) pop
+	GetMapSize ->mapZ ->mapX
+	if(<-*moveModes !)
+		CreateTable ->*moveModes
+	endif
+	if(<-*reserves !)
+		CreateTable ->*reserves
+	endif
+	0 ->index
+
+:SkipCache
+	99999999 ->index
+
+:ForceCache
+	true ->forceCache
+	true ->startCache
+	0 ->index
+
+#Creates a unit and deletes all other units of that type.
+:CreateUniqueUnit
+	->initParams ->pos ->GUID
+	GetUnitsByType(<-GUID 0) ->extraUnits
+	<-extraUnits GetListCount 0 do
+		<-extraUnits[i] true true true DestroyUnit
+	loop
+	CreateUnit(<-GUID <-pos <-initParams) return 
+
+:CreateGreenarLists
+	CreateTable ->*greenarCells
+	"greenarmother" GetRiftLab GetUnitPosition 9999 false false false 0 0 0 GetUnits ->mothers
+	<-mothers 0 do
+		CreateList ->*greenarCells{<-mothers[i]}
+	loop
+
+:GameLoaded
+	GetEditMode GetGameUpdateCount ! && ->isInEditor

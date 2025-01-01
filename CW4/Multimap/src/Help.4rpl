@@ -1,0 +1,28 @@
+# --Help-- 8/10/2023 10:19:39 AM
+
+:_UICallback
+	if(<-_DATA  1 eq)
+		Self 1 GetUnitUIState ->textIndex
+		Self <-textList[<-textIndex] SetUnitDebugText
+	endif
+
+
+:Awake
+	Cancel
+	Self 2 "The CPACK's wiki has more in-depth information on how everything works" SetUnitUIText
+	RegisterForMsg("SetMap" "Destroy")
+	List(
+		""
+		"The layout editor is where you can add new levels and transitions to your campaign. Drop levels into the map (or outside of it), and drag transitions between them.<br><br>Each unit can be edited in its script settings. Info on what each setting does can be found on the unit's wiki page, or the top of the .4rpl file for that script."
+		"Levels are represented as units. You can travel to them in their UI, or edit information such as the level's name, starting ADA message, and more in its script settings."
+		"Transitions determine when and where the player can go from one level to the next. Adding and removing objetives can be done in the unit UI. If desired, those objectives can be modified in the transition's script settings."
+		"Goals will complete the custom objective when the player unlocks them. Simple as that. They can be moved around like any other level."
+		"Thumbnails allow you to have an image on colonies for your campaign that isn't just the first level in your campaign. It will appear in the map like any other level, but will disappear when you finalize. Put one down, add a transition to the first level in your campaign, edit the thumbnail like any other level, then finalize on it."
+		"-Select a level and press ctrl+space to travel to it in the editor.<br><br>-Select a transititon and press ctrl+space to change its start and end points.<br><br>-Ctrl+click while one or more levels are selected to move them."
+		"-KEEP A BACKUP SAVE IN YOUR SCRATCH SLOTS.<br><br>-Eco will not be saved, meaning any trees will be in the same place for all levels.<br><br>-Ultracs will be created without any starting energy.<br><br>-Custom units are supported, but any changes to their script settings will not show after leaving and coming back. <br><br>-Updating unit instances will reset custom units' script settings to their defaults.<br><br>-Any save files larger than 10MB cannot be uploaded to Knuckle Cracker's servers.<br><br>-Glitching terrain to heights higher than 20 will corrupt that map's save."
+		"Multimap supports custom units, but it may require some workarounds for game features that interfere with the CPACK.<br><br>No special actions are needed if you aren't changing script settings for a specific unit instance.<br><br>If you are, then you must apply all changes for all custom units, compile, then switch out and back into the map you're making (double clicking the edit layout button is fastest) to save the settings to the CPACK. Don't click the blue button that appears when you compile during this process.<br><br>After doing this, you must press the blue button every time it appears to avoid resetting your script settings."
+	) ->textList
+#"Layout, Levels, Transitions, Goal, Thumbnail, Keybinds, Limitations, Custom Units"
+
+:Destroy
+	Self 1 1 1 DestroyUnit

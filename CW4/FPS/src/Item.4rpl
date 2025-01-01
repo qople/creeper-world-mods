@@ -1,0 +1,413 @@
+# --Item-- 12/22/2020 10:44:57 PM
+
+#Coordinates of any cell on the door
+#The script will change the height of this cell and any connected cells of the same height
+$doorX:-1
+$doorZ:-1
+
+#The terrain height the door is set to when the item is collected. 20 max.
+#Less than 0 finds height automatically.
+$DOOR_FINAL_HEIGHT:-1
+
+$itemsRequired:0 #How many other items must be collected before this one
+
+#The message shown when collected. 
+#"AUTO" gives the default message with the upgrade strengths and such.
+$message:"AUTO"
+
+#Another line to the message. For tips or other information.
+#If present, it will make the item play a "notify" sound when collected, and
+#The message will stay up for longer before disappearing (10 seconds instead of 6).
+$message2:""
+
+#The name of the weapon the item unlocks.
+$weaponUnlock:"" 
+
+#Upgrade parameters
+#You can upgrade any attribute on any weapon, even if it doesn't normally have it.
+#Upgrades are additive, not multiplicative.
+#If the weapon given does not exist, a new variable will be created with the name "attributeN" and value "strengthN" instead
+#Adding more weapon/attribute/strength sets with the same naming system will add more upgrade slots, up to 100.
+$weapon0:"cannon"
+$attribute0:"AcDepth"
+$strength0:0.0	
+$weapon1:"cannon"
+$attribute1:"AcDist"
+$strength1:0.0
+$weapon2:"mortar"
+$attribute2:"UnitDamage"
+$strength2:0.0
+$weapon3:"mortar"
+$attribute3:"UnitDamage"
+$strength3:0.0
+$weapon4:"mortar"
+$attribute4:"UnitDamage"
+$strength4:0.0
+
+#How long the item must be free of creeper to be collectible, in frames (1/30 of a second)
+$$collectTime:150 
+
+#-----------------------
+# Debug and version info
+# If you modify this script more than changing the above parameters, Update these. 
+# If you don't, leave them, even if you modified another script in the CPACK.
+
+# Current version of this script. If you branch someone else's version, add a period 
+# and start a new number ("10" -> "10.0"). If you edit your own version, add 1 to the last number ("10.0" -> "10.1")
+$$Script_Version:"8" 
+
+# The authors who have directly modified this script. There should be one name for each number in the script version.
+# If you don't want to attach your name, anything that separates your version from other possible branches works.
+$$Edit_History:"qople,"  
+
+$$Intended_Version:"1.5.1" #The CPACK version this script is intended for. The CPACK version is in the settings section of FpsCore.
+
+#Any other info that should be printed on startup, such as dependencies.
+#This is printed as-is (no extra formatting).
+$$Notes:"" 
+
+#=======================
+
+self "main" v3(getEditMode dup dup) setObjScale
+self getEditMode setUnitSelectable
+
+#keep track of how long the unit has been free of the creeper
+if(Self GetUnitCell getCreeper if(<-*creeperMode) gte0 else lte0 endif <-othersCollected <-itemsRequired gte and <-collecting and <-collectingOverride ||)
+	if(<-collectingOverride)
+		<-framesToGo dup <-collectTime lt 1 add add <-collectTime 2 mul min ->framesToGo
+	else
+		<-framesToGo dup <-collectTime gt 1 add sub 0 max ->framesToGo
+	endif
+
+	if(<-framesToGo <-collectTime 2 mul eq)
+		if(<-cachePos.y <-terrain 5 add eq)	
+			@collect
+		endif
+		<-cachePos.y 5.0 <-collectTime div add <-terrain 5 add min ->cachePos.y
+	else if(<-framesToGo eq0)
+		if(<-cachePos.y <-terrain 5 add eq)	
+			@collect
+		endif
+		<-cachePos.y 5.0 <-collectTime div add <-terrain 5 add min ->cachePos.y
+	endif endif
+else
+	false ->collecting
+	
+	#lower and slow the cache to a stop
+	
+	#add collect time accordingly
+	if(<-framesToGo <-collectTime gt)
+		<-framesToGo 2 sub <-collectTime max ->framesToGo
+	else
+		<-framesToGo 2 add <-collectTime min ->framesToGo
+	endif
+	if(<-framesToGo <-collectTime eq)
+		<-cachePos.y 5.0 <-collectTime div sub <-terrain max ->cachePos.y
+	endif
+		
+endif
+
+<-collectTime <-framesToGo sub AsFloat <-collectTime div ->turnSpeed
+
+if(<-turnSpeed neq0 <-cachePos.y <-cachePos ToCell GetTerrain gt ||)
+	<-rot <-turnSpeed add ->rot
+	setUnitRotation(<-cache v3(0 <-rot Rad2Deg mul 0))
+	setUnitPosition(<-cache <-cachePos)
+endif
+
+if(<-forceCollect)
+	@collect
+	--forceCollect
+endif
+
+#=========================
+
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	self "main" v3(getEditMode dup dup) setObjScale
+	self getEditMode setUnitSelectable
+	if(<-itemsRequired gt0)
+		SetUnitPopupEnabled(Self true)
+		SetUnitPopupText0(Self <-itemsRequired " info caches needed to collect." concat)
+	else
+		Self false SetUnitPopupEnabled
+	endif
+
+#Refreshes the info cache attached to the control unit
+:findCache
+	if(<-suppress !)
+		getUnits("InfoCache" self getUnitPosition 1.42 false false false 0 0 0) ->units
+		<-units getListCount 0 do
+			<-units[i] true true true DestroyUnit
+		loop
+		if(<-cache GetUnitDestroyed)
+			createUnit("InfoCache" getUnitPosition(self) 0) ->cache
+		endif
+		<-cache false SetUnitConnectable
+	endif
+
+:collect
+	if(<-collected !)
+		true ->collected
+		self false SetUnitPopupEnabled
+		
+		100 0 do #Find how many upgrade slots are defined
+			if("attribute" i concat -?! !)
+				i ->upgradeSlots
+				break
+			endif
+		loop
+		
+		@ChangeTerrain
+		@UpgradeWeapons
+		@CreateMessage
+		
+		
+		if(<-message2 StringLength neq0)
+			#Change the sound a bit when there's a special message.
+			playSound("Notify" 1)
+			300 ->*msgTimer
+			0.75 ->volume
+		else
+			180 ->*msgTimer
+			1 ->volume
+		endif
+		
+		#Sound (Plays at door position if defined, else at current position)
+		playSoundAtPosition("InfoCacheCollected" <-volume 
+				if(<-doorX <-doorZ v2 IsV2InMap) 
+					GetTerrainVector(<-doorX <-doorZ) 
+				else 
+					Self GetUnitPosition 
+				endif)
+		
+		destroyUnit(<-cache true true true)
+		
+		#Debug text shows time of collection, and the collection message.
+		"(" GetGameUpdateCount GetTimeString ") Item collected: " <-shownMessage concat4 Print
+		
+		SendMsg("ItemCollected" Self)
+	endif
+
+#The terrain alteration part of collection
+:ChangeTerrain
+	if(<-doorX <-doorZ V2 IsV2InMap)
+		FloodFillTerrain(<-doorX <-doorZ dup2 GetTerrain 1 add dup 999) ->doorList
+		<-doorList GetListCount 0 do
+			<-doorList[i] EV2 
+			dup2 0 SetTerrainOverride
+			if(<-DOOR_FINAL_HEIGHT lt0)
+				dup2 @AvgTerrain
+			else
+				<-DOOR_FINAL_HEIGHT 
+			endif
+			SetTerrain
+		loop
+	endif
+
+#The weapon upgrade part of collection
+:UpgradeWeapons
+	#Generate some vars from globals
+	<-*weaponAttributes GetTableKeys dup ->weaponList GetListCount ->numWeapons
+	<-numWeapons 0 do
+		<-weaponList[i] 1.0
+	loop
+	<-numWeapons TableN ->dpsMults
+	
+	#Weapon unlock
+	if(<-weaponUnlock)
+		GetRegisteredScriptVar("Player" "unlockedWeapons") <-weaponUnlock AppendToList
+	endif
+	
+	#Read and apply upgrades
+	<-upgradeSlots 0 do
+		"weapon" i concat <-! ->thisWeapon
+		if(<-weaponList <-thisWeapon ListContains)
+			if("strength" i concat <-! neq0)
+				<-*weaponAttributes{<-thisWeapon} ->stats
+				@WeaponDps ->startDps
+				<-stats "attribute" i concat <-! getTableElement "strength" i concat <-! add ->newStat
+				<-stats "attribute" i concat <-! <-newStat setTableElement
+				@WeaponDps <-startDps div ->dpsMult
+				<-dpsMult <-dpsMults{<-thisWeapon} mul ->dpsMults{<-thisWeapon}
+				
+				<-stats ->*weaponAttributes{<-thisWeapon}
+			endif
+		else
+			#Store to a variable of the matching name, if no variable of that name exists
+			if("attribute" i concat <-! -?! !)
+				<-!("strength" i concat) ->!("attribute" i concat <-!)
+			endif
+		endif
+	loop
+
+#Creates and shows the collection message for the item when collected.
+:CreateMessage
+	#create the auto message if applicable
+	if(<-message "AUTO" eq)
+		"" ->autoMessage
+		
+		#First the weapon unlock, if any
+		if(<-weaponUnlock "" neq)
+			"Picked up a " <-weaponUnlock ". " concat3
+			GetRegisteredScriptVar("Player" "weaponOrder") ->weaponOrder
+			-1
+			<-weaponOrder GetListCount 0 do
+				<-weaponOrder[i] <-weaponUnlock eq if
+					pop i break
+				endif
+			loop
+			if(dup lt0 GetEditMode &&) 
+				#A little error if the weapon unlock isn't in the list when in edit mode
+				pop "Mapmaker: Weapon unlock is invalid. Try checking capitalization and spelling, and make sure the weapon script is on." concat
+			else
+				"Hotkey <<BuildUnit" swap ">>, or scroll to rotate weapons." concat4
+			endif
+			LF concat ->autoMessage
+		endif
+		
+		<-numWeapons 0 do
+			<-weaponList[i] ->thisWeapon
+			<-*weaponAttributes{<-thisWeapon} ->stats
+			<-dpsMults{<-thisWeapon} dup ->dpsMult
+			if(1.0 approximately !)
+				@WeaponDps <-stats{"BaseDPS"} div ->netMult
+				<-autoMessage
+				if(dup StringLength gt0)
+					LF concat
+				endif
+				<-thisWeapon " upgraded. (" <-dpsMult 2 round "x DPS, " 
+						<-netMult 2 round "x total.)" concat4 concat4 ->autoMessage
+			endif
+		loop
+		<-autoMessage ->shownMessage
+	else
+		<-message ->shownMessage
+	endif
+	<-shownMessage LF <-message2 concat3 ->shownMessage
+	
+	#show the message
+	if(<-shownMessage stringLength 1 gt)
+		closeGameMessage(false)
+		showGameMessage("message" "" "" false "")
+		setGameMessageText(0 <-shownMessage)
+	endif
+	
+:UpdateCheckpointState
+	if(<-_DATA gt0)
+		if(<-_DATA GetUnitType Self GetUnitType eq) #Only count if another item is collected
+			<-othersCollected 1 add ->othersCollected
+			SetUnitPopupText1(self <-itemsRequired <-othersCollected sub 0 max " to go." concat)
+		endif
+	else if(<-_DATA self neg eq <-_DATA -1 neq &&)
+		#When the negative UID is called (except for -1 because global scripts return that),
+		#Force collect the item.
+		# false ->collected
+		# @collect
+	endif endif
+
+#Gives the peak DPS of <-thisWeapon
+:WeaponDps
+	"DmgDepth" @Stat 0.00001 max ->dmgDepth
+	"DmgIterations" @Stat ->iterations
+	
+	"DmgDist" @Stat AsInt ->dmgDist
+	# --numCells
+	#Find the exact number of cells within the circular range if necessary
+	<-cellsInRadii[<-dmgDist] ->numCells
+	
+	<-dmgDepth "DmgMaxCells" @Stat <-numCells min mul
+
+	#add ac added per shot
+	"AcDist" @Stat AsInt ->acDist
+	#Find the exact number of cells within the circular range if necessary
+	<-cellsInRadii[<-acDist] ->numCells
+
+	"AcDepth" @Stat <-numCells mul add
+	
+	#Divide by fire rate
+	"Rate" @Stat AsInt 1 max div 30 mul
+	return
+
+:Stat
+	<-stats swap getTableElement
+
+:_UiCallback
+	<-_DATA ->slot
+	<-slot eq0 if
+		if(<-cache GetUnitDestroyed)
+			@findCache
+		endif
+		if(getEditMode)
+			@collect
+		endif
+	endif
+
+:BuildComplete #called when the unit is created at runtime (prebuilt)
+	@findCache
+
+#Average terrain (smoothing 1) but ignores void, walls (height 19 & 20), and terrain of the cell's same height 
+:AvgTerrain
+	dup2 ->centerZ ->centerX GetTerrain ->centerTerrain
+	--num
+	0
+	<-centerZ 2 add <-centerZ 1 sub do
+		<-centerX 2 add <-centerX 1 sub do
+			i j GetTerrain dup
+			if(dup dup 19 lt swap <-centerTerrain neq && &&)
+				add
+				<-num 1 add ->num
+			else
+				pop
+			endif
+		loop
+	loop
+	if(<-num)
+		<-num asfloat div 0 round 
+	else
+		pop <-centerTerrain
+	endif return
+
+:once
+	#List of how many cells are inside a circle with radius of the index.
+	List(1 9 21 37 69 97 137 177 225 293 349 421 489 577 665 749 861 973 1085 1201 1313 1457 1597 1741 1885 2053 2217 2377 2561 2733 2933 3125 3313 3521 3745 3969 4197 4421 4669 4905 5169 5417 5681 5957 6221 6509 6785 7089 7393 7705)
+			->cellsInRadii
+	getUnitCell(self) ->posZ ->posX
+	<-posX <-posZ getTerrain ->terrain
+	0 ->othersCollected
+	0 ->turnSpeed
+	
+	if(<-collected !)
+		@findCache
+	endif
+	
+	RegisterForMsg("ItemCollected" "UpdateCheckpointState")
+	
+	<-collectTime ->framesToGo
+	1.0 <-collectTime div ->rotAccel
+	setUnitDebugText(self "")
+	setUnitSelectable(<-cache false)
+	
+	#set up the unit shield for when it's collected
+	SetUnitShieldRange(self 5)
+	DeployUnitShield(self false)
+	SetUnitShieldVisible(self true)
+	
+	#Tooltip if you need some other items first
+	if(<-itemsRequired gt0)
+		SetUnitPopupEnabled(self true)
+		SetUnitPopupText0(self <-itemsRequired " info caches needed to collect." concat)
+	endif
+	getUnitPosition(<-cache) ->cachePos
+	
+	#Set some vars to not persist across saves (Mainly lists, tables, etc.)
+	#Helps reduce save bloat
+	"units"			NotPersist
+	"doorList"		NotPersist
+	"stats"			NotPersist
+	"centerVect"	NotPersist
+	"dpsMults"		NotPersist
+	"volume"		NotPersist
+	"AcDepth"		NotPersist
+	"AcDist"		NotPersist
+	"autoMessage"	NotPersist

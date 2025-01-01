@@ -1,0 +1,59 @@
+# --Missile Bullet-- 7/4/2023 12:08:10 PM
+
+<-targetUnit GetUnitPosition <-targetUnit GetUnitTargetOffset add ->targetPos
+#Detonate early on hitting terrain
+
+# sELF v3(90 0 0) sETuNITrOTATION
+if(<-pos ToCell GetTerrain <-pos.y gt)
+	Self GetUnitCell <-AMMO_USE AddCreeper
+	Self 0 0 0 DestroyUnit
+endif
+
+if(<-targetUnit GetUnitDestroyed <-targetUnit @IsValidTarget ! ||)
+	Self RandInt(0 90) RandInt(0 360) RandInt(0 360) v3 5 RotateUnit
+	Self dup GetUnitPosition Self GetUnitForward Normalize <-PROJ_SPEED mul add dup ->pos SetUnitPosition
+	Return
+	# Self GetUnitCell <-DAMAGE_AMT AddCreeper
+endif
+<-PROJ_SPEED 0.001 add ->PROJ_SPEED
+
+
+#Move the unit up every update
+Self <-targetPos 15 RotateUnitTowards
+Self dup GetUnitPosition Self GetUnitForward Normalize <-PROJ_SPEED mul add dup ->pos SetUnitPosition
+
+#Detonate properly if it reaches the target
+if(Self GetUnitPosition <-targetPos Distance <-PROJ_SPEED lte)
+	@Detonate
+endif
+
+:Once
+	if(<-targetUnit GetUnitDestroyed)
+		Self 0 0 0 DestroyUnit
+	endif
+	
+	Self GetUnitPosition ->pos
+	Self <-targetUnit GetUnitPosition 360 RotateUnitTowards
+	if(<-*sleeperAnimations)
+		Self "" 1 0.7 CreateTrail
+	endif
+
+:Detonate
+	if(<-targetUnit GetUnitOfficialName ToLower "bomber" EndsWith <-targetUnit GetUnitHealth <-DAMAGE_AMT lte &&)
+		<-targetUnit 0 SetUnitAmmo
+		<-targetUnit dup GetUnitMaxHealth SetUnitHealth
+	else
+		<-targetUnit <-DAMAGE_AMT DamageUnit
+	endif
+	Self 0 0 0 DestroyUnit
+
+:Destroyed
+	#Clear "damage map"
+	if(<-targetUnit GetUnitDestroyed)
+		<-*missilesOnRoute <-targetUnit RemoveTableElement
+	else
+		<-*missilesOnRoute{<-targetUnit} 1 sub ->*missilesOnRoute{<-targetUnit}
+	endif
+
+:IsValidTarget
+	dup GetUnitMoveCell pop gte0 swap GetUnitOfficialName ToLower "bomber" EndsWith ||

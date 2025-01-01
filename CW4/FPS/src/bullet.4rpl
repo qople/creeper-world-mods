@@ -1,0 +1,98 @@
+# --bullet-- 12/22/2020 4:14:05 PM
+
+# Debug and version info
+# If you modify this script, Update these. 
+# If you don't, leave them, even if you modified another script in the CPACK.
+
+# Current version of this script. If you branch someone else's version, add a period 
+# and start a new number ("10" -> "10.0"). If you edit your own version, add 1 to the last number ("10.0" -> "10.1")
+$$Script_Version:"8" 
+
+# The authors who have directly modified this script. There should be one name for each number in the script version.
+# If you don't want to attach your name, anything that separates your version from other possible branches works.
+$$Edit_History:"qople,"  
+
+$$Intended_Version:"1.5.1" #The CPACK version this script is intended for. The CPACK version is in the settings section of FpsCore.
+
+#Any other info that should be printed on startup, such as dependencies.
+#This is printed as-is (no extra formatting).
+$$Notes:"" 
+
+#=======================
+	if(<-Path eq0)
+		<-counter 1 add ->counter
+		if(<-hit)
+			destroyUnit(self true false false)
+		endif
+		0 <-ProjSpeed do
+			<-distTraveled 1 add ->distTraveled
+			if(<-distTraveled <-MaxRange gte)
+				true ->hit
+				break
+			endif
+			<-pos <-vel add ->pos
+			if(<-pos.x <-pos.z getTerrain <-pos.x <-pos.z getCreeper if(<-*creeperMode) neg endif 0 max add <-pos.y gte
+					<-counter 300 gt or <-pos IsV3InMap ! or)
+				true ->hit
+				<-pos <-vel sub ->pos
+				break
+			endif
+		loop
+	else if(<-Path 1 eq)
+		<-counter <-speed add ->counter
+		
+		self <-pos BallisticArcPos(<-startPos <-fireVel <-gravity <-counter) dup ->pos sub setUnitForward
+		if(<-counter <-travelTime gte)
+			destroyUnit(self false false false)
+		endif
+	endif endif
+	setUnitPosition(self <-pos)
+	
+	#move the visual unit
+	if(<-meshUnit GetUnitDestroyed ! <-lastPos &&)
+		setUnitPosition(<-meshUnit <-pos)
+		SetUnitForward(<-meshUnit <-pos <-lastPos sub)
+	endif
+	<-pos ->lastPos
+	
+
+:Awake
+	once
+		Self false SetMVerseCreatesUnitGhost
+		if(<-suppress !)
+			<-*activeWeapon ->weapon
+			<-*playerPos ->startPos
+			<-*playerForward ->vel
+			getUnitPosition(self) ->pos
+			<-*weaponAttributes{<-weapon} ->currentStats
+			<-currentStats getTableKeys ->keys
+			<-keys getListCount 0 do
+				<-keys i getListElement ->attribute
+				<-currentStats{<-attribute} <-attribute ->!
+			loop
+			self "main" <-Color SetObjColor
+			
+			if(<-Color.x <-Color.y <-Color.z add add eq0)
+				self true true true DestroyUnit
+			endif
+
+			if(<-BulletGUID StringLength)
+				Self "main" Vector0 SetObjScale
+				CreateUnit(<-BulletGUID self GetUnitPosition TableN("parent" self 1)) ->meshUnit
+				<-meshUnit <-*playerForward SetUnitForward
+			endif
+		endif
+	endonce
+
+:Once
+	createTrail(self "" <-Trail EV2)
+
+:destroyed
+	SetUnitPosition(<-meshUnit <-pos)
+	DestroyUnit(<-meshUnit 1 1 1)
+	if(<-Path eq0)
+		SendMsg("WeaponEffect" ListN(<-weapon <-pos 2))
+		CreateEffect(<-EffectName <-pos V3(<-EffectScale dup dup))
+	else if(<-Path 1 eq)
+		SendMsg("WeaponEffect" ListN(<-weapon BallisticArcPos(<-startPos <-fireVel <-gravity <-travelTime 0.1 sub) 2))
+	endif endif 

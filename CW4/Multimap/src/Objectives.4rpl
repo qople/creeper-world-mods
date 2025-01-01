@@ -1,0 +1,210 @@
+# --Objectives-- 5/11/2021 1:42:27 PM
+$CUSTOM_NULLIFIABLES:"" #Comma separated list of GUIDs of custom units that should be nullified
+
+$$UPDATE_INTERVAL:5		#Delay between updating objective data
+$$transitionGUID:"651ecd06-600d-4166-94d0-afde51f8b813"	
+
+# Important vars are:
+# timePassed:		Updates since level start
+# reclaimPercent:	Percentage from 0 to 100 of how much has been reclaimed
+# enemiesLeft:		Number of enemies currently active on the map
+# enemiesGone:		Number of enemies that are either nullified or destroyed
+# nullifyAmt:		How many enemy units are currently nullified
+# cachesLeft:		How many info caches remain on the map
+# cachesGone:		How many info caches have been collected
+# totemsLeft:		How many totems have *not* been activated yet
+# totemsGone:		How many totems have been activated
+
+#This script has to operate while paused just so @Awake runs immediately on recompile. 
+#It doesn't really affect performance, so whatever.
+if(GetPause ! GetTimer0 ! &&)	
+	<-UPDATE_INTERVAL SetTimer0
+	true @Update
+	@SetText
+endif
+
+#Gets all objective-related data and stores it into variables to be accessed through GetRegisteredScriptVar
+:Update
+	if
+		#Reclaim (in if statement because creeper coverage doesn't update immediately upon map change
+		GetCreeperCoverage <-maxCreeper max ->maxCreeper pop
+		GetCreeperCoverage <-maxCreeper 1 max asFloat div 100 mul ->reclaimPercent pop
+	endif
+	
+	GetGameUpdateCount <-startTime sub ->timePassed
+	<-levelUnit "Time: " <-timePassed GetTimeString concat SetUnitPopupText1
+	
+	#Collect
+	GetUnitsByType("infocache" 0) GetListCount ->cachesLeft
+	<-baseCaches <-cachesLeft sub ->cachesGone
+	
+	#Totems
+	GetUnitsByType("totem" 0) ->totems
+	0
+	<-totems GetListCount 0 do
+		<-totems[i] GetTotemActivated ! add
+	loop ->totemsLeft
+	<-totems GetListCount <-totemsLeft sub ->totemsGone
+	
+	@CountEnemies
+
+#Called when the map switches. Clears all cumulative data for the next map.
+:Reset
+	GetGameUpdateCount ->startTime
+	0 ->maxCreeper
+	0 ->reclaimPercent
+	0 ->killedEnemies
+	CreateList ->enemies
+	
+	GetUnitsByType("infocache" 0) GetListCount ->baseCaches
+	1 SetTimer0
+	<-levelUnit "" SetUnitPopupText1
+	"Switcher" "levelUnit" GetRegisteredScriptVar ->levelUnit
+	false @Update
+	@GenerateStartingText
+	
+
+#Finds the number of enemies that are either currently nullified or have been destroyed,
+#How many are still active, and the total number of nullifiable enemies on the map.
+:CountEnemies
+	<-killedEnemies #Remember how many enemies have died, and start from there
+	
+	#First, go through all the units from the last call and count how many were destroyed.
+	<-enemies 0 do
+		<-enemies[i] GetUnitDestroyed if
+			1 add
+		endif
+	loop
+	dup ->killedEnemies #Store the new total as the base for the next call and carry on
+	
+	0 ->enemiesLeft #How many enemies are currently active (not nullified)
+	
+	CreateList ->enemies #Refresh the list
+	<-enemyTypes 0 do
+		GetUnitsByType(<-enemyTypes[i] 1) ->ofType
+		
+		#Add each unit to the full list of enemies and keep track of how many are nullified.
+		<-ofType 0 do 
+			if(<-ofType[i] dup <-enemies swap AppendToList GetUnitSuppressCount)
+				1 add #Add to the total count on the stack
+			else
+				<-enemiesLeft 1 add ->enemiesLeft
+			endif
+		loop
+	loop
+	->enemiesGone
+	<-enemies GetListCount ->totalEnemies
+
+#Updates the game message text when it's visible
+:SetText
+	"<u>OBJECTIVES</u>" ->msgText
+	<-activeTransitions 0 do
+		<-activeTransitions[i] ->unit
+		<-unit "progress" GetScript1Var ->progress
+
+	
+		<-msgText
+		if(dup StringLength)
+			LF LF concat3
+		endif
+		
+
+		
+		<-unit "endUnit" GetScript1Var "shownTitle" GetScript1Var ->destination
+		"To " 
+		if(<-destination StringLength)
+			<-destination Lf " " StringReplace
+		else
+			<-unit "end" GetScript1Var dup lt0 if pop "Win" endif
+		endif 
+		concat3
+		if(<-unit "triggers" GetScript1Var GetListCount dup eq0)
+			pop " (none)"
+		else if(1 eq)
+			""
+		else if(<-unit "require_All" GetScript1Var)
+			" (all)"
+		else
+			" (any)"
+		endif endif endif "<size=11><i>" concat3
+
+		<-progress GetListCount 1 sub 0 do
+			if(<-progress[i] gte0)
+				LF
+				<-names[i] <-progress[i] 100 mul 0 round "%" concat4
+				if(<-progress[i] 1 gte)
+					"<color=green>" swap "</color>" concat3
+				endif
+				concat3
+			endif
+		loop
+		
+		#Custom objective
+		if(<-progress[4] gte0)
+			LF
+			<-unit "customText" GetScript1Var 
+			if(<-progress[4] 1 gte)
+				"<color=green>" swap "</color>" concat3
+			endif
+			concat3
+			# PlaySound("Achievement" 1)
+		endif
+		
+		"</i></size>" concat
+		->msgText
+	loop
+	if(GetTimer1 eq0)
+		SetMsgButton(0 true <-msgText V4(0.1 0.1 0.1 0.3) "ShowStartText" 0)
+	endif
+
+:GenerateStartingText
+	"<u>OBJECTIVES</u>" LF concat ->msgText
+	<-transitionGUID 0 GetUnitsByType ->transitions
+	CreateList ->activeTransitions
+	<-msgText
+	<-transitions 0 do
+		<-transitions[i] ->unit
+		if(<-unit "start" GetScript1Var <-*activeMap eq)
+			<-activeTransitions <-unit AppendToList
+			LF <-unit "startText" GetScript1Var concat3
+		endif
+	loop
+	"</i></size>" concat
+	dup ->msgText ->startMsg
+	SetMsgButton(0 true <-msgText V4(0.1 0.1 0.1 0.3) "" "")
+
+:Awake
+	once
+		Split("emitter airsaccauldron darktower sporelauncher skimmerfactory blobnest" " ") ->enemyTypes
+		Split(<-CUSTOM_NULLIFIABLES RemoveWhitespace ",") ->temp
+		<-temp 0 do
+			<-temp[i]
+		loop
+		<-enemyTypes AppendStackToList
+		
+		"Reclaim: " "Collect: " "Totems: " "Nullify: " "Time: " List ->names
+		RegisterScript("Objectives")
+		"totems" NotPersist
+		"lastMsg" NotPersist
+		"msgText" NotPersist
+	
+		RegisterForMsg("MapLoaded" "Reset")
+		RegisterForMsg("ShowStartText" dup)
+		true SetTimerObeyPause0
+		@Reset
+		GetMapSize dup2 ->mapZ ->mapX mul ->mapSize
+	endonce
+	@GenerateStartingText
+
+:ShowStartText
+	if(<-_DATA eq0)
+		150 SetTimer1
+		SetMsgButton(0 true <-startMsg V4(0.1 0.1 0.1 0.3) "ShowStartText" 1)
+	else
+		0 SetTimer1
+		SetMsgButton(0 true <-msgText V4(0.1 0.1 0.1 0.3) "ShowStartText" 0)
+	endif
+	
+:GameLoaded
+	RegisterScript("Objectives")
+

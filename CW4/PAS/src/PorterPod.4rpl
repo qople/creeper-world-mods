@@ -1,0 +1,63 @@
+# --PorterPod-- 12/11/2023 1:26:57 PM
+$$porterGUID:"35f9b3ad-b560-46aa-a6bf-4e0d75b7a304"
+$$carrierGUID:"6d6b7b95-b081-4ef8-975d-57bfe3e11275"
+
+if(GetTimer0 eq0 <-active && <-*isMVerseHost &&)
+	once
+		Self Vector0 SetUnitSpecialTarget #Don't let snipers shoot it once we land
+		Self GetUnitCell dup2 ->z ->x
+		
+		#Commas are ignored by the compiler, so we can use them in long numbers to make them more readable.
+		1,000,000 SetMeshHealth #This stops the unit from taking a frame of damage and dying immediately when it lands.
+		
+		#Update the unit's saved position for mesh health
+		Self "CoreSleeper.4rpl" "x" <-x SetScriptVar
+		Self "CoreSleeper.4rpl" "z" <-z SetScriptVar
+	endonce
+
+	<-EMIT_DELAY SetTimer0
+	<-x <-z 1 true <-EMITAMT 9.0 div AddCreeperInRange
+	
+	#Keep track of how much creep we've created
+	<-amtLeft <-EMITAMT sub ->amtLeft
+	2.4 <-amtLeft <-MAX_EMISSION div mul ->scale
+	Self "Pool" V3(1.6 <-scale 1.6) SetObjScale
+	Self "Pool" V3(0 <-scale 0.5 mul 0) false SetObjPosition
+	
+	if(<-amtLeft eq0 <-*isMVerseHost &&)
+		# Self "CoreSleeper.4rpl" "suppress" true SetScriptVar
+		Self 1 1 1 DestroyUnit
+	endif
+else
+	Self false SetMVerseCreatesUnitGhost
+endif
+
+:Once
+	if(<-*isMVerseHost !)
+		GetUnits(<-porterGUID Self GetUnitPosition 1 false false false 0 0 0)[0] ->PORTER_BASE
+		GetUnits(<-carrierGUID Self GetUnitPosition 1 false false false 0 0 0)[0] ->POD_CARRIER
+	else
+		Self GetUnitTrueGUID ->trueGUID
+	endif
+	
+	<-PORTER_BASE "CoreSleeper.4rpl" "trueGUID" GetScriptVar ->trueGUID
+	
+	RegisterForMsg("PodDestroyed" <-trueGUID concat "MVerseDestroy")
+	false ->active #Wait until we're told we've landed before we start doing anything
+	<-MAX_EMISSION ->amtLeft
+	Self false SetMVerseCreatesUnitGhost
+	
+	# RegisterForMsg("MVerseQuietDestroy" <-trueGUID concat "QuietDestroy")
+	
+#Tell the carrier we've been destroyed and it can land now
+:Destroyed
+	<-POD_CARRIER "PodCarrier.4rpl" "cellOpen" true SetScriptVar
+	if(<-*isMVerseHost)
+		SendMVerseMsg("PodDestroyed" <-trueGUID concat <-trueGUID)
+	endif
+
+
+:MVerseDestroy
+	# if(<-_DATA <-trueGUID eq)
+		Self 1 1 1 DestroyUnit
+	# endif

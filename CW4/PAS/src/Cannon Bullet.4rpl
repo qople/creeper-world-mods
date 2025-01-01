@@ -1,0 +1,43 @@
+# --Cannon Bullet-- 6/22/2023 6:14:14 PM
+
+#Detonate early on hitting terrain
+if(<-pos ToCell 0 GetExactTerrainWithShield <-pos.y gt)
+	if(<-pos ToCell 0 GetExactTerrainWithShield <-pos ToCell 0 GetExactTerrain neq)
+		if(RandFloat <-SHIELD_DESTROY_CHANCE lt)
+			Self 0 0 0 DestroyUnit
+		endif
+	else
+		Self 0 0 0 DestroyUnit
+	endif
+endif
+
+#Detonate properly if it reaches the target
+if(Self GetUnitUpdateCount <-timeToLive gte)
+	Self dup <-targetPos SetUnitPosition
+	0 0 0 DestroyUnit
+endif
+
+#Move the unit up every update
+Self dup GetUnitPosition <-velocity add dup ->pos SetUnitPosition
+
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	Self GetUnitPosition ->pos
+	if(<-targetPos !)
+		Self 1 1 1 DestroyUnit
+	endif
+	#Calculate time to impact
+	<-targetPos <-pos dup2 Distance <-PROJ_SPEED div ceil ->timeToLive
+	
+	#Find movement direction
+	sub Normalize <-PROJ_SPEED mul ->velocity
+	Self <-targetPos 360 RotateUnitTowards
+	if(<-*sleeperAnimations)
+		Self "" 0 0.2 CreateTrail
+	endif
+
+:Destroyed
+	if(<-targetPos)
+		Self GetUnitCell dup2 <-DAMAGE_AMT AddCreeper
+		dup2 GetCrimson <-CRIMSON_AMT add <-CRIMSON_MAX min SetCrimson
+	endif

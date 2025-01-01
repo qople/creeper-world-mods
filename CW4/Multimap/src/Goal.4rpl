@@ -1,0 +1,13 @@
+# --Goal-- 6/14/2021 3:08:39 PM
+# Just creates an actual goal (level w/ <-IS_GOAL == true) on creation, then deletes itself.
+# Exists purely for the convenience of having separate buttons for goals and levels.
+
+$$levelGUID:"627724b4-1a7b-4e6b-9764-e66ddf5edd1e"
+
+:Awake
+	#Weird bug when you run the code directly in :Awake, so wait till the post update.
+	"MSG_PostUpdate" "do" RegisterForMsg 
+
+:do
+	<-levelGUID Self GetUnitPosition TableN("IS_GOAL" 1 1) CreateUnit
+	Self 1 1 1 DestroyUnit

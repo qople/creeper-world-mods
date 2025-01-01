@@ -1,0 +1,87 @@
+# --Bomberpad-- 2/9/2024 4:09:38 PM
+#Shared by bomber and AC bomber pads.
+$REPLACE_COST:0 #Creeper to replace a destroyed bomber
+$LAUNCH_COST:100 #Creeper to launch the bomber
+$AMMO_MULT:0.5 #Efficiency of creeper to ammo conversion. 1 means no loss.
+
+$bomberGUID:"7dcd6b2f-d1bb-4aea-8b95-a0a8edceb5df"
+
+if(<-*isMVerseHost !)
+	return #The pad shouldn't do anything in MVerse.
+endif
+
+switch
+	case(<-state eq0) #When constructing, just wait
+		if(Self GetUnitConstructing !)
+			1 ->state
+		endif
+	endcase
+
+	case(<-state 1 eq) #No bomber built (returns here if the bomber is destroyed)
+		@AttemptBuild
+	endcase
+	
+	case(<-state 2 eq) #Bomber built, but waiting for ammo to launch
+		@AttemptLaunch
+	endcase
+	
+	case(<-state 3 eq) #Bomber in transit
+	endcase
+endswitch
+
+:AttemptBuild
+	Self <-REPLACE_COST SetUnitMaxAmmo
+	if(Self GetUnitAmmo <-REPLACE_COST gte)
+		Self dup GetUnitAmmo <-REPLACE_COST sub SetUnitAmmo
+		@CreateBomber
+		
+		2 ->state
+	endif
+
+:CreateBomber
+	<-bomberGUID Self GetUnitPosition 0 CreateUnit ->bomber
+	<-bomber "BOMBERPAD" Self SetScript1Var
+
+:AttemptLaunch
+	Self <-LAUNCH_COST SetUnitMaxAmmo
+	if(Self GetUnitAmmo <-LAUNCH_COST gte)
+		if(<-launchMode !)
+			@LaunchBomber
+		else if(<-waiting !)
+			true ->waiting
+			RegisterForMSG("Launch" Self GetUnitType concat "LaunchBomber")
+			Self GetUnitType 1 GetUnitsByType ->units
+			
+			#Check if there are any group launch pads that are not ready, and wait if there are any.
+			true
+			<-units 0 do
+				if(<-units[i] "Bomberpad.4rpl" "waiting" GetScriptVar ! <-units[i] "Bomberpad.4rpl" "launchMode" GetScriptVar &&)
+					pop false break
+				endif
+			loop
+			if
+				SendMsg("Launch" Self GetUnitType concat 0)
+			endif
+		endif endif
+	endif
+
+#Uses ammo and launches the bomber. Sets <-state to 3
+:LaunchBomber
+	DeregisterForMSG("Launch" Self GetUnitType concat)
+	false ->waiting
+	Self dup GetUnitAmmo <-LAUNCH_COST sub SetUnitAmmo
+	<-bomber Self GetUnitSpecifiedTarget ToCell 360 RotateUnitTowardsCell
+	<-bomber <-LAUNCH_COST <-AMMO_MULT mul dup2 SetUnitMaxAmmo SetUnitAmmo
+	<-bomber "state" 1 SetScript1Var
+	3 ->state
+
+:Once
+	0 ->state
+	-1 ->bomber
+	0 ->waiting
+	0 ->launchMode
+
+:_UICallback
+	if(<-_DATA 0 eq)
+		Self 0 GetUnitUIState ->launchMode
+	endif

@@ -1,0 +1,80 @@
+# --Vanilla Weapons-- 2/12/2021 5:17:13 PM
+
+#Comma separated, whitespace ignored.
+#List of all weapons added by this script
+$$weaponsAdded:"cannon, mortar, sprayer"
+
+#List of custom attibutes those weapons should have on initialization
+#Custom attributes in an "other" field are always included. This field only matters for script input vars.
+$$customAttributes:""
+
+$cannonRate:8
+$cannonProjSpeed:10
+$cannonDmgDepth:0.375
+$cannonDmgDist:7
+$cannonDmgMaxCells:50
+$cannonDmgIterations:3
+$cannonMeshDmg:0.4
+$cannonMeshDist:2
+$$cannonMaxRange:800 #Hide this one. Modifying in other field still takes precedence
+$cannonOther:""
+
+$mortarRate:30
+$mortarProjSpeed:3
+$mortarDmgDepth:4.0
+$mortarDmgDist:4
+$mortarDmgMaxCells:9999
+$mortarMinRange:15
+$mortarMaxRange:100
+$mortarMeshDmg:0.33
+$mortarMeshDist:4
+$mortarOther:""
+
+$sprayerRate:6
+$sprayerProjSpeed:3
+$sprayerAcDepth:0.43
+$sprayerAcDist:2
+$sprayerAcCap:25.0
+$$sprayerMaxRange:800 #Hide this one. Modifying in other field still takes precedence
+$sprayerOther:""
+
+
+:Once
+	@SetHiddenAttributes
+	@InitializeWeapons
+	
+	RegisterForMsg("CrosshairUpdated" "CrosshairAppearance")
+
+:SetHiddenAttributes
+	#Hidden Stats (Affect visuals, not balance)
+	V3(2 2 2) ->cannonColor
+	V2(0 .4) ->cannonTrail
+	0 ->cannonPath
+	"CannonFire" ->cannonFireSound
+	"Explosion_2" ->cannonHitSound
+	0.5 ->cannonHitVolume
+	
+	V3(2 0.5 0) ->mortarColor
+	V2(0 0.8) ->mortarTrail
+	1 ->mortarPath
+	"MortarFire" ->mortarFireSound
+	"MortarShellExplosion" ->mortarHitSound
+	"Explosion" ->mortarEffectName
+	0.2 ->mortarEffectScale
+	
+	V3(0.8 0.8 2) ->sprayerColor
+	0 ->sprayerPath
+	"SprayerFire" ->sprayerFireSound
+	2 ->sprayerFireVolume
+	
+:CrosshairAppearance
+	#For the sprayer, rotate the crosshair 45 degrees
+	if(<-*activeWeapon "sprayer" eq)
+		<-_DATA dup getUnitRotation v3(0 0 45) add setUnitRotation
+	endif
+
+#Required for the weapon pack to work.
+:InitializeWeapons
+	Split(RemoveWhiteSpace(<-weaponsAdded) ",") ->weaponsAdded
+	RegisterScript(<-weaponsAdded[0])
+	SendMsg("Initialize" <-weaponsAdded[0])

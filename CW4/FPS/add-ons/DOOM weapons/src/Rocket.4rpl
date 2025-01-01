@@ -1,0 +1,92 @@
+# --Rocket-- 3/13/2024 1:30:41 PM
+#Comma separated, whitespace ignored.
+#List of all weapons added by this script
+$$weaponsAdded:"rocket"
+ 
+#List of custom attributes those weapons should have on initialization
+#Custom attributes in an "other" field are always included. This only matters for script input vars.
+$$customAttributes:"SphereDmgDist, SphereDmgDepth, RocketJumpVel"
+ 
+#List stat vars here. Format as weaponAttributeName. weaponOther is supported.
+$rocketRate:35
+$rocketProjSpeed:6
+$rocketSphereDmgDist:5
+$rocketSphereDmgDepth:6.0
+$rocketRocketJumpVel:1.0
+
+:Once
+	"none" ->lastWeapon
+	@SetHiddenAttributes
+	@InitializeWeapons
+	#RegisterForMsg("ItemCollected" "GetWeaponAttributes")
+	#RegisterForMsg("WeaponFired" "Fire")
+	#Necessary if any new effects are added
+	RegisterForMsg("WeaponEffect" "DoCustomEffects")
+	
+	#Make the weapon visually different from others
+	RegisterForMsg("CrosshairUpdated" "CrosshairAppearance")
+	
+	#List("NumPellets" "SpreadAngle") ->neededStats
+ 
+:SetHiddenAttributes
+	#Hidden Stats (Affect visuals, not balance)
+	#Options are Color, Trail, FireSound, FireVolume, HitSound, HitVolume,
+	#EffectName, EffectScale, Path
+	V3(1 1 1) ->rocketColor
+	V2(1 .7) ->rocketTrail
+	0 ->rocketPath
+	"MissileExplosion" ->rocketFireSound
+	0.5 ->rocketFireVolume
+	"Explosion_4" ->rocketHitSound
+	"explosion4" ->rocketEffectName
+	0.75 ->rocketEffectScale
+	0.6 ->rocketHitVolume
+ 
+:DoCustomEffects
+	#Put data into more readable vars
+	<-_DATA[0] ->weapon
+	<-_DATA[1] ->effectPosition
+	
+	#Read whatever attributes are needed for this effect
+	#Repeat if necessary
+	<-*weaponAttributes {<-weapon} {"SphereDmgDist"} ->dmgDist
+	<-*weaponAttributes {<-weapon} {"SphereDmgDepth"} ->dmgDepth
+	<-*weaponAttributes {<-weapon} {"RocketJumpVel"} ->rJumpVel
+	
+	#Then create the effect.
+	<-effectPosition.z AsInt <-dmgDist add 1 add <-effectPosition.z AsInt <-dmgDist sub do
+		<-effectPosition.x AsInt <-dmgDist add 1 add <-effectPosition.x AsInt <-dmgDist sub do
+			if(i j <-effectPosition.x <-effectPosition.z DistanceCell dup <-dmgDist lt)
+				#i j dup2 GetTerrain 1 add SetTerrain
+				->currentDist
+				i j 1 1 1 <-currentDist <-dmgDist div dup mul sub <-dmgDepth mul false DamageCreeper
+			else
+				pop
+			endif
+		loop
+	loop
+	
+	#Rocket jumping
+	if(<-rJumpVel gt0)
+		if(<-*playerPos V3(0 <-*playerHeight 0) sub <-effectPosition Distance <-dmgDist lte)
+			<-*playerPos V3(0 <-*playerHeight 0) sub <-effectPosition sub Normalize <-rJumpVel mul ->pushDirection
+			
+			#Only push while jumping
+			if("Move" "jumpTimer" GetRegisteredScriptVar)
+				"Move" "jumpVel" dup2 GetRegisteredScriptVar V3(<-pushDirection.x 0 <-pushDirection.z) add SetRegisteredScriptVar
+				"Move" "vertJumpVel" dup2 GetRegisteredScriptVar V3(0 <-pushDirection.y 0) add ->vel
+				if(<-vel.y 1 gt)
+					1 ->vel.y
+				endif
+				<-vel SetRegisteredScriptVar
+			endif
+		endif
+	endif
+ 
+#==============
+ 
+#Required for the weapon pack to work.
+:InitializeWeapons
+	Split(RemoveWhiteSpace(<-weaponsAdded) ",") ->weaponsAdded
+	RegisterScript(<-weaponsAdded[0])
+	SendMsg("Initialize" <-weaponsAdded[0])

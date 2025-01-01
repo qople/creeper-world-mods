@@ -1,0 +1,120 @@
+# --Bertha Bullet-- 6/26/2023 10:25:47 AM
+if(<-detonating)
+	if(<-hitShield)
+		@ShieldFlicker
+	else
+		@DoCrater
+	endif
+	return
+endif
+
+#Detonate early on hitting terrain or shield
+if(<-pos ToCell 0 GetExactTerrainWithShield <-pos.y gt)
+	if(<-pos ToCell 0 GetExactTerrainWithShield <-pos ToCell 0 GetExactTerrain neq)
+		@HitShield
+		true ->detonating
+		Self "" Vector0 SetObjScale
+	else
+		@Detonate
+	endif
+endif
+<-counter 1 add ->counter
+Self <-pos SetUnitPosition
+#Detonate properly if it reaches the target
+if(Self GetUnitUpdateCount <-travelTime gte)
+	Self dup <-targetPos SetUnitPosition
+	@Detonate
+endif
+
+#Move the unit up every update
+<-pos
+Self BallisticArcPos(<-startPos <-fireVel <-gravity <-counter) dup ->pos SetUnitPosition
+<-pos sub self swap SetUnitForward
+
+:ShieldFlicker
+	if(GetTimer0 eq0)
+		<-hitShield <-deployed ! DeployUnitShield
+		<-deployed ! ->deployed
+		2 SetTimer0
+		<-time 1 add ->time
+		if(<-time 10 eq)
+			Self 1 1 1 DestroyUnit
+		endif
+	endif
+	
+:DoCrater
+	if(GetTimer0)
+		return
+	else
+		<-CRATER_RING_TIME SetTimer0
+	endif
+	GetRiftLab false SetUnitDestroyUnevenLand #Dont insta-kill the rift lab
+	GetFactory false SetUnitDestroyUnevenLand #Dont insta-kill the factory either
+	GetErnPortal false SetUnitDestroyUnevenLand #Or the ERN portal
+	
+	if(<-counter <-CRATER_RINGS_AT_ONCE gte)
+		<-craterCells[<-counter <-CRATER_RINGS_AT_ONCE sub 1 add] ->currentCells
+		<-currentCells 0 do
+			#Reset the terrain from the last ring
+			<-currentCells[i] EV2 ->cellZ ->cellX
+			if(RandFloat <-cellX <-cellZ <-x <-z DistanceCell <-TERRAIN_RAISE_EXP pow <-TERRAIN_RAISE_CHANCE mul gte)
+				<-cellX <-cellZ dup2 GetTerrain 1 sub SetTerrain
+			endif
+		loop
+	endif
+	
+	if(<-counter <-craterCells GetListCount <-CRATER_RINGS_AT_ONCE add 1 sub eq)
+		Self 0 0 0 DestroyUnit
+	endif
+	
+	if(<-counter <-craterCells GetListCount lt)
+		<-craterCells[<-counter] dup ->currentCells
+		0 do
+			<-currentCells[i] EV2 dup2 GetTerrain 1 add SetTerrain
+		loop
+	endif
+	<-counter 1 add ->counter
+
+
+:Once
+	0 ->counter
+	Self GetUnitPosition dup ->startPos ->pos
+	if(<-targetPos !)
+		Self 1 1 1 DestroyUnit
+	endif
+	CreateTrail(Self "" 1 3)
+
+:Detonate
+	<-CRATER_RINGS_AT_ONCE CreateListStartingSize ->ringList
+	Self "" Vector0 SetObjScale
+	Self GetUnitCell <-DAMAGE_DIST false <-DAMAGE_DEPTH AddCreeperInRange
+	true ->detonating
+	CreateList ->craterCells
+	#Set up the crater effect
+	<-CRATER_RADIUS <-CRATER_RING_SIZE AsFloat div ceil 0 do
+		<-craterCells CreateList AppendToList
+	loop
+	
+	Self GetUnitCell ->z ->x
+	<-z <-CRATER_RADIUS add 1 add <-z <-CRATER_RADIUS sub do
+		<-x <-CRATER_RADIUS add 1 add <-x <-CRATER_RADIUS sub do
+			#Sort cells into lists based on their distance from the center
+			if(i j GetTerrain 20 lt)
+				<-craterCells[<-x <-z i j DistanceCell RandFloat 0.5 sub <-CRATER_RING_SIZE 0.5 mul mul add <-CRATER_RING_SIZE div 0 round] i j V2 AppendToList
+			endif
+		loop
+	loop
+	0 ->counter
+
+#Kills the nearest shield, does not detonate
+:HitShield
+	true ->deployed
+	2 SetTimer0
+	"Shield" Self GetUnitPosition 30 false false false 2 0 1 GetUnits ->shields
+	<-shields 0 do
+		if(<-shields[i] GetUnitAmmo <-shields[i] GetUnitEnabled &&)
+			<-shields[i] dup ->hitShield 2.0 DamageUnit
+			break
+		endif
+	loop
+	

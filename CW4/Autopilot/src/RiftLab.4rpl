@@ -1,0 +1,1206 @@
+# --RiftLab-- 3/4/2021 2:30:18 PM
+
+$pacMode:0 #Makes all units built by Autopilot unselectable and undeletable by the player
+$MVERSE_SCALING:1 #Runs the AI once for every player in the mverse game, in the host instance. CPU INTENSIVE!!
+
+$buildDelay:30
+
+#Soft cap for weapon building. After these values, the AI will only build more in response to losing ground,
+#Or an order from the player if that is enabled.
+$maxcannon:25
+$maxmortar:25
+$maxsprayer:25
+$maxshield:5
+
+#Hard caps for weapon building. -1 for no hard cap.
+$cannonCap:35
+$mortarCap:35
+$sprayerCap:35
+$shieldCap:8
+
+$shieldRedonUse:0.6 #portion of redon that will be spent on shields
+
+$useOrbitals:1 #If false, will still build rockets, but will not actually use them
+$rocketStart:9000
+$maxrocketpad:5 #Limited by liftic use
+$beaconLiftic:3 #Liftic per second reserved for building beacons as opposed to supplying rockets
+$rebuildFactory:1
+
+$sniperSpacing:40
+$sniperStart:4500
+$missileSpacing:50
+$missileStart:4500
+$riftSpacing:50
+$riftStart:9000
+$protectionAmt:8.0 #higher values decrease the distance between snipers and missiles close to the rift lab
+$protectionDist:30 #protectionAmt affects placement within this distance of the lab
+$preBuildStationary:1 #Whether to fill preplaced tower grids with snipers and missiles automatically on game start (causes a lag spike on game start, but has no lasting performance impact)
+
+$towerChecksPerUpdate:3 #Higher numbers are faster, but decrease performance
+$towerPlacementSpeed:5 #Higher numbers are faster, but result in less efficient networks
+$towerSpacing:10 #Minimum distance between placed towers (Max distance is always 10)
+
+$delayBuildpylon:120
+$delayBuildWeapon:30
+$delayBuildNullifier:30 #Tries to build a nullifier around one nullifiable enemy unit at a time with this delay.
+
+$weaponBuildRequirement:1.0 #energy gen must be above use by at least this much to queue weapons
+$weaponSwapTargetDist:30 #how close creeper must get to a tower for the AI to start building weapons around it
+$weaponSelectDist:20 #How far out the AI checks for what weapon to build. Higher values make it more likely to build mortars and shields.
+
+#Default is LPAC units. Should be separated by commas.
+$customNullifiables:"9374ef02-1ef9-43ff-b379-9a92aa79baa9, c4b5b538-22b2-4668-89f8-169611db7b8c, 5e8c91a3-057b-445a-af01-d1092f0e2411, d1df53ea-8fd3-41ad-91e0-bae9adb3b199, f82d5850-d76e-4151-9939-245c5dd0970d, 9a94ae07-3fa0-429a-98db-025c4973c21d, b5791fdd-9661-47cf-925c-42a61292d637, 4ec1c29f-a9b2-470c-bb95-19438ed95d73, 6cae7a75-f751-40d9-9d48-403eeadf6080, fa9dd074-2543-439b-8692-934b92ee40dc, 05b746db-9ccf-484c-9a5f-5cd3d49a844f"
+
+$$pylonPlacementOptions:100
+$$stationaryOptions:50
+
+$refineryStart:5400
+$refineryCellsPerUpdate:3 #Every 10 updates
+
+<-*autopilotDelay 1 sub 0 max ->*autopilotDelay
+
+if(GetMVersePlayerNum gt0)
+	once
+		<-weaponTypes 0 do
+			<-weaponTypes[i] 0 GetUnitsByType ->list
+			<-list 0 do
+				<-list[i] 1 1 1 DestroyUnit
+			loop
+		loop
+		--list
+	endonce
+	return
+endif
+
+if(<-*playingAsHumans GetGameUpdateCount 1 lte ||)
+	return
+endif
+			# <-weaponTypes 0 do
+				# #Multiply the variable "max[type]" (softcap) by 2
+				# "max" <-weaponTypes[i] concat dup <-! 2 mul ->!
+				
+				# #Multiply the variable "
+				# <-weaponTypes[i] "Cap" concat dup <-! 2 mul ->!
+			# loop
+
+if(GetRiftLab gte0)
+	"Total" @StartMeasure #Function used to add named execution time hooks in for the debug
+	if(<-*autopilotDelay)
+		return
+	endif
+	if(<-MVERSE_SCALING GetMVersePlayerNum eq0 &&)
+		once
+			4 0 do
+				if(GetMVersePlayers[i] IsNull)
+					i
+					break
+				endif
+			loop
+			dup <-maxcannon mul ->maxcannon
+			dup <-maxmortar mul ->maxmortar
+			dup <-maxsprayer mul ->maxsprayer
+			dup <-maxshield mul ->maxshield
+			dup <-cannonCap mul ->cannonCap
+			dup <-mortarCap mul ->mortarCap
+			dup <-sprayerCap mul ->sprayerCap
+			dup <-shieldCap mul ->shieldCap
+			->*numPlayers
+		endonce
+	endif
+
+	once
+		#@Once #Run it again when the rift lab is placed
+		GetRiftLab @SetSelectable
+		# @RefreshNetworkList(GetRiftLab GetUnitPosition)
+	endonce
+	
+	<-*numPlayers 0 do
+	
+	#Build towers
+	"Tower" @StartMeasure
+	
+	if(GetEnergyGeneration 10 lt)
+		if("tower" 2 GetUnitsByType GetListCount 2 mul dup GetEnergyGeneration lt swap 4 lt ||)
+			@BuildTower
+		endif
+	else
+		@BuildTower
+	endif
+	"Tower" @EndMeasure
+	
+	#Hide orbitals in PAC mode by removing them and adding the number to a variable
+	if(<-pacMode)
+		<-orbitalNum GetOrbitalCount add ->orbitalNum
+		0 SetOrbitalCount
+		if(<-*autoPilotDebug)
+			GetRiftLab <-orbitalNum " orbitals" concat SetUnitDebugText
+		endif
+	else
+		GetOrbitalCount ->orbitalNum
+	endif
+	#Check a few things every 10 seconds
+	if(GetTimer0 eq0)
+		@GetResourceProduction
+		@OrbitalLogic
+		@UpdateDarkCells
+		# @TryMoveLab
+		300 SetTimer0
+	endif
+	
+	#Try to build refineries
+	if(GetTimer1 eq0 GetGameUpdateCount <-refineryStart gt GetEnergyStore 10 gt || &&)
+		"Refinery" @StartMeasure
+		10 SetTimer1 #The BuildRefinery function increases this delay sometimes
+		@BuildRefinery
+		"Refinery" @EndMeasure
+	endif
+	
+	if(GetGameUpdateCount <-rocketStart gt <-maxRocketpad && GetTimer2 eq0 &&)
+		@BuildRocket
+	endif
+	
+	#Enable stationary units when the time matches
+	if(GetGameUpdateCount <-sniperStart eq)
+		<-disabledSnipers 0 do
+			<-disabledSnipers[i] true SetUnitEnabled
+		loop
+		--disabledSnipers
+	endif
+	if(GetGameUpdateCount <-missileStart eq)
+		<-disabledMissiles 0 do
+			<-disabledMissiles[i] true SetUnitEnabled
+		loop
+		--disabledMissiles
+	endif
+	if(GetGameUpdateCount <-riftStart eq)
+		GetUnitsByType("microrift" 0) ->units
+		<-units 0 do
+			<-units[i] true SetUnitEnabled
+		loop
+		
+		#Build a microrift right next to the rift lab
+		if(<-units GetListCount !)
+			"microrift" GetRiftLab GetUnitCell 3 3 500 @GetNearestBuildCell
+			if(<-canBuild)
+				0 @QueueBuild
+			else
+				pop pop pop
+			endif
+		endif
+	endif
+
+	GetRiftLab GetUnitPosition ->labPos
+
+	#Find weapon focus
+	#Not the most optimized (2-5ms for one invocation), mainly due to the FindUnitEnemy calls
+	if(<-focusTimer lte0)
+		"Weapon Focus" @StartMeasure
+		150 ->focusTimer
+		# @BuildStationary
+		if(<-weaponFocusOverride neq0) #Override recognition
+			true ->overrideEnabled
+			<-weaponFocusOverride ->*weaponFocus
+		else
+			false ->overrideEnabled
+			<-labPos ToCell 20 false true false GetCreeperInRange if
+				#"nearest to lab" trace
+				<-labPos ->*weaponFocus
+				<-*reserves GetTableKeys ->reserveUnits
+				<-*autopilotDelay <-*AP_BUILD_TIME add ->*autopilotDelay
+				<-reserveUnits 0 do
+					<-reserveUnits[i] ->reserveUnit
+					#Remove destroyed units
+					<-reserveUnit GetUnitDestroyed ! <-reserveUnit GetUnitMoveCell add lt0 and if
+						<-reserveMoved 1 add ->reserveMoved
+						<-reserveUnit <-pos ToCell 3 3 2 200 @GetNearestBuildCell dup2 ->z ->x
+						dup2 add gte0 if 
+							SetUnitMoveCell
+							"UnitMove" "lastPos" GetRegisteredScriptVar <-reserveUnit <-x 0 <-z V3 SetTableElement 
+						else 
+							pop pop pop 
+						endif
+					endif
+					<-reserveUnit true SetUnitArmed
+					<-*reserves <-reserveUnit RemoveTableElement
+					<-reserveUnit "" SetUnitDebugText
+					<-reserveMoved 3 eq if
+						0 ->reserveMoved
+						break
+					endif
+					
+				loop
+			else
+				pop
+				# @BuildStationary
+				
+				<-*LOS <-ecoFocusPos SetUnitPosition
+				<-*LOS <-weaponSwapTargetDist SetUnitRange
+				<-*LOS RefreshUnitLOSCache
+				<-*LOS <-baseLOSRange SetUnitRange
+				FindUnitEnemy(<-*LOS false 0) FromCell dup IsV3InMap if
+					#"Creep close to eco" trace
+					->*weaponFocus 
+				else
+					#"direct eco" trace
+					pop
+					<-ecoFocusPos ->*weaponFocus
+				endif
+			endif
+			
+			@NearestLabConnector(<-*weaponFocus) ->connection
+			10 0 do
+				if(@ConnectionInRange(<-*weaponFocus))
+					break
+				endif
+				<-connection <-*weaponFocus sub normalize 3 mul <-*weaponFocus add ->*weaponFocus
+			loop
+		endif
+		
+		@BackUpWeaponFocus
+
+		
+		"Weapon Focus" @EndMeasure
+		#"radial" <-*weaponFocus V3(1 1 1) CreateEffect
+	endif
+	<-focusTimer 1 sub ->focusTimer
+	
+	#Try to build weapons
+	if(<-weaponTimer lte0 GetEnergyStore &&)
+		"Weapon Build" @StartMeasure
+		if(<-*weaponFocus)
+			@BackUpWeaponFocus
+			false ->weaponRecursion
+			@BuildWeapon(<-*weaponFocus)
+		endif
+		0 ->weaponFocusOverride
+		<-delayBuildWeapon ->weaponTimer
+		"Weapon Build" @EndMeasure
+	endif
+	<-weaponTimer 1 sub ->weaponTimer
+	
+	if(<-pylonTimer 8 eq)
+		"Pylon" @StartMeasure
+		if(GetEnergyStore)
+			@Buildpylon(<-ecoFocusPos)
+		endif
+		
+		if(GetEnergyGeneration 5 div GetUnitsByType("miner" 2) gte <-minerTimer lte0 &&)
+			<-*resoList GetListCount <-delayBuildpylon AsFloat div ceil ->buildingMiner
+		endif
+		<-minerTimer 1 sub ->minerTimer
+		"Pylon" @EndMeasure
+	else if(<-pylonTimer lte0)
+		<-delayBuildpylon ->pylonTimer
+	endif endif
+	<-pylonTimer 1 sub ->pylonTimer
+	
+	if(<-nulliTimer lte0)
+		"Nullifier" @StartMeasure
+		<-delayBuildNullifier ->nulliTimer
+		if(<-nulliTargets GetListCount)
+			<-nulliTargets PopList dup ->target
+			if(dup GetUnitSuppressCount ! swap GetUnitPosition 10 false false false 2 1 0 GetUnitsInRange &&)
+				@tryNulli
+			endif
+		else
+			@RefreshNulliList
+			if(<-nulliTargets GetListCount eq0)
+				1800 ->nulliTimer
+			endif
+			300 ->nullTimer
+		endif
+		
+		"Nullifier" @EndMeasure
+	endif
+	<-nulliTimer 1 sub ->nulliTimer
+	
+	"Miner" @StartMeasure
+	<-buildingMiner 0 do
+		<-*resoList[<-resoIndex] dup ->vector
+		"miner" 
+		if(<-vector EV2 5 3 @CellBuildable <-vector EV2 @TowerCheck 121 lt &&)
+			<-vector EV2 0 CreateUnitOnTerrain dup @SetSelectable ->miner
+			false ->buildingMiner
+			0 ->resoIndex
+			break
+		else
+			pop pop pop
+			if(i <-*resoList GetListCount 1 sub eq)
+				5 ->minerTimer
+			endif
+		endif
+		<-resoIndex 1 add ->resoIndex
+		if(<-resoIndex <-*resoList GetListCount eq)
+			0 ->resoIndex
+			10 ->minerTimer
+			false ->buildingMiner
+		endif
+	loop
+	"Miner" @EndMeasure
+	
+	if(GetFactory lt0 <-rebuildFactory &&)
+		3 0 do
+			<-*largeUnitSpaces[<-factoryIndex] 
+			if(dup EV2 7 7 @FastCellBuildable)
+				CreateUnitOnTerrain("factory" swap EV2 0) @SetSelectable
+				
+				0 ->factoryIndex
+			else
+				<-factoryIndex 1 add <-*largeUnitSpaces GetListCount mod ->factoryIndex
+			endif
+		loop
+	endif
+	
+	loop
+endif
+
+#================================
+
+:StartMeasure
+	dup ->thisMode
+	"StartMeasure" swap SendMsg
+
+:EndMeasure
+	"EndMeasure" swap SendMsg
+
+# :TryMoveLab
+	# if(GetRiftLab GetUnitCell 75 false true false GetCreeperInRange ! <-*weaponFocus &&)
+		# GetRiftLab
+		# GetRiftLab <-*weaponFocus sub normalize -25 mul <-*weaponFocus add
+		# ToCell 7 7 50 @GetNearestBuildCell
+		# if(<-canBuild)
+			# SetUnitMoveCell
+		# else
+			# pop pop pop
+		# endif
+	# endif
+
+:OrbitalLogic
+	if(<-useOrbitals ! <-orbitalNum ! ||)
+		return
+	endif
+	"rocketpad" GetUnitCount ->numRockets
+	
+	switch
+		case(<-useConvert 1 eq <-orbitalNum 5 gte &&)
+			CreateUnitOnTerrain("conversion" GetMaxCreeperCell 0) pop
+			5 @useOrbitals
+			false ->useConvert
+			return
+		endcase
+		
+		case(<-useConvert 1 gt)
+			<-useConvert 1 sub ->useConvert
+		endcase
+			
+		case(<-orbitalNum 6 gte GetTimer3 ! &&)
+			CreateUnitOnTerrain("singularity" GetMaxCreeperCell 0) pop
+			3 ->useConvert
+			1 @useOrbitals
+			return
+		endcase
+		
+		case(GetMaxCreeperCell 1 add GetCreeper 15 lt randfloat 0.015 <-numRockets mul lt || <-orbitalNum 2 gte &&)
+			CreateUnitOnTerrain("rain" GetMaxCreeperCell 0) pop
+			2 @useOrbitals
+			return
+		endcase
+		
+		case(randfloat 0.03 <-numRockets mul lt <-orbitalNum 1 gte &&)
+			@NearestLabConnector(<-orbitalTarget) ->connection
+			<-orbitalTarget dup <-connection sub normalize 35 mul add ->orbitalTarget
+			CreateUnitOnTerrain("damper" <-orbitalTarget ToCell 0) pop
+			1 @useOrbitals
+			return
+		endcase
+			
+	endswitch
+
+:useOrbitals
+	<-orbitalNum swap sub ->orbitalNum
+	if(<-*autoPilotDebug)
+		GetRiftLab <-orbitalNum " orbitals" concat SetUnitDebugText
+	endif
+
+:BuildRocket
+	"rocketpad" 2 GetUnitsByType ->buildingRockets
+	<-excessLifticPerSecond 0.5 mul <-buildingRockets sub ->excessRockets #how many more rockets we can start building with our current excess supply of liftic
+	#GetRiftLab <-excessRockets ", " <-buildingNewRocket concat3 SetUnitDebugText
+	if(<-buildingNewRocket) #Searching for a cell
+		2 0 do
+			<-*largeUnitSpaces[<-rocketIndex] 
+			if(dup EV2 7 7 @FastCellBuildable)
+				CreateUnitOnTerrain("rocketpad" swap EV2 0) @SetSelectable
+				900 SetTimer2
+				0 ->buildingNewRocket
+				0 ->rocketIndex
+				return
+			else
+				<-rocketIndex 1 add <-*largeUnitSpaces GetListCount mod ->rocketIndex
+			endif
+		loop
+	else
+		"rocketpad" 2 GetUnitsByType ->buildingRockets
+		<-excessLifticPerSecond <-buildingRockets div 0.5 mul ->excessRockets #how many more rockets we can start building with our current excess supply of liftic
+		if(<-excessRockets 1 gte "rocketpad" GetFactoryWares(3) 300 gt || GetUnitCount <-maxrocketpad lte &&)
+			1 ->buildingNewRocket
+		else
+			900 SetTimer2
+		endif
+	endif
+
+:BuildRefinery
+	#Refresh lists when empty
+	<-cells ! if
+		if(<-mothers !)
+			GetUnitsByType("greenarmother" 0) ->mothers
+			600 SetTimer1
+		endif
+		<-mothers PopList ->mother
+		1.0 GetUnitSettings(<-mother){"Interval"} 1 add div 250 mul ceil ->refineriesPerMother
+		GetUnits("greenarrefinery" <-mother GetUnitPosition 21 false false false 0 0 0) GetListCount dup ->placedRefineries
+		
+		if(dup <-refineriesPerMother lt <-mother GetUnitCell GetCreeper lte0 &&)
+			0 min ->placedRefineries
+			<-*greenarCells{<-mother} ->cells
+		else
+			pop
+			0 ->placedRefineries
+			60 SetTimer1
+		endif
+		
+
+		return
+	endif
+	
+	#Try to build a refinery on a few cells
+	<-refineryCellsPerUpdate 0 do
+		PopList(<-cells) EV2 dup2 ->greenarZ ->greenarX
+		if(5 3 @CellBuildable <-greenarX <-greenarZ @TowerCheck 121 lt &&)
+			"greenarrefinery" <-greenarX <-greenarZ 0 CreateUnitOnTerrain dup @SetSelectable ->refinery
+			<-placedRefineries 1 add ->placedRefineries
+			if(<-placedRefineries <-refineriesPerMother eq)
+				CreateList ->cells
+			endif
+			
+			if(<-*autoPilotDebug)
+				<-mother <-placedRefineries " / " <-refineriesPerMother concat3 SetUnitDebugText
+			else
+				<-mother "" SetUnitDebugText
+			endif
+			break
+		endif
+	loop
+
+
+:SetSelectable
+	dup <-pacMode ! SetUnitSelectable
+	<-*allUnits swap AppendToList
+	
+:ConnectionInRange
+	V3(0 2 0) add dup ->connPos
+	EV3 swap pop @TowerCheck 144 lt GetUnits("pylon" <-connPos 10 false true true 0 1 0) ||
+	return
+
+#Give it the inputs for CreateUnitOnTerrain, and it will queue up the build.
+#Supports 3x3 units only
+:QueueBuild
+	4 ListN ReverseList ->nextBuild
+	<-*autopilotDelay <-*AP_BUILD_TIME add ->*autopilotDelay
+	PrependToList(<-buildQueue <-nextBuild)
+	<-nextBuild[1] ->queueZ
+	<-nextBuild[2] ->queueX
+	<-queueZ 2 add <-queueZ 1 sub do
+		<-queueX 2 add <-queueX 1 sub do
+			i j 1 SetCellOccupiedCount
+		loop
+	loop
+	-1 3 do
+		<-nextBuild[i]
+	loop
+	CreateUnitOnTerrain dup @SetSelectable return
+
+:ClearOccupied
+	<-buildQueue 0 do
+		PopList(<-buildQueue) ->nextBuild
+		<-nextBuild[1] ->queueZ
+		<-nextBuild[2] ->queueX
+		<-queueZ 2 add <-queueZ 1 sub do
+			<-queueX 2 add <-queueX 1 sub do
+				i j 0 SetCellOccupiedCount
+			loop
+		loop
+	loop
+
+:BuildStationary
+	if(<-sniperSpacing <-missileSpacing <-riftSpacing || ||)
+		if(GetEnergyGeneration GetEnergyUse sub 3 gt GetEnergyStore 20 gt &&)
+			GetEnergyGeneration GetEnergyUse sub 0.3 mul 1 max 0 do
+				<-unitToEnable ! ->unitToEnable
+				if(<-unitToEnable <-disabledMissiles GetListCount &&)
+					<-disabledMissiles 0 dup2 GetListElement true SetUnitEnabled RemoveListElement
+				else if(<-disabledSnipers GetListCount)
+					<-disabledSnipers 0 dup2 GetListElement true SetUnitEnabled RemoveListElement
+				endif endif
+			loop
+		endif
+		
+		#Do some preparation and optimization
+		1 <-ecoFocusPos GetRiftLab GetUnitPosition Distance <-protectionDist div sub 0 max <-protectionAmt mul 1 add ->protectionMod
+		<-missileSpacing GetUnits("missilelauncher" <-ecoFocusPos <-missileSpacing <-protectionMod div false true false 0 0 0) ! && ->buildMissile
+		GetUnits("sniper" <-ecoFocusPos v3(0 3.2 0) add <-sniperSpacing <-protectionMod div false false true 0 0 0) ! <-sniperSpacing && ->buildSniper
+		<-redonProduction dup neq0 swap 0.2 mul 1 max mul GetUnitsByType("microrift" 2) GetListCount gte
+				GetUnits("microrift" <-ecoFocusPos <-riftSpacing false false false 0 0 0) ! && <-riftSpacing &&
+				GetGameUpdateCount <-riftStart gt && ->buildRift
+		FloodFillTerrain(<-ecoFocusPos ToCell 1 21 <-stationaryOptions) ->terrain
+		
+		<-terrain 10 div 0 do
+			false ->break
+			<-terrain[i 10 mul] EV2 ->sniZ ->sniX 
+			
+			if(@CellBuildable(<-sniX <-sniZ 3 3))
+				if(<-buildMissile)
+					@QueueBuild("missilelauncher" <-sniX <-sniZ 0)
+					if(GetGameUpdateCount <-missileStart lt)
+						dup <-disabledMissiles swap AppendToList
+						false SetUnitEnabled
+					else
+						pop
+					endif
+					true ->break
+					false ->buildMissile
+					# return
+				endif
+				if(<-buildSniper <-break ! &&)
+					@QueueBuild("sniper" <-sniX <-sniZ 0)
+					if(GetGameUpdateCount <-sniperStart lt)
+						dup <-disabledSnipers swap AppendToList
+						false SetUnitEnabled
+					else
+						pop
+					endif
+					true ->break
+					false ->buildSniper
+					# return
+				endif
+				if(<-buildRift <-break ! &&)
+					@QueueBuild("microrift" <-sniX <-sniZ 0) pop
+					true ->break
+					false ->buildRift
+					# break
+				endif
+			endif
+
+			
+			if(<-darktowers)
+				if(@FastCellBuildable(<-sniX <-sniZ 3 3))
+					<-sniZ 6 add <-sniZ 5 sub do
+						<-sniX 6 add <-sniX 5 sub do
+							i j GetCellOccupiedCount 99 gte if
+								GetUnits("beacon" i j GetTerrainVector 20 false false false 0 0 0) GetListCount eq0 if
+									@BuildBeacon(i j)
+									true ->break
+								endif
+							endif
+						loop
+					loop
+				endif
+			endif
+			if(<-buildSniper <-buildMissile <-buildRift || || !)
+				break
+			endif
+		loop
+		--break
+	endif
+
+:BuildBeacon
+	->cellZ ->cellX
+	"darktower" 0 GetUnitsByType ->units
+	<-units 0 do
+		<-units[i] ->unit
+		if(<-unit GetUnitSuppressCount !)
+			<-unit GetUnitCell ->unitZ ->unitX
+			<-unit GetUnitSettings{"Width"} 7 add ->width
+			<-unit GetUnitSettings{"Depth"} 7 add ->depth
+			<-unit GetUnitSettings{"Square"} ->square
+			
+			if(<-square)
+				<-cellX <-unitX sub abs <-width lt <-cellZ <-unitZ sub abs <-depth lte &&
+			else
+				<-cellX <-unitX sub abs <-width AsFloat div dup mul
+				<-cellZ <-unitZ sub abs <-depth AsFloat div dup mul add 0.5 pow 1 lte
+			endif
+			if
+				<-buildingBeacons
+				@QueueBuild("beacon" <-cellX <-cellZ 0) AppendToList
+				break
+			endif
+		endif
+	loop
+		
+:UpdateDarkCells
+	#Remove dark cells around freshly built beacons
+	<-buildingBeacons 0 do
+		<-buildingBeacons[i] ->unit
+		<-unit GetUnitConstructing ! if
+			<-unit GetUnitCell ->centZ ->centX
+			<-centZ 21 add <-centZ 20 sub do
+				<-centX 21 add <-centX 20 sub do
+					i j <-centX <-centZ DistanceCell 20 lte i j GetCellOccupiedCount 99 gte && if
+						i j dup2 GetCellOccupiedCount 99 sub SetCellOccupiedCount
+					endif
+				loop
+			loop
+			<-buildingBeacons i RemoveListElement
+		endif
+	loop
+	
+	#Remove dark cells around freshly nullified dark towers
+	<-darktowers 0 do
+		<-darktowers[i] GetUnitSuppressCount if
+			<-darktowers[i] ->unit
+			<-unit GetUnitCell ->unitZ ->unitX
+			<-unit GetUnitSettings{"Width"} 7 add ->width
+			<-unit GetUnitSettings{"Depth"} 7 add ->depth
+			<-unit GetUnitSettings{"Square"} ->square
+			<-unitZ <-depth 1 add add <-unitZ <-depth sub do
+				<-unitX <-width 1 add add <-unitX <-width sub do
+					i j GetCellOccupiedCount 99 gte if
+					<-square if
+						i j dup2 GetCellOccupiedCount 99 sub SetCellOccupiedCount
+					else
+						i <-unitX sub abs <-width AsFloat div dup mul
+						j <-unitZ sub abs <-depth AsFloat div dup mul add 0.5 pow 1 lte
+					if
+						i j dup2 GetCellOccupiedCount 99 sub SetCellOccupiedCount
+					endif endif
+					endif
+				loop
+			loop
+			<-darktowers i RemoveListElement
+		endif
+	loop
+						
+		
+#Calculates the amount of bluite and redon the factory is receiving from the units on the map.
+:GetResourceProduction
+	if(GetUnitsByType("factory" 1))
+		0 ->redonProduction
+		GetUnitsByType("resourcered" 1) ->units
+		<-units 0 do
+			PopList(<-units) dup ->unit
+			if(GetUnitConnectedToRiftLab)
+				30.0 GetUnitSettings(<-unit){"Interval"} div <-redonProduction add ->redonProduction
+			endif
+		loop
+		0 ->bluiteProduction
+		GetUnitsByType("resourceblue" 1) ->units
+		<-units GetListCount 0 do
+			PopList(<-units) dup ->unit
+			if(GetUnitConnectedToRiftLab)
+				30.0 GetUnitSettings(<-unit){"Interval"} div <-bluiteProduction add ->bluiteProduction
+			endif
+		loop
+		GetUnitsByType("miner" 1) ->units
+		<-units GetListCount 0 do
+			PopList(<-units) dup ->unit
+			if(GetUnitConnectedToRiftLab <-unit GetMinerMode &&)
+				if(<-unit GetUnitERNState)
+					1.5
+				else
+					0.3
+				endif
+				<-bluiteProduction add ->bluiteProduction
+			endif
+		loop
+		1 GetERNPortalEfficiency(1) add dup <-bluiteProduction mul ->bluiteProduction <-redonProduction mul ->redonProduction
+		
+		GetFactoryWares(3) ->liftic
+		GetGameUpdateCount ->update
+		<-liftic <-lastLiftic sub <-update <-lastUpdate sub AsFloat div 30 mul ->excessLifticPerSecond
+		if(<-darktowers)
+			<-excessLifticPerSecond <-beaconLiftic sub ->excessLifticPerSecond
+		endif
+		<-update ->lastUpdate
+		<-liftic ->lastLiftic
+		
+	else if(GetFactory lt0)
+		0 ->redonProduction
+		0 ->bluiteProduction
+	endif endif
+	
+:tryNulli
+	#Only try if there isn't a nullifier 
+	if(GetUnits("nullifier" <-target GetUnitPosition 8 false false false 0 0 0) !)
+		false ->nulliPlaced
+		FloodFillTerrain(<-target GetUnitCell 0 21 250) ->nulliTerrainList
+		<-nulliTerrainList 0 do
+			if(<-nulliTerrainList)
+				PopList(<-nulliTerrainList) EV2 dup2 GetTerrainVector ->center
+				if(3 3 @CellBuildable GetUnitsInRange(<-center 8 false false false 1 0 0) && <-target GetUnitCell <-center ToCell DistanceCell 10 lt &&)
+					if(<-center EV3 swap pop @TowerCheck 100 lt)
+						"nullifier" <-center ToCell 0 @QueueBuild
+						true ->nulliPlaced
+						break
+					endif
+				endif
+			endif
+		loop
+		
+		#Move a unit out of the way if necessary
+		if(<-nulliPlaced !)
+			GetUnitsInRange(<-center 8 false false false 2 1 0) ->units
+			<-units 0 do
+				<-weaponTypes
+				<-units PopList dup ->unit
+				if(GetUnitType ListContains)
+					<-unit
+					if(@GetNearestBuildCell(<-center ToCell 3 3 5000) dup2 FromCell IsV3InMap )#GetUnits("nullifier" <-center 16 false false false 0 2 0) ! &&)
+						SetUnitMoveCell
+						"nullifier" <-unit GetUnitCell 0 @QueueBuild
+						break
+					else
+						pop pop pop
+					endif
+				endif
+			loop
+		endif
+	endif
+
+#Makes a list of all enemy units in the "nullifiable" list
+:RefreshNulliList
+	GetUnitsInRange(Vector0 515 true false false 1 0 0) ->nulliTargets
+	<-nulliTargets GetListCount 0 do
+		PopList(<-nulliTargets) ->enemy
+		if(<-nullifiableEnemies GetUnitType(<-enemy) ListContains)
+			<-nulliTargets <-enemy PrependToList
+		endif
+	loop
+
+:ForceBuildWeapon
+	<-_DATA ->pos
+	<-overrideEnabled ->temp
+	1 ->overrideEnabled
+	<-pos @BuildWeapon
+	<-temp ->overrideEnabled
+	--temp
+
+:BackUpWeaponFocus
+	if(<-*weaponFocus ToCell GetCreeper gt0)
+		<-*weaponFocus dup @NearestLabConnector GetUnitPosition 15 MoveTowards ->*weaponFocus
+	else
+		<-*LOS <-*weaponFocus SetUnitPosition
+		<-*LOS 5 SetUnitRange
+		<-*LOS RefreshUnitLOSCache
+		FindUnitEnemy(<-*LOS false 0) FromCell dup IsV3InMap if
+			0 ->*weaponFocus.y
+			<-*weaponFocus sub normalize -15 mul <-*weaponFocus add ->*weaponFocus
+		else
+			pop
+		endif
+	endif
+	
+#Attempts to build a weapon at the specified location
+:BuildWeapon
+	->buildPos
+	false ->weaponPlaced
+	GetEnergyGeneration GetEnergyUse sub <-weaponBuildRequirement gte ->energyGood
+	
+	<-*LOS <-buildPos SetUnitPosition
+	<-*LOS <-weaponSelectDist SetUnitRange
+	<-*LOS RefreshUnitLOSCache
+	<-*LOS <-baseLOSRange SetUnitRange
+	FindUnitEnemy(<-*LOS true 0) GetCreeper ->deepestAmt
+	#Decide what weapon to build
+	if(GetUnitCount("sprayer") <-bluiteProduction if(GetErnPortal gt0) 0.86 else 0.6 endif div lt "sprayer" @RequirementsMet &&)
+		"sprayer"
+	else if(<-deepestAmt 2 lte GetUnits("cannon" <-buildPos 8 false false false 0 0 0) GetListCount eq0 || <-energyGood "cannon" @RequirementsMet && &&)
+		"cannon"
+	else if(<-deepestAmt 6 gt GetUnitCount("shield") 1 add 0.5 mul <-redonProduction 0.6 mul lt "shield" @RequirementsMet && && GetFactoryWares(2) 20 gte &&)
+		"shield"
+	else if(<-energyGood "mortar" @RequirementsMet &&)
+		"mortar"
+	else
+		""
+	endif endif endif endif
+	->unitToBuild
+	
+	#Build limit and softcap checks
+	@GetNearestBuildCell(<-buildPos ToCell 3 3 100) ->buildZ ->buildX
+	if(<-canBuild <-unitToBuild StringLength &&)
+		<-buildX <-buildZ GetTerrainVector ->lastSuccessfulBuild
+		"unit" <-unitToBuild <-buildX <-buildZ 0 @QueueBuild
+		<-*moveModes swap 1 SetTableElement
+	else
+		if(<-canBuild ! <-weaponRecursion ! && -?lastSuccessfulBuild &&)
+			true ->weaponRecursion
+			<-lastSuccessfulBuild @BuildWeapon
+		endif
+		pop pop pop
+	endif
+	return
+
+#Only works for vanilla units
+#Given a unit type, checks both script and vanilla build limits
+:RequirementsMet
+	->unitType
+	GetUnitCount(<-unitType) dup <-unitType "Cap" concat <-! lt 
+			<-unitType "Cap" concat <-! lt0 || swap "max" <-unitType concat <-! lt <-overrideEnabled ||
+			<-unitType "" neq <-buildPos && && && return
+			
+#Tries to build a line of pylons from a position vector to the nearest microrift or rift lab.
+:Buildpylon
+	->pylonPos
+	#only try if there are no pylons nearby
+	if(GetUnits("pylon" <-pylonPos ToCell GetTerrainVector v3(0 6 0) add 18 true true true 0 0 0) !)
+		false ->pylonPathComplete
+		@NearestLabConnector(<-pylonPos) ->connection
+		20 0 do
+			false ->pylonPlaced
+			@GetNearestBuildCell(<-pylonPos ToCell 3 3 <-pylonPlacementOptions) dup2 ->pylZ ->pylX
+			if(FromCell IsV3InMap)
+				@QueueBuild("pylon" <-pylX <-pylZ 0) GetUnitPosition ->pylonPos
+				
+				#Stop if there is a pylon nearby
+				if(GetUnits("pylon" <-pylonPos V3(0 5 0) add 16 false true true 0 0 0) GetListCount 2 gte)
+					break
+				endif
+				<-pylonPos <-connection sub normalize -16 mul <-pylonPos add ->pylonPos
+				true ->pylonPlaced
+			else
+				pop pop
+			endif
+			if(<-pylonPlaced !)
+				break
+			endif
+		loop
+	endif
+	return
+
+#Finds the nearest cell a unit of footprint (Unitx, Unitz) can be built to the given cell
+#Returns -1 -1 if no cell is found
+:GetNearestBuildCell
+	->maxCells ->UnitZ ->UnitX ->centZ ->centX
+	false ->canBuild
+	FloodFillTerrain(<-centX <-centZ 1 21 <-maxCells) ->terrain
+	<-terrain GetListCount 0.5 mul 0 do
+		<-terrain[i 2 mul] EV2 <-UnitX <-UnitZ @CellBuildable if
+			true ->canBuild
+			<-terrain[i 2 mul] EV2 return
+		endif
+	loop
+	if(<-canBuild !)
+		-1 -1
+	endif
+
+:CellBuildable
+	->unitZ ->unitX dup2 ->cellZ ->cellX
+	GetTerrain dup ->centerTerrain
+	dup if
+		<-cellZ <-unitZ 0.5 mul ceil add <-cellZ <-unitZ 0.5 mul AsInt sub do
+			<-cellX <-unitX 0.5 mul ceil add <-cellX <-unitX 0.5 mul AsInt sub do
+				i j GetTerrain <-centerTerrain eq i j GetCellOccupiedCount ! i j GetCreeper lte0 && && &&
+				dup ! if
+					return
+				endif
+			loop
+		loop
+	endif
+
+:FastNearestBuildCell
+	->maxCells ->UnitZ ->UnitX ->centZ ->centX
+	false ->canBuild
+	FloodFillTerrain(<-centX <-centZ 1 21 <-maxCells) ->terrain
+	<-terrain GetListCount 0.5 mul 0 do
+		<-terrain[i 2 mul] EV2 <-UnitX <-UnitZ @FastCellBuildable if
+			true ->canBuild
+			<-terrain[i 2 mul] EV2 return
+		endif
+	loop
+	if(<-canBuild !)
+		-1 -1
+	endif
+
+
+#Faster version, doesn't check terrain. Used for factory, rocket, mines, and refineries
+#Since the terrain checks are done during the map cache phase.
+:FastCellBuildable
+	->unitZ ->unitX ->cellZ ->cellX
+	true
+	<-cellZ <-unitZ 0.5 mul ceil add <-cellZ <-unitZ 0.5 mul AsInt sub do
+		<-cellX <-unitX 0.5 mul ceil add <-cellX <-unitX 0.5 mul AsInt sub do
+			i j GetCellOccupiedCount ! i j GetCreeper lte0 && &&
+			dup ! if
+				return
+			endif
+		loop
+	loop
+
+:BuildTower
+	<-towerChecksPerUpdate 0 do
+		<-prioCells[<-tIndex] @CellTowerValid <-placeSuccess max ->placeSuccess
+		if(<-placeSuccess 2 eq)
+			<-x <-z @CreateTower
+			break
+		endif
+		<-tIndex <-towerPlacementSpeed add dup ->tIndex
+		<-prioCells GetListCount gte if
+			@CycleTower
+			break
+		endif
+	loop
+
+:CycleTower
+	#Find a new build target
+	if(<-placeSuccess ! <-*emptyTowers{<-ecoFocusUnit} &&)
+		<-*emptyTowers <-ecoFocusUnit RemoveTableElement
+		<-towerCount 1 add dup ->towerCount
+		3 eq if
+			0 ->towerCount
+			@BuildStationary
+		endif
+	endif
+	if(<-towers)
+		<-towers 0 do
+			<-towers PopList dup ->tower
+			if(GetUnitDestroyed)
+				#Destroys the table reference and dummy unit connected to that tower
+				<-*emptyTowers <-tower
+				#dup2 GetTableElement true true true DestroyUnit
+				RemoveTableElement
+			else if(<-*emptyTowers{<-tower} <-tower GetUnitConnectedToRiftLab &&)
+				<-tower dup ->ecoFocusUnit GetUnitPosition @ChangeEcoFocus
+				break
+			endif endif
+		loop
+	else
+		#Refill the list when empty
+		<-*emptyTowers GetTableKeys ->towers
+	endif
+	
+
+	
+	<-towerStartIndex GetGameUpdateCount <-towerPlacementSpeed mod add ->tIndex
+	false ->placeSuccess
+	
+#Returns 0 if a tower can never be placed there, a 2 if placement is possible now,
+#and 1 if placement will be possible if units or creeper move
+:CellTowerValid
+	EV2 dup2 dup2 ->z ->x GetTerrain
+	if
+		@TowerCheck
+		if(dup 121 lt swap <-sqrSpacing gte &&)
+			if(<-x <-z GetCreeper lte0 <-x <-z GetCellOccupiedCount eq0 &&)
+				2 return
+			else
+				1 return
+			endif
+		else
+			pop
+		endif
+	else
+		pop pop
+	endif
+	false
+	
+:ChangeEcoFocus
+	dup <-ecoFocusPos neq if
+		->ecoFocusPos
+		FloodFillTerrain(<-ecoFocusPos ToCell 0 21 @CellsInFloodFillRange(11)) ->prioCells
+	else
+		pop
+	endif
+	return
+
+:CellsInFloodFillRange
+	dup dup mul 2 mul swap 2 mul add
+
+:RefreshNetworkList
+	GetUnits("tower" swap 515 true false false 0 1 0) ReverseList ->towers
+	
+:RefreshWeaponList
+	GetUnitsByType("cannon" 1) ->weaponList
+	GetUnitsByType("mortar" 1) ->mortars
+	GetUnitsByType("sprayer" 1) ->sprayers
+	GetUnitsByType("shield" 1) ->shields
+	<-mortars GetListCount 0 do
+		<-weaponList <-mortars[i] AppendToList
+	loop
+	--mortars 
+	<-sprayers GetListCount 0 do
+		<-weaponList <-sprayers[i] AppendToList
+	loop
+	--sprayers
+	<-shields GetListCount 0 do
+		<-weaponList <-shields[i] AppendToList
+	loop
+	--shields
+
+#Finds the position of the nearest microrift or rift lab to the given position
+:NearestLabConnector
+	->centerPos
+	if(GetUnitsByType("microrift" 1))
+		GetUnits("microrift" <-centerPos 200 true false false 0 1 0)[0] GetUnitPosition return
+	endif
+	GetRiftLab GetUnitPosition return
+
+:Once
+	if(<-pacMode GetEditMode ! &&)
+		GetUnits(Vector0 1000 false false false 2 0 0) ->units
+		<-units 0 do
+			<-units[i] false SetUnitSelectable
+		loop
+	endif
+	@CellsInFloodFillRange(<-towerSpacing) ->towerStartIndex
+	<-towerSpacing dup mul ->sqrSpacing
+	CreateTable ->timeToMove
+	CreateTable ->lastAmmo
+	CreateTable ->*emptyTowers
+	CreateList ->buildQueue
+	CreateList ->requestedBuilds
+	CreateList ->buildingBeacons
+	CreateList ->disabledSnipers
+	CreateList ->disabledMissiles
+	"darktower" 0 GetUnitsByType ->darktowers
+	false ->*playingAsHumans
+	1 ->*numPlayers
+	
+	List("cannon" "mortar" "sprayer" "shield") ->weaponTypes
+
+	# <-maxMoveAmt ->*maxMoveAmt
+	GetUnitPosition(GetRiftLab) ->labPos
+	<-buildDelay ->*AP_BUILD_TIME
+	8 ->pylonTimer
+	0 ->towerCount
+	GetUnitRange(<-*LOS) ->baseLOSRange
+	@ChangeEcoFocus(<-labPos)
+
+	RegisterForMsg("closeMsg" "closeMsg")
+	RegisterForMsg("apForceBuild" "ForceBuildWeapon")
+	RegisterForMsg("MSG_FrameAdvance" "ClearOccupied")
+	RegisterForMsg("BuildTowers" "BuildTower")
+	
+	Split(RemoveWhiteSpace(<-customNullifiables) ",") ->nullifiableEnemies
+	Split("airsaccauldron emitter darktower blobnest sporelauncher skimmerfactory" " ") ->baseNulliTargets
+	6 0 do
+		<-nullifiableEnemies <-baseNulliTargets[i] AppendToList
+	loop
+
+	"nulliTerrainList" NotPersist
+	"fatalError" NotPersist
+	"baseNulliTargets" NotPersist
+	"units" NotPersist
+	"numUnits" NotPersist
+	"temp" NotPersist
+	
+	# CreateList ->watcherList
+	# "Watcher" "towerList" <-watcherList SetRegisteredScriptVar
+	GetMapSize ->mapZ ->mapX
+	<-mapX 12 div 1 add ->xRegions
+	<-mapZ 12 div 1 add ->zRegions
+	
+	<-xRegions <-zRegions mul 0 do
+		CreateList
+	loop
+	List ->*towerRegions
+	
+	if(<-*playingAsHumans ! GetMVersePlayerNum lte0 &&)
+		@InitTowers
+	endif
+
+:Region
+	12 div <-xRegions mul swap 12 div add
+
+#Stores information on nearby towers and their distances 
+#Takes a cell coordinate, returns the squared distance to the nearest tower
+:TowerCheck
+	dup2 GetTerrainVector ->pos
+	#Find the region for this coordinate
+	12 div swap 12 div ->regX
+	999
+	
+	swap dup 2 add swap 1 sub do
+		<-regX 2 add <-regX 1 sub do
+			<-*towerRegions[i j <-xRegions mul add] dup ->list
+			0 do
+				<-list[i] <-pos sub SqrMagnitude min
+				if(dup <-sqrSpacing lt)
+					return
+				endif
+			loop
+		loop
+	loop
+
+#Creates a tower on a given cell
+:CreateTower
+	->towerZ ->towerX
+	CreateUnitOnTerrain("tower" <-x <-z 0) dup ->placedTower
+	GetUnitPosition ->towerPos
+	<-placedTower <-pacMode ! SetUnitSelectable
+	
+	<-*towerRegions[<-placedTower GetUnitCell @Region] <-towerPos AppendToList
+	GetGameUpdateCount ->towerPos.w
+	<-*towerPosTable <-placedTower <-towerPos SetTableElement
+
+	true ->*emptyTowers{<-placedTower}
+	
+	"Watcher" "towerList" GetRegisteredScriptVar <-placedTower AppendToList
+	<-towers <-tower AppendToList
+	<-towers dup GetListCount 3 sub <-placedTower InsertListElement
+	
+	# if(GetUnits("beacon" <-placedTower GetUnitPosition 16 false false false 0 0 0) !)
+		# <-towerPos ToCell 1 SetCellOccupiedCount
+		# <-placedTower GetUnitCell 3 3 200 @FastNearestBuildCell @BuildBeacon
+		# <-towerPos ToCell 0 SetCellOccupiedCount
+	# endif
+	@CycleTower
+	
+	# if(<-towerX <-towerZ 10 true true false GetCreeperInRange)
+		# <-towerPos ->*weaponFocus
+		# @BackUpWeaponFocus
+	# endif
+
+#I hate this
+:Awake
+	RegisterScript("RiftLabAI")
+:GameLoaded
+	RegisterScript("RiftLabAI")
+
+#Creates a unit and deletes all other units of that type.
+:CreateUniqueUnit
+	->initParams ->pos ->GUID
+	GetUnitsByType(<-GUID 0) ->extraUnits
+	<-extraUnits GetListCount 0 do
+		<-extraUnits[i] true true true DestroyUnit
+	loop
+	CreateUnit(<-GUID <-pos <-initParams) return 
+
+:closeMsg
+	CloseGameMessage(true)
+
+:InitTowers
+	"tower" 0 GetUnitsByType ->towers
+	<-towers GetRiftLab AppendToList
+	"microrift" 0 GetUnitsByType 
+	dup 0 do
+		dup [i] <-towers swap AppendToList
+	loop
+	pop
+	
+	<-towers 0 do
+		<-towers[i] GetUnitPosition ->*towerPosTable{<-towers[i]}
+		<-*towerRegions[<-towers[i] GetUnitCell @Region] <-towers[i] GetUnitPosition AppendToList
+		if(<-preBuildStationary)
+			<-towers[i] GetUnitPosition ->ecoFocusPos
+			@BuildStationary
+		endif
+	loop
+	
+	-1 <-towers 1 sub do
+		if(GetUnits("tower" <-towers[i] GetUnitPosition 12 false true false 0 0 0) GetListCount 4 gt)
+			<-towers i RemoveListElement
+		else
+			true ->*emptyTowers{<-towers[i]}
+		endif
+	loop 
+

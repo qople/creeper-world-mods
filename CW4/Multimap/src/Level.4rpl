@@ -1,0 +1,446 @@
+# --Level-- 5/10/2021 12:16:05 PM
+$title:""
+$TITLE_FONT_SIZE:16
+$description:""
+$START_MSG_CHANNEL:"" #Starting ADA message
+$COMPLETE_MSG_CHANNEL:"" #This one is a game message by default, to disincentivise having many ADA messages in a row and improve game flow
+$COMPLETE_MSG_BUTTON:"Okay!" #Set to "ADA" to show it as an ada message instead
+
+# List of unit unlocks for the level
+# Should be formatted as "GUID:NUM:SECTION,GUID:NUM:SECTION"
+# Whitespace is ignored, but can be added for readability
+# SECTION is the build tab the unit is under. 0=struct, 1=weapons, 2=air, 3=special, 4=custom
+# It is only required for custom units, and will default to 4 (custom) if unspecified
+# When the number is 0, will lock that unit
+# When the number is positive, will add that many to the unit limit
+# When the number is negative, will remove the unit limit
+$UNIT_UNLOCKS:"" 
+$APPLY_UNLOCKS_ON_LOAD:1 #Whether to apply on level load or completion (if applied on load, unlocks will be undone if the level is left before completing it)
+$CUSTOM_COMPLETE_EFFECTS:"" #"EFFECT:VALUE,EFFECT:VALUE" calls message "EFFECT" with data "VALUE" on level complete
+
+#Set automatically when created
+$$IS_GOAL:0
+$$IS_THUMBNAIL:0
+
+#For optimization reasons, the main script body is left blank.
+
+#Updates the unit's color, popup, and UI text
+:Update
+	@SetTitle
+	Self true SetUnitSelectable
+	Self "" 1 1 1 V3 SetObjScale
+	Self 3 "" SetUnitUIText
+	if(<-IS_THUMBNAIL GetEditMode ! &&)
+		Self "" Vector0 SetObjScale
+	endif
+	if(<-*activeMap <-id eq)
+		Self "" V3(1 1 1) SetObjScale
+		Self "Main" V3(0.098 0.482 0.741) SetObjColor #Blue (#197BBD)
+		Self 0 "Reset level" SetUnitUIText
+		Self 1 SetUnitPopupEnabled
+		Self "You are here." SetUnitPopupText0
+		
+	else if(<-completed)
+		Self "" V3(1 1 1) SetObjScale
+		Self "Main" V3(0.383 0.828 0.289) 0.7 mul SetObjColor #Green (#42B62B), with some dimming for contrast with the yellow
+		Self 0 "Return to level" SetUnitUIText
+		Self 1 SetUnitPopupEnabled
+		Self "Finished in " <-completed GetTimeString concat SetUnitPopupText0
+		Self 3 LF "This will NOT save current level progress!" concat SetUnitUIText
+		
+	else if(<-IS_GOAL <-IS_THUMBNAIL ||)
+		Self "Main" V3(0.843 0.149 0.239) SetObjColor #Red/pink (#D7263D)
+		if(<-*MAP_SPOILER_MODE 4 gte <-IS_THUMBNAIL || GetEditMode ! &&)
+			Self "" Vector0 SetObjScale
+		endif
+	else if(<-nextUp) #Can travel to it
+		Self "" V3(1 1 1) SetObjScale
+		Self "Main" V3(1 0.678 0.02) SetObjColor #Yellow (#FFAD05)
+		Self 0 "Jump!" SetUnitUIText
+		Self 1 SetUnitPopupEnabled
+		Self "You can go here." SetUnitPopupText0
+		Self 3 LF "<color=#f66>This will NOT save current level progress!</color>" concat SetUnitUIText
+	else 
+		#Purple (#58355E)
+		Self "Main" V3(0.344 0.207 0.367) SetObjColor
+		Self 0 "Can't go here yet." SetUnitUIText
+		Self 0 SetUnitPopupEnabled
+		if(GetEditMode !)
+			if(<-*MAP_SPOILER_MODE 1 gte)
+				Self 2 "" SetUnitUIText
+			endif
+			if(<-*MAP_SPOILER_MODE 2 gte)
+				if(<-showTitle !)
+					Self 1 "" SetUnitUIText
+					Self "Text" "" SetObjText
+				else
+					Self "" V3(1 1 1) SetObjScale
+					Self "Text" "<i>" <-shownTitle concat SetObjText
+				endif
+			endif
+			if(<-*MAP_SPOILER_MODE 3 gte <-showTitle ! &&)
+				Self "" Vector0 SetObjScale
+			endif
+		endif
+	endif endif endif endif
+
+	if(GetMVersePlayerNum gte0 <-nextUp <-completed || &&)
+		"MVerse Support" "voteList" GetRegisteredScriptVar ->voteList
+		"MVerse Support" "voteReq" GetRegisteredScriptVar 1 add floor ->voteReq
+		
+		#Find how many votes there are for this map
+		0
+		<-voteList 0 do
+			<-voteList[i] <-id eq add
+		loop
+		->numVotes
+		
+		Self 0
+		if(<-voteList[<-*playerNum] <-id eq)
+			"Remove vote ("
+		else
+			"Cast vote ("
+		endif
+		<-numVotes " of " <-voteReq ")" concat4 concat
+		SetUnitUIText
+	endif
+	
+	if(GetEditMode)
+		if(<-*activeMap <-id eq <-*finalized ! &&)
+			Self 0 "Save Map" SetUnitUIText
+		else
+			Self 0 "Switch to map" SetUnitUIText
+		endif
+		Self 3 "" SetUnitUIText
+	endif
+
+:VoteReceived
+
+:SetTitle
+	if(<-id eq0)
+		<-*index{self} ->id
+	endif
+
+	Self "Text" <-TITLE_FONT_SIZE SetObjTextFontSize
+	#Set the object text & title
+	if(<-IS_THUMBNAIL <-id -3 eq ||)
+		-3 ->id
+		true ->IS_THUMBNAIL
+		"Thumbnail" ->shownTitle
+		Self "Text" <-shownTitle SetObjText
+		"Make a transition from this level to the starting level, then finalize on this level, to add a custom thumbnail map." ->description
+	else if(<-IS_GOAL <-id -2 eq ||)
+		-2 ->id
+		true ->IS_GOAL
+		"Win" ->shownTitle
+		Self "Text" <-shownTitle SetObjText
+	else if(<-title AsString StringLength neq0)
+		<-title "\n" LF StringReplace "<br>" LF StringReplace ->shownTitle
+		Self "Text" <-shownTitle SetObjText
+	else
+		"Level " <-id concat ->shownTitle
+		Self "Text" <-id SetObjText
+	endif endif endif
+
+	
+	Self 1 <-shownTitle LF " " StringReplace LF concat SetUnitUIText
+	
+	<-description "\n" LF StringReplace "<br>" LF StringReplace ->description
+	Self 2 <-description SetUnitUIText
+	
+	# if(<-nextUp)
+		if(GetMVersePlayerNum gte0 <-nextUp <-completed || &&)
+			"MVerse Support" "voteList" GetRegisteredScriptVar ->voteList
+			"MVerse Support" "voteReq" GetRegisteredScriptVar 1 add floor ->voteReq
+			
+			#Find how many votes there are for this map
+			0
+			<-voteList 0 do
+				<-voteList[i] <-id eq add
+			loop
+			->numVotes
+			
+			Self 0
+			if(<-voteList[<-*playerNum] <-id eq)
+				"Remove vote ("
+			else
+				"Cast vote ("
+			endif
+			<-numVotes " of " <-voteReq ")" concat4 concat
+			SetUnitUIText
+		else if(<-*finalized)
+			Self 0 "Jump!" SetUnitUIText
+		endif endif
+	# endif
+			
+
+:_UICallback
+	if(<-_DATA eq0 <-*finalized ! <-nextUp || <-completed || &&)
+		@SwitchMap
+	endif
+
+:SwitchMap
+	if(GetMVersePlayerNum gte0)
+		if(<-voteList[<-*playerNum] <-id eq)
+			SendMsg("Vote" 0)
+		else
+			SendMsg("Vote" <-id)
+		endif
+		@SetTitle
+	else
+		SendMsg("SetViewMode" -1)
+		SendMsg("SetMap" <-id)
+	endif
+
+:_Selected
+	once
+		@Awake
+	endonce
+	if(<-_DATA)
+		RegisterForMsg("MSG_FrameAdvance" "WhileSelected")
+		@Update
+	else
+		DeregisterForMsg("MSG_FrameAdvance")
+	endif
+	# if(GetEditMode)
+		#@SetTitle #Updates title when settings are changed
+	# endif
+
+:WhileSelected
+	if(GetKey("Space" 1) GetKey("LeftControl" 1) GetKey("LeftCommand" 1) || && <-*finalized ! &&)
+		if(<-held !)
+			true ->held
+			@SwitchMap
+		endif
+	else
+		false ->held
+	endif
+	
+	if(GetEditMode !)
+		return
+	endif
+	
+	if(GetKey("LeftControl" 1) GetMouseButton(0 1) &&)
+		if(GetSelectedUnits GetListCount 1 gt)
+			if(<-mouseHeld !)
+				Self GetUnitPosition GetPointerTerrainCoords FromCell sub ->moveOffset
+				true ->mouseHeld
+			else
+				Self GetPointerTerrainCoords FromCell <-moveOffset add SetUnitPosition
+				<-lastPos Self GetUnitPosition dup ->lastPos neq if
+					SendMsg("MoveBG" <-*activeMap)
+				endif
+			endif
+		else
+			Self GetPointerTerrainCoords 1 SetUnitCell
+			<-lastPos Self GetUnitPosition dup ->lastPos neq if
+				SendMsg("MoveBG" <-*activeMap)
+			endif
+		endif
+	else
+		--moveOffset
+		--mouseHeld
+	endif
+			
+
+:ApplyUnlocks
+	if(<-*activeMap <-id neq GetEditMode ||)
+		return
+	endif
+	CreateTable ->prevLimits
+	<-unlocks 0 do
+		<-unlocks[i][0] ->type
+		<-unlocks[i][1] AsInt ->num
+		<-unlocks[i][2] AsInt ->section
+		<-type GetUnitBuildLimit ->prevLimits{<-type}
+		
+		switch
+			case(<-num eq0)
+				<-type false SetUnitCanBuild
+				if(<-type StringLength 25 lt)
+				else
+					<-type "" 4 SetCModPlayerMenuName
+				endif
+			endcase
+			<-type Vector0 0 CreateUnit dup GetUnitOfficialName ->name 1 1 1 DestroyUnit
+			
+			case(<-num gt0)
+				<-type true SetUnitCanBuild
+				if(<-type StringLength 25 lt)
+				else
+					<-type <-name <-section SetCModPlayerMenuName
+				endif
+				if(<-type GetUnitBuildLimit gte0)
+					<-type dup GetUnitBuildLimit <-num add SetUnitBuildLimit
+				endif
+			endcase
+			
+			case(<-num lt0)
+				<-type true SetUnitCanBuild
+				if(<-type StringLength 25 lt)
+				else
+					<-type <-name <-section SetCModPlayerMenuName
+				endif
+				<-type -1 SetUnitBuildLimit
+			endcase
+		endswitch
+	loop
+	
+:RemoveUnlocks
+	if(<-_DATA <-id neq <-prevLimits ! || <-completed || GetEditMode ||)
+		return
+	endif
+	<-unlocks 0 do
+		<-unlocks[i][0] ->type
+		<-unlocks[i][2] ->section
+		if(<-*defaultUnits <-type ListContains)
+			<-type <-prevLimits{<-type} neq0 SetUnitCanBuild
+		else
+			if(<-prevLimits{<-type})
+				<-type Vector0 0 CreateUnit dup GetUnitOfficialName ->name 1 1 1 DestroyUnit
+			else
+				"" ->name
+			endif
+			<-type <-name <-section SetCModPlayerMenuName
+		endif
+		<-type <-prevLimits{<-type} SetUnitBuildLimit
+	loop
+
+:OnComplete
+	if(<-*activeMap <-id neq GetEditMode ||)
+		return
+	endif
+	
+	if(<-COMPLETE_MSG_CHANNEL StringLength)
+		if(<-COMPLETE_MSG_BUTTON "ADA" eq)
+			<-COMPLETE_MSG_CHANNEL "DATA" ShowADAMessage
+		else
+			<-COMPLETE_MSG_CHANNEL <-COMPLETE_MSG_BUTTON "" false "CloseGameMessage" ShowGameMessage
+		endif
+	endif
+	
+	if(<-APPLY_UNLOCKS_ON_LOAD !)
+		@ApplyUnlocks
+	endif
+	
+	
+	if(<-CUSTOM_COMPLETE_EFFECTS StringLength)
+		<-CUSTOM_COMPLETE_EFFECTS ": " ":" StringReplace "," split ->effects
+		<-effects 0 do
+			<-effects[i] ":" split ->effects[i]
+			<-effects[i][0] <-effects[i][1] SendMsg
+		loop
+	endif
+	
+	
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	once
+	Self "" true SetObjActive
+	<-UNIT_UNLOCKS RemoveWhiteSpace "," split ->unlocks
+	<-unlocks 0 do
+		<-unlocks[i] ":" split ->unlocks[i]
+		if(<-unlocks[i] GetListCount 2 eq)
+			<-unlocks[i] 4 AppendToList
+		endif
+	loop
+	once
+		false ->showTitle
+		self "" V3(1 1 1) SetObjScale
+		Self true SetUnitSelectable
+	endonce
+	if(<-id -2 eq <-IS_GOAL ||)
+		true ->IS_GOAL
+		-2 ->id
+	endif
+	if(<-id -3 eq <-IS_THUMBNAIL ||)
+		true ->IS_THUMBNAIL
+		-3 ->id
+	endif
+	#Self "Main" V3(0 0.011 0) 0 SetObjPosition
+	Self GetEditMode SetUnitCanDestroy
+	if(<-*index{self} IsNull)
+		if(<-*levelIdOverride)
+			<-*levelIdOverride ->id
+			<-id ->*index{Self}
+		else
+			9999999 ->id
+			
+			#Find lowest undefined map slot
+			<-*index GetTableValues ->values
+			<-*maps GetTableKeys GetListCount 2 add 1 do
+				if(<-*maps{i} IsNull <-values i ListContains ! ||)
+					i ->id
+					break
+				endif
+			loop
+			
+			#Go through the unit index to see if any level units below the id found above were destroyed,
+			#and if so, use that level slot without overriding it.
+			<-*index GetTableKeys ->keys
+			<-keys 0 do
+				<-keys[i] ->unit
+				if(<-unit GetUnitDestroyed)
+					if(<-*maps{<-*index{<-unit}} <-*index{<-unit} <-id lt &&)
+						<-*index{<-unit} <-id min ->id
+						<-unit ->current
+					endif
+				endif
+			loop
+			<-id ->*index{self}
+			if(<-current)
+				<-*index <-current RemoveTableElement
+			else
+				CreateList ->*maps{<-id}
+				"Switcher" "maps" <-*maps SetRegisteredScriptVar
+				CreateList ->*specials{<-id}
+				CreateList ->*creeper{<-id}
+				CreateList ->*units{<-id}
+				CreateTable ->*other{<-id}
+			endif
+		endif
+	else
+		<-*index{self} ->id
+	endif 
+	if(<-IS_GOAL)
+		-2 ->id
+		-2 ->*index{self}
+		Self "Text" "Win" SetObjText
+	endif
+	if(<-IS_THUMBNAIL)
+		-3 ->id
+		-3 ->*index{self}
+		Self "Text" "Thumbnail" SetObjText
+	endif
+	
+	Self "Text" <-id SetObjText
+	once
+		if(<-*activeMap <-id eq)
+			true ->nextUp
+		endif
+	endonce
+	
+	RegisterForMsg("UpdateLevels" "Update")
+	RegisterForMsg("Vote" "VoteReceived")
+	if("Switcher" "SAVE_BUILD_LIMITS" GetRegisteredScriptVar !)
+		if(<-APPLY_UNLOCKS_ON_LOAD)
+			RegisterForMsg("levelIncomplete" "RemoveUnlocks")
+		endif
+	endif
+		RegisterForMsg("MapLoaded" "OnLoad")
+	RegisterForMsg("levelComplete" "OnComplete")
+	0 ->showTitle
+	endonce
+	@Update
+
+:OnLoad
+	if(GetEditMode ! <-*activeMap <-id eq &&)
+		once
+			ShowADAMessage(<-START_MSG_CHANNEL "ASSESSMENT")
+		endonce
+	endif
+	if(<-APPLY_UNLOCKS_ON_LOAD)
+		@ApplyUnlocks
+	endif
+:Once
+	"MVerse Support" "voteList" GetRegisteredScriptVar ->voteList 

@@ -1,0 +1,203 @@
+# --Wall Tool-- 3/9/2021 3:26:18 PM
+# --LayoutWizard-- 1/22/2021 3:35:35 PM
+
+:WhilePaused
+if(<-flag !) #for some reason once blocks don't get called again after compiling with pause scripts, as of when this was first written
+	true ->flag
+	GetMapSize ->mapZ ->mapX
+	
+	#Text
+	SetObjTextBillboard(Self "main" false)
+	SetObjText(Self "main" "Wall Tool")
+	SetObjTextFontSize(Self "main" 40)
+	SetObjForward(Self "main" 0 0 1)
+endif
+
+if(GetEditMode !)
+	SetUnitSelectable(Self false)
+	SetObjActive(Self "main" false)
+else
+	SetUnitSelectable(Self true)
+	SetObjActive(Self "main" true)
+endif
+
+#Flip door mode when pressing left alt
+if(GetKeyDown("LeftAlt" 0) GetPause && GetEditMode && GetGameUpdateCount eq0 &&)
+	if(Self GetUnitSelected)
+		Self 0 dup2 GetUnitUIState ! SetUnitUIState
+		Self false SetUnitSelected
+		Self true SetUnitSelected
+	else if(Self 3 GetUnitUIState ! GetKey("LeftControl" 0) &&)
+		Self true SetUnitSelected
+	endif endif
+endif
+
+<-click ->lastClick
+GetMouseButton(0 1) ->click
+
+if(GetUnitSelected(Self))
+	
+	if(<-hBeam !)
+		CreateBeam("white" 1 2) ->hBeam
+		CreateBeam("white" 1 2) ->vBeam
+	endif
+	
+	GetPointerTerrainCoords 
+	if(GetCameraMode 1 eq)
+		20 ->beamHeight
+	else
+		dup2 GetTerrain 1 add 20 min ->beamHeight 
+	endif
+	->mouseZ ->mouseX
+	<-hBeam <-mapX <-beamHeight <-mouseZ v3 SetBeamEnd
+	<-hBeam 0 <-beamHeight <-mouseZ v3 SetBeamStart
+	<-vBeam <-mouseX <-beamHeight <-mapZ v3 SetBeamEnd
+	<-vBeam <-mouseX <-beamHeight 0 v3 SetBeamStart
+	
+	if(<-click neq0)
+		GetUnitUIState(Self 0) ->doorMode
+		if(<-lastClick eq0)
+			0 EditAddUndo
+			GetPointerTerrainCoords FromCell dup ->startPos ->endPos
+			#<-dummy false SetUnitDestroyUnevenLand
+		else
+			#Undo what was done last update
+			if(<-terrainList GetListCount neq0)
+				-1 <-terrainList GetListCount 1 sub do
+					<-terrainList[i] EV3 swap SetTerrain
+				loop
+			endif
+			GetPointerTerrainCoords FromCell ->endPos
+		endif
+	
+		<-endPos <-startPos sub ->delta
+		<-delta.z <-delta.x atan2 ->angle
+		<-startPos <-endPos Distance ->dist
+		createList ->terrainList
+		
+		<-angle ->rawAngle
+		<-delta ->rawDelta
+		<-angle quarterpi div 0 round quarterpi mul ->angle
+		v3(<-angle cos 0 <-angle sin) <-dist mul ->delta	
+		
+		if(GetKey("LeftControl" 0) GetKey("RightControl" 0) || DistancePointLine(<-endPos <-startPos dup <-delta add) <-dist 8 div 2 max lte ! || <-doorMode ! &&)
+			<-rawAngle ->angle
+			<-rawDelta ->delta
+		endif
+
+		<-angle sin abs <-angle cos abs max ->divisor
+		<-dist <-divisor mul ->pseudoDist
+		if(<-doorMode !)
+			@DrawTerrainLine
+		else
+			@CreateDoor
+		endif
+	else
+		--terrainList
+	endif
+else
+	v3(-1 -1 -1) dup ->startPos ->endPos
+	DestroyBeam(<-hBeam) --hBeam
+	DestroyBeam(<-vBeam) --vBeam
+endif
+
+#Doesn't use SetTerrainLine because this allows undoing more quickly than adding and restoring an edit.
+:DrawTerrainLine
+	<-pseudoDist ceil 1 add 0 do
+		<-startPos <-delta i mul <-pseudoDist div add ->currentPos
+		<-currentPos.x 0 round <-currentPos.z 0 round ->z ->x
+		if(<-x <-lastX neq <-z <-lastZ neq &&)
+			<-x <-lastZ @SetTerrain
+		endif
+		<-x <-z @SetTerrain
+		<-z ->lastZ
+		<-x ->lastX
+	loop
+
+:SetTerrain
+	dup2 getTerrainVector <-terrainList swap AppendToList 20 setTerrain
+
+:CreateDoor
+	if(DistancePointLine(<-endPos <-startPos dup <-delta add) 1 gte GetKey("LeftControl" 0) GetKey("RightControl" 0) || &&)
+		2
+	else
+		1
+	endif
+	0 do
+
+		if(<-rawAngle <-angle lt)
+			<-angle quarterpi sub
+		else
+			<-angle quarterpi add	
+		endif
+		dup cos swap sin 0 swap v3 ->doorSecondPassMod
+		
+		<-pseudoDist ceil i add 1 add i neg 
+		if(i neq0)
+			swap 1 sub swap
+			if(<-angle halfpi mod eq0)
+				1 sub
+			endif
+		endif
+		do
+			<-startPos <-doorSecondPassMod j mul add <-delta i mul <-pseudoDist div add ->currentPos
+			<-currentPos.x 0 round <-currentPos.z 0 round
+					getTerrainVector dup ->terrain <-terrainList swap AppendToList
+			
+			if(<-terrain.y 19 gte)
+				<-terrain.x <-terrain.z dup2 @AvgTerrain SetTerrain
+			else 
+				<-terrain.x <-terrain.z 19 SetTerrain
+			endif 
+			
+		loop
+	loop
+	
+:AvgTerrain
+	->centerZ ->centerX
+	--num
+	--avg
+	0
+	<-centerZ 2 add <-centerZ 1 sub do
+		<-centerX 2 add <-centerX 1 sub do
+			i j GetTerrain dup
+			if(dup 19 lt swap gt0 &&)
+				add
+				<-num 1 add ->num
+			else
+				pop
+			endif
+		loop
+	loop
+	<-num asfloat div 0 round return
+
+:CreateUniqueUnit
+	->initParams ->pos ->GUID
+	GetUnitsByType(<-GUID 0) ->extraUnits
+	<-extraUnits GetListCount 0 do
+		<-extraUnits[i] true true true DestroyUnit
+	loop
+	CreateUnit(<-GUID <-pos <-initParams) return 
+
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	SetObjText(Self "main toggle" "Wall Tool")
+	SetObjTextFontSize(Self "main toggle" 40)
+	SetObjForward(Self "main toggle" 0 0 1)
+	SetUnitUIText(Self 2 "Ctr-Alt to open
+Alt to switch modes")
+	if(GetEditMode)
+		RegisterForMsg("MSG_PreUpdate" "WhilePaused")
+	endif
+	
+:_UiCallback
+	if(<-_DATA 1 eq)
+		GetMapSize ->mapZ ->mapX
+		<-mapZ 0 do
+			<-mapX 0 do
+				i j GetTerrainSpecial dup neq0 swap 11 neq && if
+					i j 1 true SetCreeper
+				endif
+			loop
+		loop
+	endif 

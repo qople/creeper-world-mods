@@ -1,0 +1,117 @@
+# --MVerse support-- 6/14/2021 5:44:22 PM
+# Main source of mverse-related logic
+
+$$VOTE_FRACTION:0.5 #More than this fraction of players must vote on a level to go to it.
+$$ONLINE_INTERVAL:150 #How often instances send a message saying they're still in the game
+
+$$editingGUID:"0d7bf91f-1a51-4acc-9ea1-dd3fe568afec"
+$$transitionGUID:"651ecd06-600d-4166-94d0-afde51f8b813"
+$$levelGUID:"627724b4-1a7b-4e6b-9764-e66ddf5edd1e"
+
+if(GetTimer1 1 eq)
+	if(GetMversePlayerNum gte0)
+		SendMverseMsg("MV_AddPlayer" GetMversePlayerNum) #Find out the highest player number
+		SendMsg("MV_AddPlayer" GetMversePlayerNum) #Find out the highest player number
+	endif
+endif
+
+GetMversePlayerNum dup ->*playerNum gte0 ->*mverse_on #Enable mverse mode on the CPACK if applicable
+if(<-*mverse_on)
+	if(GetTimer0 eq0)
+		<-ONLINE_INTERVAL SetTimer0
+		SendMverseMsg("PlayerOnline" GetMversePlayerNum)
+		GetGameUpdateCount ->lastOnline[GetMversePlayerNum]
+		
+		<-numPlayers 0 do
+			if(GetGameUpdateCount <-lastOnline[i] sub <-ONLINE_INTERVAL 2 mul gt)
+				<-numPlayers 1 sub 1 4 clamp ->numPlayers
+				@SetVoteReq
+			endif
+		loop
+	endif
+endif
+
+:Once
+	4 CreateListStartingSize ->voteList
+	4 CreateListStartingSize ->voteQuantity
+	4 CreateListStartingSize ->lastOnline
+
+#"Player num: " GetMversePlayerNum ", num players: " <-numPlayers PrintAll
+
+:GameLoaded
+	"MVerse Support" RegisterScript
+	4 SetTimer1
+
+	@SetVoteReq
+	RegisterForMsg("MV_Vote" "AddVote")
+	RegisterForMsg("Vote" "SendVote")
+	RegisterForMsg("MV_Rescind" "Rescind")
+	RegisterForMsg("MV_AddPlayer" "AddPlayer")
+	RegisterForMsg("PlayerOnline" "PlayerOnline")
+
+:AddPlayer
+	<-numPlayers <-_DATA 1 add max 1 4 clamp ->numPlayers
+	@SetVoteReq
+	
+#<-_DATA is a list: [player num, map ID]. Sets the player's vote to that map ID.
+:AddVote
+	SendMsg("Trace" "Receive vote " <-_DATA[1] " from player " <-_DATA[0] concat4)
+	<-_DATA[1] ->voteList[<-_DATA[0]]
+	SendMsg("UpdateLevels" 0)
+	@CheckVotes
+
+#Sends a local vote to both itself and other mverse players
+:SendVote
+	<-_DATA ->data
+	SendMsg("Trace" "Player " GetMversePlayerNum " send vote " <-data concat4)
+	SendMverseMsg("MV_Vote" GetMversePlayerNum <-data 2 ListN)
+	SendMsg("MV_Vote" GetMversePlayerNum <-data 2 ListN)
+
+# Cancels the vote of the given numbered player
+:Rescind
+	0 ->voteList[<-_DATA]
+	@CheckVotes
+
+# Compares the players' votes
+# Badly done, prob rewrite later
+# Race conditions?
+:CheckVotes
+	0 ->maxVote
+	<-numPlayers 0 do
+		<-voteList[i] ->thisVote
+		if(<-thisVote neq0) #Don't count 0 votes
+		
+			#Count how many votes have the same value as this one
+			0
+			
+			#No need to check items that we compared before
+			<-numPlayers i do 
+				<-voteList[i] <-thisVote eq add
+			loop
+			->thisQuantity
+			
+			#Save the max number of votes for any option, and the option with that many votes
+			#If tied somehow, the first one in the list takes priority.
+			if(<-thisQuantity <-maxVote gt)
+				<-thisQuantity ->maxVote
+				<-thisVote ->destination
+			endif
+		endif
+	loop
+	
+	@SetVoteReq
+	
+	if(<-maxVote <-voteReq gt) #If some vote has enough
+		SendMsg("SetMap" <-destination) #Called by all instances separately, so no mverse msg
+		
+		4 CreateListStartingSize ->voteList
+		4 CreateListStartingSize ->voteQuantity
+	endif
+	
+#Updates the last online time of the given numbered player
+:PlayerOnline
+	GetGameUpdateCount ->lastOnline[<-_DATA]
+	
+#Changes the vote requirement to match the current number of players
+:SetVoteReq
+	<-numPlayers <-VOTE_FRACTION mul 1 <-numPlayers 1 sub clamp ->voteReq

@@ -1,0 +1,11 @@
+# --BFG shot-- 3/13/2024 3:48:42 PM
+
+Self GetUnitCell <-ConvertRadius ConvertCreeperToAC
+
+:Awake
+	<-*weaponAttributes{"bfg"}{"ConvertRadius"} ->ConvertRadius
+	
+	if(<-parent !)
+		Self 1 1 1 DestroyUnit
+	endif
+	

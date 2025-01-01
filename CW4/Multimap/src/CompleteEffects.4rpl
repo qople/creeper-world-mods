@@ -1,0 +1,25 @@
+# --CompleteEffects-- 5/30/2023 9:35:13 PM
+#Built-in on-complete effects that can be put into level.4rpl. More can be added.
+
+#This script includes:
+
+# "IncreaseEnergy:[float]" increases base energy generation
+# "RevealMap:[int]" sets the map spoiler mode to that number (see MapSwitcher.4rpl for the options)
+
+<-startEnergy GenerateEnergy
+
+
+:IncreaseEnergy
+	<-startEnergy <-_DATA AsFloat add ->startEnergy
+	<-startEnergy print
+
+:RevealMap
+	<-_DATA ->*MAP_SPOILER_MODE
+	SendMsg("UpdateTransitions" <-*activeMap)
+	SendMsg("UpdateLevels" 0) 
+
+:Once
+	RegisterForMsg("IncreaseEnergy" "IncreaseEnergy")
+	RegisterForMsg("RevealMap" "RevealMap")
+	0 ->startEnergy
+	

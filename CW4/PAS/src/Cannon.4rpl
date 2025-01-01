@@ -1,0 +1,108 @@
+# --Cannon-- 6/22/2023 4:37:20 PM
+#Weapon targeting and firing for the cannon and sprayer units.
+
+$FIRE_RATE:12
+$DAMAGE_AMT:3.0
+$CRIMSON_AMT:0.0 #Added crimson on the hit cell
+$CRIMSON_MAX:8.0 #Max amount of crimson that can be put on any one cell. A crystal sets depth to 8 every frame, for context on how deep this is.
+$ALWAYS_ON_MULT:0.5 #Multiplier for crimson produced in always on mode.
+$RANGE:10.0
+$PROJ_SPEED:1.0
+$AMMO_MULT:1.0 #Ammo used for each creeper created
+$LONG_WAIT_TIME:150 #Wait time when no target is found
+$SHIELD_DESTROY_CHANCE:0.0 #Chance a cannon bullet is destroyed every frame it is inside of one
+
+#The cannon fires between this many shots at its target before retargeting to save on performance
+$MIN_RETARGET_SHOTS:4 #Inclusive
+$MAX_RETARGET_SHOTS:9 #Not inclusive
+$$bulletGUID:"e94fb892-9cf0-4cf3-9b5f-a530f8329540"
+
+if(<-*isMVerseHost !)
+	if(<-targetPos)
+		if(GetObjFacingAngle(Self "Cannon" <-targetPos) 1 lt)
+			@Fire
+		else
+			RotateObjTowards(Self "Cannon" <-targetPos 2)
+		endif
+	endif	
+	return
+endif
+
+if(Self GetUnitConstructing GetTimer1 || Self GetUnitMoveCell pop gte0 ||)
+	if(<-CRIMSON_AMT gt0 GetTimer0 eq0 && Self GetUnitMoveCell pop lt0 && Self GetUnitAmmo <-AMMO_USE gte &&)
+		#Add just crimson our cell, no creeper, and don't remove ammo. This makes the crimson flow more reliably when on always-on mode.
+		Self GetUnitCell dup2 GetCrimson <-CRIMSON_AMT <-ALWAYS_ON_MULT mul add <-CRIMSON_MAX min SetCrimson
+		<-FIRE_RATE SetTimer0
+	endif
+	true ->needTarget
+	0 ->targetUnit
+	return #Don't fire when building, moving, or long wait timer is on
+endif
+
+if(<-needTarget)
+	@FindTarget
+endif
+
+if(<-targetUnit)
+	if(GetObjFacingAngle(Self "Cannon" <-targetPos) 1 lt)
+		@Fire
+	else
+		RotateObjTowards(Self "Cannon" <-targetPos 2)
+	endif
+endif
+
+:FindTarget
+	GetUnitsInRange(Self GetUnitPosition V3(0 1.1 0) add <-RANGE true false true 2 0 1) ->units
+	if(<-units !)
+		0 ->targetUnit
+		true ->needTarget
+		<-LONG_WAIT_TIME SetTimer1
+		SendMVerseMsg("target" <-trueGUID concat 0)
+		return
+	endif
+	
+	<-units[0] dup ->targetUnit
+	GetUnitPosition ->targetPos
+	if(<-*mverseOn)
+		SendMVerseMsg("target" <-trueGUID concat <-targetPos)
+	endif
+	false ->needTarget
+	RandInt(<-MIN_RETARGET_SHOTS <-MAX_RETARGET_SHOTS) 1 max ->shotsToRetarget
+
+:Fire
+	if(Self GetUnitAmmo <-AMMO_USE lt GetTimer0 ||)
+		return
+	endif
+	
+	#Create the bullet
+	<-targetPos V3(RandFloat 0.5 sub 3 mul RandFloat 0.5 sub 3 mul 0.5 add RandFloat 0.5 sub 3 mul) add ->initParams{"targetPos"}
+	<-bulletGUID Self "FirePos" 1 GetObjPosition <-initParams CreateUnit
+
+	<-FIRE_RATE SetTimer0
+	<-shotsToRetarget 1 sub dup ->shotsToRetarget
+	if(! <-targetUnit GetUnitDestroyed ||)
+		SendMVerseMsg("target" <-trueGUID concat 0)
+		true ->needTarget
+	endif
+	Self dup GetUnitAmmo <-AMMO_USE sub SetUnitAmmo
+
+:_UICallback
+	if(<-_DATA eq0)
+		Self 0 GetUnitUIState ->targetAC #For a future update, hopefully. 
+	endif
+
+:Once
+	true ->needTarget
+	<-DAMAGE_AMT <-AMMO_MULT mul ->AMMO_USE
+	"DAMAGE_AMT" <-DAMAGE_AMT "PROJ_SPEED" <-PROJ_SPEED "SHIELD_DESTROY_CHANCE" <-SHIELD_DESTROY_CHANCE "CRIMSON_AMT" <-CRIMSON_AMT "CRIMSON_MAX" <-CRIMSON_MAX Table ->initParams
+	RegisterForMsg("target" <-trueGUID concat "MVerseTarget")
+	if(<-*isMVerseHost !) #Disable the effects of the unit, while keeping the visuals active
+		0 ->DAMAGE_AMT
+		0 ->AMMO_USE
+		0 ->CRIMSON_AMT
+	endif
+
+:MVerseTarget
+	if(<-*isMVerseHost !)
+		<-_DATA ->targetPos
+	endif

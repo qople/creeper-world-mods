@@ -1,0 +1,171 @@
+# --Movement-- 6/23/2023 2:18:12 PM
+# Manages player-movable sleeper units
+
+$FOOTPRINT_X:3
+$FOOTPRINT_Z:3
+$MIN_CREEP:0.0
+$DAMPER_FREEZES:1
+$MISSILE_DAMAGE_MULT:0.667
+$SNIPER_TARGET:0 #Set to true to allow snipers to target.
+$CREEP_ONLY_MOVE:0 #Only allow movement to cells with creeper
+
+#NOTE: this will break if set on more than just the shield!
+$FIELD_RADIUS:0
+$FIELD_MAX_STRENGTH:0
+
+if(GetTimer0)
+	return
+endif
+
+if(Self GetUnitMoveCell pop gte0 Self GetUnitConstructing ||)
+	if(Self GetUnitMoveCell <-moveZ neq swap <-moveX neq ||)
+		if(<-mVerseSlave GetGameUpdateCount <-lastMoved sub 2 gt &&)
+			Self <-backupMove dup 600 mod swap 600 div SetUnitMoveCell
+		endif
+		if(<-noRaiseOnLand ! <-*mVerseHost &&)
+			<-moveX <-moveZ 1 add dup2 GetTerrain 1 add SetTerrain
+		endif
+		
+		Self GetUnitMoveCell dup2 ->moveZ ->moveX
+		if(<-*mVerseHost)
+			1 add dup2 GetTerrain dup ! ->noRaiseOnLand 1 sub SetTerrain
+		endif
+		SendMVerseMsg("MVerseMoved" <-trueGUID concat Self GetUnitMoveCell 600 mul add)
+		
+		if(<-lastInAir !) #On takeoff
+			@SetFieldActive(false)
+			Self V4(<-SNIPER_TARGET <-MISSILE_DAMAGE_MULT neq0 0 0) SetUnitSpecialTarget
+			Self dup GetUnitMaxHealth <-MISSILE_DAMAGE_MULT div SetUnitMaxHealth
+			Self dup GetUnitHealth <-MISSILE_DAMAGE_MULT div SetUnitHealth
+			
+			if(<-mverseSlave !)
+				Self true SetUnitSelected
+				cancel
+			endif
+		endif
+		true ->lastInAir
+	endif
+	return
+endif
+
+
+if(<-lastInAir) #The frame when the unit lands
+	0 ->lastInAir
+	Self V4(<-SNIPER_TARGET 0 0 0) SetUnitSpecialTarget
+	Self <-baseMaxHealth SetUnitMaxHealth
+	Self dup GetUnitHealth <-MISSILE_DAMAGE_MULT mul SetUnitHealth
+	@SetFieldActive(true)
+	Self false SetUnitDestroyUnevenLand
+	if(<-noRaiseOnLand ! <-*mVerseHost &&)
+		<-moveX <-moveZ 1 add dup2 GetTerrain 1 add SetTerrain
+	endif
+	Self true SetUnitDestroyUnevenLand
+	-1 ->moveX
+endif
+
+<-SHORT_WAIT_TIME SetTimer0
+
+#=============================
+
+:BuildComplete
+	@SetFieldActive(true)
+
+:DamperInRange
+	"damper" Self GetUnitPosition 25 false false false 0 0 0 GetUnits
+	"damper" <-moveX <-moveZ FromCell 25 false false false 0 0 0 GetUnits ||
+	
+:Once
+	Self GetUnitMaxHealth ->baseMaxHealth
+	-1 ->moveX
+	-1 ->moveZ
+	
+	if(-?*shieldList ! <-FIELD_MAX_STRENGTH &&)
+		<-FIELD_RADIUS 1 add dup neg 1 add do
+			<-FIELD_RADIUS 1 add dup neg 1 add do
+				i j V2
+				if(dup SqrMagnitude <-FIELD_RADIUS dup mul gt)
+					pop Vector0
+				else
+					dup Magnitude <-FIELD_RADIUS div 3 pow mul 
+				endif
+			loop
+		loop
+		List ->*shieldList
+		
+		#Send some data to let other game instances sync the fields themselves
+		# SendMVerseMSG("SetShieldList" <-FIELD_RADIUS <-FIELD_MAX_STRENGTH 2 ListN)
+	endif
+
+	if(<-*mVerseOn)
+		RegisterForMsg("MVerseMoved" <-trueGUID concat "MVerseMoved")
+	endif
+	
+:Awake
+	once
+		return
+	endonce
+	if(Self GetUnitConstructing ! Self GetUnitMoveCell pop lt0 &&)
+		false ->fieldDeployed
+		@SetFieldActive(true)
+	endif
+
+:Destroyed
+	if(Self GetUnitConstructing ! <-fieldDeployed &&)
+		@SetFieldActive(false)
+		false UseLegalUnitCells
+	endif
+	if(Self GetUnitMoveCell pop gte0 <-*mVerseHost &&)
+		<-moveX <-moveZ 1 add dup2 GetTerrain 1 add SetTerrain
+	endif
+
+:SetFieldActive
+	#Ignore erroneous function calls
+	->nextDeployed
+	if(<-nextDeployed <-fieldDeployed neq)
+		<-nextDeployed ->fieldDeployed
+	else
+		return
+	endif
+	
+	#Ignore the function call if this unit has no field
+	if(<-FIELD_MAX_STRENGTH eq0)
+		return
+	endif
+	
+	#Create the fields, one pushing AC outwards, the other pulling creeper inwards.
+	Self GetUnitCell <-*shieldList <-FIELD_RADIUS 2 mul 1 add <-FIELD_MAX_STRENGTH neg 0 1 <-fieldDeployed SetFieldRect #Creeper
+	Self GetUnitCell <-*shieldList <-FIELD_RADIUS 2 mul 1 add <-FIELD_MAX_STRENGTH 0 2 <-fieldDeployed SetFieldRect #AC
+	
+	SendMVerseMSG("DeployField" Self GetUnitCell FC 2 mul <-fieldDeployed add) #Combine cell and deployed values to only have to send a single int over the network
+
+:_Selected
+	if(<-CREEP_ONLY_MOVE <-_DATA &&)
+		true UseLegalUnitCells
+		false SetAllLegalUnitCells
+		RegisterForMsg("MSG_PreUpdate" "UpdateMove")
+	else
+		DeregisterForMsg("MSG_PreUpdate")
+		false UseLegalUnitCells
+	endif
+
+:UpdateMove
+	GetPointerTerrainCoords ->cursorZ ->cursorX
+	if(<-cursorX <-lastX neq <-cursorZ <-lastZ neq ||)
+		true UseLegalUnitCells
+		false SetAllLegalUnitCells
+		<-cursorZ 16 add <-cursorZ 15 sub do
+			<-cursorX 16 add <-cursorX 15 sub do
+				if(i j GetCreeper <-MIN_CREEP gt)
+					i j V2
+				endif
+			loop
+		loop
+		List true SetLegalUnitCells
+		<-cursorX ->lastX
+		<-cursorZ ->lastZ
+	endif
+	
+:MVerseMoved
+	Self <-_DATA dup 600 mod swap 600 div SetUnitMoveCell
+	<-_DATA ->backupMove
+	GetGameUpdateCount ->lastMoved

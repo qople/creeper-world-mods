@@ -1,0 +1,104 @@
+# --Shotgun-- 3/9/2024 5:59:15 PM
+#Comma separated, whitespace ignored.
+#List of all weapons added by this script
+$$weaponsAdded:"shotgun, rocket"
+ 
+#List of custom attributes those weapons should have on initialization
+#Custom attributes in an "other" field are always included. This only matters for script input vars.
+$$customAttributes:"NumPellets, SpreadAngle, SpreadSquish"
+ 
+#List stat vars here. Format as weaponAttributeName. weaponOther is supported.
+$shotgunNumPellets:10
+$shotgunSpreadAngle:8
+$shotgunSpreadSquish:0.5 #Multiplier to vertical spread
+$shotgunRate:20
+$shotgunProjSpeed:3
+$shotgunDmgDepth:0.3
+$shotgunDmgDist:5
+$shotgunDmgMaxCells:20
+$shotgunDmgIterations:3
+$shotgunMeshDmg:0.4
+$shotgunMeshDist:2
+$shotgunMaxRange:35
+
+$$baseBulletGUID:"d611b424-2ce0-4317-a1e8-c5097c840d29"
+$$crosshairGUID:"1ebfae39-22d7-415c-bd8f-19f14ab68503"
+
+:Once
+	@SetHiddenAttributes
+	@InitializeWeapons
+	"none" ->lastWeapon
+	RegisterForMsg("ItemCollected" "GetWeaponAttributes")
+	RegisterForMsg("WeaponFired" "Fire")
+	#Necessary if any new effects are added
+	RegisterForMsg("WeaponEffect" "DoCustomEffects")
+	
+	List("NumPellets" "SpreadAngle" "SpreadSquish") ->neededStats
+	@GetWeaponAttributes
+
+:Fire
+	#SetMsgButton(3 true <-Rate 0 0 0)
+	if(<-lastWeapon <-*activeWeapon dup ->lastWeapon neq)
+		@GetWeaponAttributes
+	endif
+	
+	if(<-NumPellets) #Shotgun style firing
+		"Player" "bulletPos" GetRegisteredScriptVar <-*playerPos Distance ->dist
+		<-NumPellets 0 do
+			GetRPLCamRotation ->baseRot
+			
+			#Polar offset from center
+			RandFloat tau mul ->forwardAngle
+			RandFloat <-SpreadAngle mul ->skewAngle
+			
+			<-baseRot.x <-forwardAngle sin  <-SpreadSquish mul <-skewAngle mul add ->baseRot.x
+			<-baseRot.y <-forwardAngle cos <-skewAngle mul add ->baseRot.y
+			
+			if(i eq0)
+				<-_DATA ->bullet
+				<-bullet <-*playerPos SetUnitPosition
+			else
+				CreateUnit(<-baseBulletGUID <-*playerPos 0) ->bullet
+			endif
+			<-bullet <-baseRot SetUnitRotation
+			<-bullet dup GetUnitPosition <-bullet GetUnitForward dup ->forward <-dist mul add dup ->pos SetUnitPosition
+			
+			#Override some settings on the bullets
+			Table("vel" <-forward "Path" 0 "pos" <-pos) ->initParams
+			<-bullet <-initParams SetUnitSettings
+			
+		loop
+	endif
+ 
+:SetHiddenAttributes
+	#Hidden Stats (Affect visuals, not balance)
+	#Options are Color, Trail, FireSound, FireVolume, HitSound, HitVolume,
+	#EffectName, EffectScale, Path
+	2 ->shotgunPath
+
+	V3(1 1 1) ->shotgunColor
+	V2(0 .4) ->shotgunTrail
+	0 ->shotgunPath
+	"Explosion_1" ->shotgunFireSound
+	0.7 ->shotgunFireVolume
+
+
+#Called whenever the ItemCollected message is sent.
+#Stores the attributes of myweapon to variables with matching names.
+#Note the variable names are Capitalized.
+:GetWeaponAttributes
+	#If you don't need all the attributes, feel free to replace this with a smaller list.
+	#<-*weaponAttributes{<-*activeWeapon} GetTableKeys ->neededStats
+	
+	<-neededStats GetListCount 0 do
+		<-neededStats[i] ->attribute
+		<-*weaponAttributes{<-*activeWeapon}{<-attribute} <-attribute ->!
+	loop
+ 
+#==============
+ 
+#Required for the weapon pack to work.
+:InitializeWeapons
+	Split(RemoveWhiteSpace(<-weaponsAdded) ",") ->weaponsAdded
+	RegisterScript(<-weaponsAdded[0])
+	SendMsg("Initialize" <-weaponsAdded[0])

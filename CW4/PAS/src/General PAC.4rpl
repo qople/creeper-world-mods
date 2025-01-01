@@ -1,0 +1,92 @@
+# --General PAC-- 12/1/2023 2:15:15 PM
+#Makes player units unselectable, manages rift lab objective, and anything else "generically PAC"
+$ENABLE_LAB_OBJECTIVE:1
+$MAKE_UNITS_UNSELECTABLE:1 #Applies only on game load
+
+$REDON_ON_UNIT_DESTROY:8
+$GREENAR_ON_UNIT_DESTROY:5
+$UNIT_DESTROY_REACTION_TIME:30 #Smaller numbers will be more expensive.
+
+$$maxCheckNum:20 #Limit on how many unit checks for construction/destruction per frame.
+
+$$cubeGUID:"d8574ed7-b6b9-4f1c-a386-503b61e38657"
+
+if(<-ENABLE_LAB_OBJECTIVE GetRiftLab -1 eq && GetEditMode ! &&)
+	5 true AcquireMissionObjective
+endif
+
+<-amt 0 do
+	if(<-index lt0 <-builtUnits ! ||)
+		<-builtUnits GetListCount dup 1 sub ->index <-UNIT_DESTROY_REACTION_TIME div 1 <-maxCheckNum clamp ->amt
+	else
+		<-builtUnits[<-index]
+		if(dup dup GetUnitDestroyed &&)
+			->unit
+			<-positions[<-index] ->pos
+			<-builtUnits <-index RemoveListElement
+			<-positions <-index RemoveListElement
+			if(<-*sleeperFactory gte0)
+				@CalcResources 2 ListN ->list #->greenar ->redon
+				2 0 do
+					<-list[i] 0 do
+						<-cubeGUID <-pos V3(RandFloat 0.5 sub 3 mul RandFloat 3 mul RandFloat 0.5 sub 3 mul) add
+						TableN(
+							"destination" <-*sleeperFactory "CubeTarget" 1 GetObjPosition
+							"type" j
+						2)
+						CreateUnit pop
+					loop
+				loop
+			endif
+		else
+			GetUnitPosition ->positions[<-index]
+		endif
+		<-index 1 sub ->index
+	endif
+loop
+<-amt2 0 do
+	if(<-index2 lt0)
+		<-*allUnits GetListCount dup 1 sub ->index2 30 div 1 <-maxCheckNum clamp ->amt2
+	else if(<-*allUnits[<-index2] GetUnitDestroyed)
+		<-*allUnits <-index2 RemoveListElement
+	else if(<-*allUnits[<-index2] GetUnitConstructing ! )
+		<-*allUnits <-index2 dup2 GetListElement dup <-builtUnits swap AppendToList GetUnitPosition <-positions swap AppendToList RemoveListElement
+	endif endif  endif
+	<-index2 1 sub ->index2
+loop
+
+:CalcResources
+	1
+	<-REDON_ON_UNIT_DESTROY 2 mul 2 do
+		RandInt(0 2) add
+	loop
+	1
+	<-GREENAR_ON_UNIT_DESTROY 2 mul 2 do
+		RandInt(0 2) add
+	loop
+
+:GameLoaded
+	#Disable all player units' selectability (GAME LOAD ONLY)
+	once
+		if(GetEditMode ! <-MAKE_UNITS_UNSELECTABLE &&)
+			GetUnits(Vector0 1000 false false false 2 0 0) ->units
+			<-units 0 do
+				<-units[i] false SetUnitSelectable
+			loop
+		endif 
+	endonce
+
+:Once
+	1 ->amt
+	1 ->amt2
+	CreateList ->*allUnits #Created units should be added to this list by autopilot/autobuild
+	CreateList ->positions
+	CreateList ->builtUnits 
+	
+	GetUnits("" Vector0 1000 false false false 2 0 1) ->*allUnits
+	-1 <-*allUnits 1 sub do
+		if(<-*allUnits[i] GetUnitType "tower" eq)
+			<-*allUnits i RemoveListElement
+		endif
+	loop
+	

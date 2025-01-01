@@ -1,0 +1,5 @@
+# --HideOnLoad-- 3/21/2021 6:15:34 PM
+$objName:"cross"
+SetObjActive(Self <-objName 1)
+:Awake
+	SetObjActive(Self <-objName 0)

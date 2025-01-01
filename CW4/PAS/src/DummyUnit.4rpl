@@ -1,0 +1,55 @@
+# --DummyUnit-- 6/27/2023 1:21:19 PM
+
+$$GUID:"" #Set by lab on creation
+
+if(GetTimer0)
+	return
+else
+	10 SetTimer0
+endif
+
+if(Self GetUnitConstructing)
+	#Sync unit construction
+	"Construct" if(<-isMVerseSlave StringLength neq0) <-isMVerseSlave else Self GetUnitTrueGUID endif concat 
+	<-constructAmt Self GetUnitConstructingData[0] dup ->constructAmt sub neg SendMVerseMsg
+else
+	<-unit Self GetUnitHealth SetUnitHealth
+	if(<-unit GetUnitDestroyed)
+		Self 1 1 1 DestroyUnit
+	endif
+endif
+
+:BuildComplete
+	<-GUID Self GetUnitPosition 0 CreateUnit ->unit
+	<-unit Self GetUnitMaxHealth SetUnitMaxHealth
+
+#Note: this system of sending destroy sync messages results in extra network messages being sent. It doesn't cause any unwanted behavior though, so I'm leaving it how it is.
+:Destroyed
+	"Destroy" if(<-isMVerseSlave StringLength neq0) <-isMVerseSlave else Self GetUnitTrueGUID endif concat 0 SendMVerseMsg
+	<-unit 0 0 0 DestroyUnit
+	<-unitAmounts{<-GUID} 1 sub ->unitAmounts{<-GUID}
+	
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	Self "crystal" dup <-GUID eq SetObjActive
+	Self "stash" dup <-GUID eq SetObjActive
+	0 ->constructAmt
+	if(<-isMVerseSlave -1 eq)
+		"" ->isMVerseSlave
+		"Construct" Self GetUnitTrueGUID concat "SyncBuild" RegisterForMsg
+		"Destroy" Self GetUnitTrueGUID concat "SyncDestroy" RegisterForMsg
+		#Create slave units in other instances to sync the unit
+		"CreateMVerseSlave" Self GetUnitType Self GetUnitPosition "GUID" <-GUID "isMVerseSlave" Self GetUnitTrueGUID 2 TableN 3 ListN SendMVerseMsg
+	else		
+		"Construct" <-isMVerseSlave concat "SyncBuild" RegisterForMsg
+	endif
+	10 SetTimer0
+
+:SyncBuild
+	<-_DATA ->amt
+	Self <-amt ConstructUnit
+	<-constructAmt <-amt add ->constructAmt
+	
+:SyncDestroy
+	Self 0 0 0 DestroyUnit
+	

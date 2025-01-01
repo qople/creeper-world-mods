@@ -1,0 +1,127 @@
+# --Bertha-- 6/26/2023 9:54:06 AM
+
+$DAMAGE_DIST:4
+$DAMAGE_DEPTH:8
+$AMMO_USE:2.0
+$ROTATE_SPEED:1.0
+$PROJ_HEIGHT:50
+$PROJ_SPEED:1.5
+$FIRE_RATE:1800
+$LONG_WAIT_TIME:150 #Time to wait before trying again if no valid target is found
+$MAX_TARGETS:50 #Chooses from the closest [this many] units to target
+$MIN_TARGETS:25 #Excluding the closest [this many] units
+
+#Terrain crater settings
+$CRATER_RADIUS:9
+$CRATER_RING_SIZE:1
+$CRATER_RING_TIME:10
+$TERRAIN_RAISE_CHANCE:0.01
+$TERRAIN_RAISE_EXP:1.5
+
+$$bulletGUID:"1394d1cd-2e9c-46af-b43f-1b0bfefbe1a8"
+
+if(GetTimer2 eq0)
+	Self false SetUnitSpecifiedTargetShowPath
+endif
+
+if(Self GetUnitConstructing GetTimer1 ||)
+	return #Don't fire when building, or long wait timer is on
+endif
+
+if(<-needTarget)
+	@FindTarget
+endif
+
+if(<-targetUnit)
+	Self true SetUnitPopupEnabled
+	Self "Firing in " GetTimer0 GetTimeString concat SetUnitPopupText1
+	RotateObjTowards(Self "Arm" <-nearPos <-ROTATE_SPEED)
+	if(GetObjFacingAngle(Self "Arm" <-nearPos) 1 lt GetTimer0 eq0 &&)
+		Self "Must absorb " <-ammoUse Self GetUnitAmmo sub " creep to fire" concat3 SetUnitPopupText1
+		@Fire
+	endif
+endif
+
+:FindTarget
+	GetUnitsInRange(Self GetUnitPosition 1000 false false false 2 0 1) ->units
+	<-units GetListCount <-MIN_TARGETS sub 0 max <-MIN_TARGETS min ->minTargets
+	<-MAX_TARGETS <-units GetListCount min ->targets
+	<-targets <-minTargets sub 0 do
+		RandInt(<-minTargets <-targets) ->index
+		<-units[<-index] ->unit
+		if(<-unit @IsTargetValid)
+			<-unit ->targetUnit
+			false ->needTarget
+			break
+		else
+			<-units <-index RemoveListElement
+		endif
+		<-targets 1 sub ->targets
+	loop
+	
+	if(<-needTarget)
+		0 ->targetUnit
+		true ->needTarget
+		<-LONG_WAIT_TIME SetTimer1 #Pauses the entire script
+		return
+	endif
+	
+	<-targetUnit GetUnitPosition ->targetPos
+	Self <-targetPos SetUnitSpecifiedTarget
+	"EggBrave" 1 Self GetUnitPosition PlaySoundAtPosition
+	Self true SetUnitSpecifiedTargetShowPath
+	90 SetTimer2
+	false ->needTarget
+	@CalculateBallistics
+
+:IsTargetValid
+	GetRiftLab neq
+
+:CalculateBallistics
+	Self "Arm" 1 GetObjPosition ->armPos
+	BallisticArcLateral(<-armPos <-PROJ_SPEED <-targetPos <-PROJ_HEIGHT) ->travelTime ->gravity ->fireVel
+	BallisticArcPos(<-armPos <-fireVel <-gravity 0.1) ->nearPos
+
+:Fire
+	if(Self GetUnitAmmo <-ammoUse gte)
+		Self false SetUnitPopupEnabled
+		"BerthaFire" 1 Self GetUnitPosition PlaySoundAtPosition
+		true ->needTarget
+		<-FIRE_RATE SetTimer0
+		<-targetPos ->initParams{"targetPos"}
+		<-travelTime ->initParams{"travelTime"}
+		<-gravity ->initParams{"gravity"}
+		<-fireVel ->initParams{"firevel"}
+		<-bulletGUID <-armPos <-initParams CreateUnit
+		Self dup GetUnitAmmo <-ammoUse sub SetUnitAmmo
+		<-FIRE_RATE 2 div SetTimer1
+		Self ClearUnitSpecifiedTarget
+	endif
+
+:BuildComplete
+	<-FIRE_RATE SetTimer0
+
+:Once
+	Self <-PROJ_HEIGHT SetUnitSpecifiedTargetPathHeight
+	#List of how many cells are inside a circle with radius of the index.
+	List(1 9 21 37 69 97 137 177 225 293 349 421 489 577 665 749 861 973 1085 1201 1313 1457 1597 1741 1885 2053 2217 2377 2561 2733 2933 3125 3313 3521 3745 3969 4197 4421 4669 4905 5169 5417 5681 5957 6221 6509 6785 7089 7393 7705)
+			->cellsInRadius
+	
+	<-DAMAGE_DEPTH <-cellsInRadius[<-DAMAGE_DIST] mul <-AMMO_USE mul ->ammoUse
+	true ->needTarget
+	
+	#Create the parameter table for the bullet
+	"DAMAGE_DIST" "DAMAGE_DEPTH" "PROJ_HEIGHT" "CRATER_RADIUS" "CRATER_RING_SIZE" "CRATER_RING_TIME" "TERRAIN_RAISE_CHANCE" "TERRAIN_RAISE_EXP" List ->vars
+	<-vars 0 do
+		<-vars[i] dup <-!
+	loop
+	"targetPos" Vector0 Table ->initParams
+
+:_Selected
+	if(<-_DATA)
+		Self true SetUnitSpecifiedTargetShowPath
+		600 SetTimer2
+	else
+		0 SetTimer2
+	endif
+	

@@ -1,0 +1,203 @@
+# --Lab-- 6/23/2023 4:19:59 PM
+$NULLIFIER_DAMAGE:45
+
+$towerChecksPerUpdate:4 #Higher numbers are faster, but decrease performance
+$towerPlacementSpeed:10 #Higher numbers are faster, but result in less efficient networks
+$towerSpacing:17 #Minimum distance between placed towers (Max distance is always 20)
+$$towerGUID:"bb6bc715-2a73-475d-afa9-05a0a27788b9"
+
+#Nullifier damage
+if(Self GetUnitSuppressCount 29 eq)
+	GetUnits("nullifier" Self GetUnitPosition 9 false false false 2 1 1) ->nullifiers
+	<-nullifiers 0 do
+		<-nullifiers[i] ->nulli
+		if(<-nulli GetUnitConstructing ! <-nulli GetUnitAmmo 24 gt && <-nulli GetUnitEnabled && <-nulli GetUnitArmed &&)
+			<-nulli GetUnitPosition <-nulli GetUnitFireOffset add Self CreateSniperShot #Simplest way to make a beam from the nullifier to us
+			<-nulli 0 0 0 DestroyUnit
+			SendMVerseMsg("MVerseDamaged" Self "CoreSleeper.4rpl" "trueGUID" GetScriptVar concat <-NULLIFIER_DAMAGE 0.2 sub)
+			Self <-NULLIFIER_DAMAGE 0.2 sub DamageUnit
+		endif
+	loop
+endif
+
+if(<-towerGUID GetUnitCount <-towerGUID GetUnitBuildLimit lt Self 2 GetUnitUIState ! && <-mVerseSlave ! &&)
+	@BuildTower
+endif
+
+:Once
+	CreateList ->nullifiers
+	if(-?sleeperAnimations !)
+		Self 0 GetUnitUIState ! ->*sleeperAnimations 
+		Self 1 GetUnitUIState ! ->*sleeperConnections 
+	else
+		Self 0 <-*sleeperAnimations ! SetUnitUIState
+		Self 1 <-*sleeperConnections ! SetUnitUIState
+	endif
+	
+	Self true SetUnitGrowsMesh
+	
+	CreateList ->towers
+	CreateTable ->*sleeperemptyTowers
+	@CellsInFloodFillRange(<-towerSpacing) ->towerStartIndex
+	<-towerSpacing dup mul ->sqrSpacing
+	GetMapSize ->mapZ ->mapX
+	<-mapX 20 div 1 add ->xRegions
+	<-mapZ 20 div 1 add ->zRegions
+	
+	<-xRegions <-zRegions mul 0 do
+		CreateList
+	loop
+	List ->*sleepertowerRegions
+
+	@InitTowers
+	Self dup ->ecoFocusUnit GetUnitPosition @ChangeEcoFocus
+	
+:Awake
+	if(<-mVerseSlave !)
+		Self ->*sleeperLab
+	endif
+	Self false SetMVerseCreatesUnitGhost
+	Self true SetUnitOutlineEnabled
+	Self V4(1 0 0 0.5) SetUnitOutlineColor
+
+:Destroyed
+	if(<-mVerseSlave !)
+		-1 ->*sleeperLab
+	endif
+	if(GetEditMode !)
+		Self GetUnitType 0 SetUnitBuildLimit
+		Self GetUnitType "UNAVAILABLE" 4 SetCMODPlayerMenuName
+		SendMsg("LabDestroyed" 0)
+	endif
+
+:_UICallback
+	if(<-_DATA eq0)
+		Self 0 GetUnitUIState ! ->*sleeperAnimations
+		SendMsg("SleeperAnimations" <-*sleeperAnimations)
+	endif
+	if(<-_DATA 1 eq)
+		Self 1 GetUnitUIState ! ->*sleeperConnections
+		SendMsg("UpdateConnections" <-*sleeperConnections)
+	endif
+
+:BuildTower
+	<-towerChecksPerUpdate 0 do
+		<-prioCells[<-tIndex] @CellTowerValid <-placeSuccess max ->placeSuccess
+		if(<-placeSuccess 2 eq)
+			<-x <-z @CreateTower
+			break
+		endif
+		<-tIndex <-towerPlacementSpeed add dup ->tIndex
+		<-prioCells GetListCount gte if
+			@CycleTower
+			break
+		endif
+	loop
+
+:CycleTower
+	#Find a new build target
+	if(<-towers)
+		<-towerTurbo 1 sub 0 max ->towerTurbo
+		if(<-nextTurbo)
+			<-nextTurbo ->towerTurbo
+			0 ->nextTurbo
+		endif
+		<-towers 0 do
+			<-towers PopList dup ->tower
+			if(GetUnitDestroyed)
+				#Destroys the table reference and dummy unit connected to that tower
+				<-*sleeperemptyTowers <-tower
+				#dup2 GetTableElement true true true DestroyUnit
+				RemoveTableElement
+			else if(<-*sleeperemptyTowers{<-tower})
+				<-tower dup ->ecoFocusUnit GetUnitPosition @ChangeEcoFocus
+				break
+			endif endif
+		loop
+	else
+		#Refill the list when empty
+		<-*sleeperemptyTowers GetTableKeys ->towers
+	endif
+	
+	if(<-placeSuccess !)
+		<-*sleeperemptyTowers <-ecoFocusUnit RemoveTableElement
+	endif
+	
+	<-towerStartIndex GetGameUpdateCount <-towerPlacementSpeed mod add ->tIndex
+	false ->placeSuccess
+	
+#Returns 0 if a tower can never be placed there, a 2 if placement is possible now,
+#and 1 if placement will be possible if units or creeper move
+:CellTowerValid
+	EV2 dup2 dup2 ->z ->x GetTerrain
+	if
+		@TowerCheck
+		if(dup 400 lt swap <-sqrSpacing gte &&)
+			if(<-x <-z GetCreeper gt0 <-x <-z GetCellOccupiedCount eq0 &&)
+				2 return
+			else
+				1 return
+			endif
+		else
+			pop
+		endif
+	else
+		pop pop
+	endif
+	false
+	
+:ChangeEcoFocus
+	dup <-ecoFocusPos neq if
+		->ecoFocusPos
+		FloodFillTerrain(<-ecoFocusPos ToCell 0 21 @CellsInFloodFillRange(20)) ->prioCells
+	else
+		pop
+	endif
+	return
+
+:CellsInFloodFillRange
+	dup dup mul 2 mul swap 2 mul add
+
+:Region
+	20 div <-xRegions mul swap 20 div add
+
+#Stores information on nearby towers and their distances 
+#Takes a cell coordinate, returns the squared distance to the nearest tower
+:TowerCheck
+	dup2 GetTerrainVector ->pos
+	#Find the region for this coordinate
+	20 div swap 20 div ->regX
+	999
+	
+	swap dup 2 add swap 1 sub do
+		<-regX 2 add <-regX 1 sub do
+			<-*sleepertowerRegions[i j <-xRegions mul add] dup ->list
+			0 do
+				<-list[i] GetUnitPosition <-pos sub SqrMagnitude min
+				if(dup <-sqrSpacing lt)
+					return
+				endif
+			loop
+		loop
+	loop
+
+#Creates a tower on a given cell
+:CreateTower
+	->towerZ ->towerX
+	CreateUnitOnTerrain(<-towerGUID <-towerX <-towerZ 0) dup ->placedTower
+	<-towers <-tower AppendToList	
+	@CycleTower 
+
+:InitTowers
+	<-towerGUID 0 GetUnitsByType ->towers
+	<-towers Self AppendToList
+	<-towers 0 do
+		<-*sleepertowerRegions[<-towers[i] GetUnitCell @Region] <-towers[i] AppendToList
+	loop
+	
+	<-towers 0 do	
+		if(<-towerGUID <-towers[i] GetUnitPosition 12 false true false 0 0 0 GetUnits GetListCount 4 lt)
+			true ->*sleeperemptyTowers{<-towers[i]}
+		endif
+	loop
+	

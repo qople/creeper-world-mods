@@ -1,0 +1,917 @@
+# --GenerateMap-- 1/11/2024 7:21:04 AM
+# PAS map generator.
+# Terrain settings
+# Uses fractal perlin noise.
+$START_SEED:1
+$TERRAIN_FEATURE_SIZE:250 #Scale of the largest noise layer
+$OFFSET_X:-300
+$OFFSET_Z:256
+
+#The more fractal layers there are, the more likely it is that the function will accidentally bypass these limits.
+#They will still affect terrain gen in the same way though.
+$MIN_HEIGHT:-27 #Can be negative, for higher chance of void
+$MAX_HEIGHT:28
+
+$FRACTAL_LAYERS:10
+$LAYER_SIZE_MULT:0.75
+$LAYER_EFFECT_MULT:0.75
+$ALLOW_OVER_20_HEIGHT:0 #WARNING: EXTREME VISUAL ARTIFACTS. TURN OFF BLOOM!
+$INTERPOLATION_TYPE:1 #0:linear, 1:cubic, 2:quintic (Higher degrees of interpolation are generally smoother, but slightly slower)
+
+
+#Map gen settings
+#Seeds for these are also affected by the global seed
+$GREENAR_SEED:0.33
+$GREENAR_SCALE:125
+
+$REDON_SEED:0.2
+$REDON_SCALE:75
+
+$BLUITE_SEED:0.8
+$BLUITE_SCALE:75
+
+#Resource terrain patches
+$RESOURCE_SPACING:100
+$RESOURCE_SIZE:15
+$RESOURCE_SEED:0.3
+
+$RADIUS:20
+$HEIGHT:16
+$STEP_HEIGHT:6
+$STEP_WIDTH:3
+
+if(GetLastExecutionCount 10,000,000 eq)
+	4 ->phase #Error catch
+endif
+
+if(<-phase 5 lt GetEditMode ! && IsADAMessageShowing GetMissionScanComplete ! || ! &&)
+	cancel #Don't let the player build while the map is generating.
+endif
+
+switch
+	case(<-phase -1 eq) #Wait for seed input/choose random seed
+		@WaitForStart
+	endcase
+	
+	case(<-phase 0 eq)
+		@FindSeed
+	endcase
+
+	case(<-phase 1 eq) #Generate terrain (includes finding new seeds)
+		@DoTerrainGeneration
+	endcase 
+
+	case(<-phase 2 eq) #Add terrain features and units to the terrain
+		@DoUnits
+	endcase 
+
+	case(<-phase 3 eq) #Place lab, ern portal, and the start zone, then tell autopilot to cache map data
+		@FinishGen
+	endcase
+
+	case(<-phase 4 eq) #Generation is done, unlock the game
+		@UnlockGame
+	endcase
+	
+	case(<-phase 5 eq) #Game is running, show the seed on pause
+		@CheckPause
+	endcase
+	
+	#Special logic to allow canyons to be placed over several updates, getting around the opcode limit.
+	#This happens during phase 2, and returns back to it once it is done.
+	case(<-phase -2 eq)
+		@GenerateCanyon
+	endcase
+
+endswitch
+
+:CheckPause
+	if(GetPause)
+		"Seed:" <-startSeed concat
+		if(GetGameUpdateCount)
+			" (" <-*autopilotDifficultySetting ")" concat4
+		endif
+		
+		SetCustomObjectiveText
+	else
+		if(<-*playingAsHumans)
+			SetCustomObjectiveText("Eradicate the Sleeper")
+		else
+			SetCustomObjectiveText("Destroy the Rift Lab")
+		endif
+	endif
+
+:WaitForStart
+	if(IsADAMessageShowing GetMissionScanComplete ! ||)
+		return
+	endif
+	once
+		CloseGameMessage(true)
+		ShowGameMessage("Prompt" "" "" true "")
+		Null ->enteredSeed
+	endonce
+	10 0 do
+		if(GetKeyDown("Alpha" i concat false))
+			once
+				0 ->enteredSeed
+			endonce
+			<-enteredSeed 10 mul i add 10,000,000 mod ->enteredSeed
+			cancel #num keys might trigger a build, so stop that.
+		endif
+	loop
+	if(GetKeyDown("Backspace" false))
+		<-enteredSeed 10 div ->enteredSeed
+		if(<-enteredSeed eq0)
+			Null ->enteredSeed
+			SetGameMessageText(0 "This level uses procedurally generated maps. Press Enter to generate a random map.
+
+If you have a seed you'd like to enter yourself (numbers only), type it in before pressing enter.")
+		endif
+	endif
+	if(<-enteredSeed IsNull !)
+		SetGameMessageText(0 "Entering a seed: " <-enteredSeed concat)
+	endif
+	if(GetKeyDown("Return" 1))
+		if(<-enteredSeed IsNull)
+			ElapsedTime AsInt 10,000,000 mod 
+		else
+			<-enteredSeed
+		endif
+		@SetUpGeneration
+		# if(GetEditMode !)
+			GetRiftLab V3(-1000 -100 0) SetUnitPosition
+			GetERNPortal V3(-1000 -100 0) SetUnitPosition
+		# endif
+		0 ->phase
+	endif
+
+:SetUpGeneration
+	dup ->*randSeed ->startSeed
+	<-*randSeed print
+	@GlobalRandFloat 300 mul 300 add AsInt ->OFFSET_X
+	@GlobalRandFloat 300 mul 300 add AsInt ->OFFSET_Z
+	@GlobalRandFloat 128.0 mul ->randOffsetX
+	@GlobalRandFloat 128.0 mul ->randOffsetZ
+	<-algorithms @GlobalRandFloat <-algorithms GetListCount mul AsInt GetListElement ->thisAlgorithm
+	
+	<-thisAlgorithm{"SetupFunction"} ->setupFunction
+	<-thisAlgorithm{"GeneratorFunction"} ->generatorFunction
+	<-thisAlgorithm{"SeedCheckFunction"} ->seedCheckFunction
+	<-thisAlgorithm{"FeatureNames"} ->featureList
+	<-thisAlgorithm{"FeatureScales"} ->featureScales
+	<-thisAlgorithm{"FeatureSeeds"} ->featureSeeds
+	
+	<-setupFunction RefCall
+	
+	20 0 do
+		CreateList
+	loop
+	List ->sortedTerrain
+	0 ->cellsChecked
+	0 ->maxTerrain
+	0 ->voidTiles
+	0 ->voidPortion
+	<-TERRAIN_FEATURE_SIZE ->size
+	1 ->mult
+	1 ->scaleMult
+	0 ->distance
+	0 ->currentLayer
+	0 ->index
+	<-mapSize 0 do
+		0.0
+	loop
+	List ->terrainFloats
+
+:FindSeed
+	SetGameMessageText(0 "Finding a good seed: Attempt " <-attempts concat ", " <-index <-mapSize AsFloat div 100 mul AsInt "%" concat4)
+	if(<-index <-mapSize gte)
+		<-attempts 1 add ->attempts
+		
+		0 ->index
+		if(<-seedCheckFunction RefCall)  #Find a new seed
+			1 ->phase
+		else
+			<-startSeed 1 add @SetUpGeneration
+		endif
+		return
+	endif
+	
+	ElapsedTime ->startTime
+	99999 0 do
+		<-index UFC <-generatorFunction RefCall AsInt ->terrain
+		if(<-terrain lte0)
+			<-voidTiles 1 add ->voidTiles
+		else
+			<-terrain AsInt <-maxTerrain max ->maxTerrain
+		endif
+		<-index 25 add ->index
+		<-cellsChecked 1 add ->cellsChecked
+		if(ElapsedTime <-startTime sub 25 gt <-index <-mapSize gte ||)
+			return
+		endif
+	loop
+
+:BaseCheck
+	<-voidTiles <-cellsChecked AsFloat div ->voidPortion
+	<-voidPortion 0.5 lt
+
+:IslandCheck
+	<-voidTiles <-cellsChecked AsFloat div ->voidPortion
+	<-voidPortion 0.7 lt
+
+:DoTerrainGeneration
+	#MSG button with progress
+	SetGameMessageText(0 "Generating Terrain: " <-index <-mapSize AsFloat div 100  mul 1 round "%" concat3)
+	
+	#Terrain is generated one layer at a time. This is slower, but it looks cooler, and shows off what it's doing.
+	if(<-index <-mapSize gte)
+		0 ->index
+		2 ->phase
+		return
+	endif
+	
+	ElapsedTime ->startTime
+	99999 0 do
+		<-index dup <-mapX mod swap <-mapX div <-generatorFunction RefCall AsInt ->terrain	
+		#if(<-terrain 20 lt <-ALLOW_OVER_20_HEIGHT ! ||)
+		#if(<-terrain gt0)
+			<-coordX <-coordZ <-terrain 0 20 clamp SetTerrain
+		#endif
+		#else
+		#	<-terrain 255 min ->terrain
+		#	while <-coordX <-coordZ GetTerrain <-terrain neq repeat
+		#		SetTerrainInRange(<-coordX <-coordZ <-terrain dup 0 false 1)
+		#	endwhile
+		#endif
+		
+		<-sortedTerrain[<-terrain AsInt 0 max] <-index AppendToList
+
+		if(<-terrain gt0)
+			@AddResource
+		endif
+		<-index 1 add ->index
+		if(ElapsedTime <-startTime sub 25 gt <-index <-mapSize gte ||)
+			return
+		endif
+	loop
+
+:BaseGenerator
+	->coordZ ->coordX 
+	<-TERRAIN_FEATURE_SIZE <-scaleMult 1 max div ->size
+	1 ->mult
+	0
+	<-FRACTAL_LAYERS 0 do
+		<-coordX <-OFFSET_X sub <-coordZ <-OFFSET_Z sub <-size @PerlinNoiseValue <-mult mul add
+		<-size <-LAYER_SIZE_MULT mul ->size
+		<-mult <-LAYER_EFFECT_MULT mul ->mult
+	loop
+	@ToTerrain
+
+:ToTerrain
+	0.5 mul 0.5 add <-scale mul <-MIN_HEIGHT add
+
+:DoUnits
+	SetGameMessageText(0 "Adding terrain features.")
+	once
+		0 ->featureIndex
+		@SetUpFeatureGen
+	endonce
+	
+	ElapsedTime ->startTime
+	99999 0 do
+		<-cellX <-cellZ <-featureScale <-featureSeed @GetVoronoiCoord ->vorZ ->vorX
+		if(<-vorX <-vorZ V2 IsV2InMap)
+			<-vorX <-vorZ <-featureCall RefCall
+			if(<-phase lt0)
+				return
+			endif
+		endif
+		
+		@IncrementCell
+
+		if(ElapsedTime <-startTime sub 25 gt)
+			return
+		endif
+	loop
+
+:IncrementCell
+	<-cellX 1 add ->cellX
+	if(<-cellX <-maxX eq)
+		<-minX ->cellX
+		<-cellZ 1 add ->cellZ
+		if(<-cellZ <-maxZ eq)
+			<-featureIndex 1 add ->featureIndex
+			if(<-featureIndex <-featureList GetListCount lt)
+				@SetUpFeatureGen
+			else
+				3 ->phase
+				return
+			endif
+		endif
+	endif
+
+:SetUpFeatureGen
+	<-featureList[<-featureIndex] ->featureCall
+	<-featureScales[<-featureIndex] ->featureScale
+	<-featureSeeds[<-featureIndex] ->featureSeed
+	
+	#Find the range of cells we have to check for this feature
+	<-OFFSET_X <-featureScale div 1 sub ->minX
+	<-mapX <-OFFSET_X add <-featureScale div 1 add ->maxX
+	<-OFFSET_Z <-featureScale div 1 sub ->minZ
+	<-mapZ <-OFFSET_Z add <-featureScale div 1 add ->maxZ
+	<-minX ->cellX
+	<-minZ ->cellZ
+
+:FinishGen
+	if(<-placed !)
+		#Place the rift lab and ern portal
+		-1 21 do
+			if(<-sortedTerrain[i] GetListCount gt0)
+				false ->canBuild
+				10 0 do
+					<-sortedTerrain[j] @GlobalRandFloat <-sortedTerrain[j] GetListCount mul floor GetListElement UFC ->labZ ->labX
+					<-labX <-labZ 7 7 10,000 @GetNearestBuildCell ->labZ ->labX
+					if(<-canBuild)
+						break
+					endif
+				loop
+				if(<-canBuild !) #Clear space to put the lab
+					<-sortedTerrain[i] @GlobalRandFloat <-sortedTerrain[i] GetListCount mul floor GetListElement UFC ->labZ ->labX
+					<-labX <-labZ GetTerrain ->centerTerrain
+					<-labZ 4 add <-labZ 3 sub do
+						<-labX 4 add <-labX 3 sub do
+							i j <-centerTerrain SetTerrain
+						loop
+					loop
+					break
+				endif
+				GetRiftLab <-labX <-labZ true SetUnitCell
+				<-labZ 4 add <-labZ 3 sub do
+					<-labX 4 add <-labX 3 sub do
+						i j 1 SetCellOccupiedCount
+					loop
+				loop
+				false ->canBuild
+				<-labX <-labZ 7 7 10,000 @GetNearestBuildCell ->ernZ ->ernX
+				if(<-canBuild !) #Clear space for the ern portal
+					<-terrain @GlobalRandFloat <-terrain GetListCount mul floor GetListElement EV2 ->ernZ ->ernX
+					<-ernX <-ernZ GetTerrain ->centerTerrain
+					<-ernZ 4 add <-ernZ 3 sub do
+						<-ernX 4 add <-ernX 3 sub do
+							i j <-centerTerrain SetTerrain
+						loop
+					loop
+				endif
+				GetERNPortal <-ernX <-ernZ true SetUnitCell
+				SendMsg("Autopilot_ForceCache" 0) #Start the cache
+				true ->placed
+				break
+			endif
+		loop
+		
+		#Find a good starting spot for sleeper
+		
+		#Start by checking the farthest cell from the rift lab on the whole map
+		false ->foundCell
+		FloodFillTerrain(GetRiftLab GetUnitCell 0 21 99999) ReverseList ->cells
+		
+		<-cells GetListCount 100 div 0 do
+			<-cells[i 100 mul] EV2 GetTerrain gt0 if
+				FloodFillTerrain(<-cells[i 100 mul] EV2 2 21 2500) GetListCount 2500 gte if
+					true ->foundCell
+					<-cells[i 100 mul] ->farPos
+					break
+				endif
+			endif
+		loop
+		
+		#If that doesn't work, start the sleeper at the farthest point of terrain directly connected to the lab, with no void in between them.
+		# if(<-foundCell !)
+			FloodFillTerrain(GetRiftLab GetUnitCell 2 21 99999) dup GetListCount 2 sub dup trace GetListElement ->floodPos
+		# endif
+		
+		if(<-farPos GetRiftLab GetUnitCell V2 Distance <-floodPos GetRiftLab GetUnitCell V2 Distance gt <-floodPos IsV2InMap ! ||)
+			"farPos" <-farPos trace2
+			<-farPos ->startPos
+		else
+			"floodPos" <-floodPos trace2
+			<-floodPos ->startPos
+		endif
+		<-startPos " is the start" concat print
+		
+		<-startPos EV2 2 21 2500 FloodFillTerrain ->startCells
+		<-startCells 0 do
+			<-startCells[i] EV2 0.1 false SetCreeper
+		loop
+		
+		<-startCells @GlobalRandFloat <-startCells GetListCount mul AsInt GetListElement ->cell
+		"greenarmother" <-cell EV2 GetTerrainVector 100 false false false 0 0 0 GetUnits [0] 1 1 1 DestroyUnit
+		"greenarmother" <-cell EV2 0 CreateUnitOnTerrain
+		
+		<-startCells @GlobalRandFloat <-startCells GetListCount mul AsInt GetListElement ->cell
+		"resourcered" <-cell EV2 GetTerrainVector 100 false false false 0 0 0 GetUnits [0] 1 1 1 DestroyUnit
+		"resourcered" <-cell EV2 0 CreateUnitOnTerrain
+		
+		<-startCells @GlobalRandFloat <-startCells GetListCount mul AsInt GetListElement EV2 dup2 GetTerrain ->startTerrain ->startZ ->startX
+		
+		<-startZ 4 add <-startZ 3 sub do
+			<-startX 4 add <-startX 3 sub do
+				i j <-startTerrain SetTerrain
+				i j 0.1 false SetCreeper
+			loop
+		loop
+	endif
+
+:UnlockGame
+	<-startSeed
+	ClearLocals
+	->startSeed
+	5 ->phase
+	CloseGameMessage(false)
+	ShowGameMessage("Prompt" "Close" "" true "CloseMsg")
+	SetGameMessageText(0 "Map gen complete with final seed " <-startSeed ". You may need to disable smooth creeper, move the camera off map, and then back on, for your starting creeper patch to render." concat3)
+	SendMsg("MapGenComplete" 0)
+	
+:CloseMsg
+	true CloseGameMessage
+	# PlaySound("Notify" 1)
+	# SetMSGButton(0 false "" V4(1 1 1 1) "empty" "")
+	
+:AddResource
+	->coordZ ->coordX
+	
+	if(<-coordX <-coordZ <-RESOURCE_SPACING <-RESOURCE_SEED @CellNoise <-coordX <-coordZ 5 @PerlinNoiseValue 15 mul add <-coordX pi mul <-coordZ 1.2 pow add @SeedRandFloat 10 mul add <-RESOURCE_SIZE lt)
+		<-coordX <-coordZ 1 SetTerrainSpecial
+	endif
+	
+:Once
+	if(GetGameUpdateCount)
+		5 ->phase
+		return
+	endif
+	1 ->attempts
+	-1 ->phase
+	true ->*noAutoCache
+	GetMapSize dup2 ->mapZ ->mapX mul ->mapSize
+	GetRiftLab false SetUnitDestroyUnevenLand
+	GetERNPortal false SetUnitDestroyUnevenLand
+	GetRiftLab V3(-1000 dup dup) SetUnitPosition
+	GetErnPortal V3(-1000 dup dup) SetUnitPosition
+	RegisterForMsg("Autopilot_CacheComplete" "AutopilotDone")
+	RegisterForMsg("CloseMsg" "CloseMsg")
+	
+	#"Standard" generation algorithm
+	"SetupFunction" "BaseSetup"
+	"GeneratorFunction" "BaseGenerator"
+	"SeedCheckFunction" "BaseCheck"
+	"FeatureNames" "AddGreenarMother" "AddRedon" "AddBluite" 3 ListN
+	"FeatureScales" <-GREENAR_SCALE <-REDON_SCALE <-BLUITE_SCALE 3 ListN
+	"FeatureSeeds" <-GREENAR_SEED <-REDON_SEED <-BLUITE_SEED 3 ListN
+	6 TableN
+	
+	#Islands
+	"SetupFunction" "IslandSetup"
+	"GeneratorFunction" "BaseGenerator"
+	"SeedCheckFunction" "IslandCheck"
+	"FeatureNames" "AddGreenarMother" "AddRedon" "AddBluite"  3 ListN
+	"FeatureScales" 90 60 60 3 ListN #Increase resource density a bit to make up for less land area
+	"FeatureSeeds" <-GREENAR_SEED <-REDON_SEED <-BLUITE_SEED 3 ListN
+	6 TableN
+	
+	#Mountains
+	"SetupFunction" "MountainSetup"
+	"GeneratorFunction" "MountainGenerator"
+	"SeedCheckFunction" "BaseCheck"
+	"FeatureNames" "AddGreenarMother" "AddRedon" "AddBluite"  3 ListN
+	"FeatureScales" <-GREENAR_SCALE <-REDON_SCALE <-BLUITE_SCALE 3 ListN
+	"FeatureSeeds" <-GREENAR_SEED <-REDON_SEED <-BLUITE_SEED 3 ListN
+	6 TableN
+	
+	#Mesas
+	"SetupFunction" "MesaSetup"
+	"GeneratorFunction" "MountainGenerator"
+	"SeedCheckFunction" "BaseCheck"
+	"FeatureNames" "AddMesa" "AddGreenarMother" "AddRedon" "AddBluite" 4 ListN
+	"FeatureScales" 80 <-GREENAR_SCALE <-REDON_SCALE <-BLUITE_SCALE 4 ListN
+	"FeatureSeeds" 3.2 <-GREENAR_SEED <-REDON_SEED <-BLUITE_SEED 4 ListN
+	6 TableN
+	
+	#Canyons
+	"SetupFunction" "CanyonSetup"
+	"GeneratorFunction" "MountainGenerator"
+	"SeedCheckFunction" "BaseCheck"
+	"FeatureNames" "AddCanyon" "AddGreenarMother" "AddRedon" "AddBluite" 4 ListN
+	"FeatureScales" 120 <-GREENAR_SCALE <-REDON_SCALE <-BLUITE_SCALE 4 ListN
+	"FeatureSeeds" 3.2 <-GREENAR_SEED <-REDON_SEED <-BLUITE_SEED 4 ListN
+	6 TableN
+	
+	List ->algorithms
+
+:AddMesa
+	->z ->x
+	<-x e mul <-z add dup @SeedRandFloat 25 mul 15 add ->mesaRadius
+	1 add dup @SeedRandFloat 5 mul 16 add ->mesaHeight
+	1 add dup @SeedRandFloat 6 mul 2 add ->mesaStepHeight
+	1 add dup @SeedRandFloat 5 mul 1 add ->mesaStepWidth
+	
+	<-x <-z <-mesaRadius <-mesaHeight <-mesaStepHeight <-mesaStepWidth @GenerateMesa
+
+:AddCanyon
+	->z ->x
+	<-x e mul <-z add dup @SeedRandFloat 25 mul 15 add ->mesaRadius
+	1 add dup @SeedRandFloat 4 mul 1 add ->mesaHeight
+	1 add dup @SeedRandFloat 6 mul 2 add ->mesaStepHeight
+	1 add dup @SeedRandFloat 5 mul 1 add ->mesaStepWidth
+	1 add dup @SeedRandFloat 2 mul AsInt dup ->side1 2 add ->side2
+	# <-side1 ->side2
+	# while <-side2 <-side1 eq repeat
+		# 1 add dup @SeedRandFloat 4 mul AsInt ->side2
+	# endwhile
+	2 0 do
+		"side" i 1 add concat <-! ->side
+		switch
+			case(<-side eq0) #Bottom
+				1 add dup @SeedRandFloat <-mapX mul "x" i concat ->!
+				0 "z" i concat ->!
+			endcase
+			case(<-side 1 eq) #right
+				<-mapX "x" i concat ->!
+				1 add dup @SeedRandFloat <-mapZ mul "z" i concat ->!
+			endcase
+			case(<-side 2 eq) #top
+				1 add dup @SeedRandFloat <-mapX mul "x" i concat ->!
+				<-mapZ "z" i concat ->!
+			endcase
+			case(<-side 3 eq) #left
+				0 "x" i concat ->!
+				1 add dup @SeedRandFloat <-mapZ mul "z" i concat ->!
+			endcase
+		endswitch
+	loop
+	pop
+	
+	<-x0 <-z0 <-x1 <-z1 <-mesaRadius <-mesaHeight <-mesaStepHeight <-mesaStepWidth @StartGeneratingCanyon
+	
+:AddGreenarMother
+	->z ->x
+	if(<-x <-z GetTerrain)
+		"greenarmother" <-x <-z 0 CreateUnitOnTerrain false SetUnitSelectable
+	endif
+
+:AddRedon
+	->z ->x
+	if(<-x <-z GetTerrain)
+		"resourcered" <-x <-z 0 CreateUnitOnTerrain false SetUnitSelectable
+	endif
+
+:AddBluite
+	->z ->x
+	if(<-x <-z GetTerrain)
+		"resourceblue" <-x <-z 0 CreateUnitOnTerrain false SetUnitSelectable
+	endif
+	
+:AutopilotDone
+	if(<-phase 3 eq)
+		4 ->phase
+	endif
+
+	# @ResetMap
+
+:ResetMap
+	<-mapZ 0 do
+		<-mapX 0 do
+			i j dup2 1 SetTerrain 0 SetTerrainSpecial
+		loop
+	loop
+	GetUnits("" Vector0 515 true false false 0 0 0) ->units
+	<-units 0 do
+		<-units[i] 1 1 1 DestroyUnit
+	loop
+	
+#Thank you to Grabz for showing me this rand function
+:GlobalRandFloat
+	<-*randSeed 1 add dup ->*randSeed sin 10,000 mul dup floor sub
+
+#Returns a random FLOAT inside the range, based on the global seed.
+:GlobalRandRange
+	->max ->min
+	@GlobalRandFloat <-max <-min sub mul <-min add 
+
+:SeedRandFloat
+	sin 10,000 mul dup floor sub
+
+#Implementation of perlin noise, adapted from the version on wikipedia.
+#https://en.wikipedia.org/wiki/Perlin_noise
+
+#This version of the function is optimized to the point of being largely unreadable, sorry.
+:PerlinNoiseValue
+	AsFloat dup ->FEATURE_SIZE
+	div <-randOffsetX add 
+	dup ->perlinZ dup floor dup ->zCoord sub ->zOffset
+	<-FEATURE_SIZE div <-randOffsetZ add 
+	dup ->perlinX dup floor dup ->xCoord sub ->xOffset
+	
+	#Perlin noise algorithm (Optimized)
+	<-xCoord <-zCoord @DotGradient
+	<-xCoord <-zCoord 1 add @DotGradient
+	<-zOffset @Interpolate
+	
+	<-xCoord 1 add <-zCoord @DotGradient
+	<-xCoord 1 add <-zCoord 1 add @DotGradient
+	<-zOffset @Interpolate
+	
+	<-xOffset @Interpolate
+	
+:DotGradient
+	dup2 ->cornerZ ->cornerX
+	
+	#Take a unit vector pointing in a random direction from this corner, and dot it with our offset from this corner.
+	@Gradient <-perlinZ <-cornerZ sub mul swap <-perlinX <-cornerX sub mul add
+
+:Gradient
+	e 6553 mul mul add @SeedRandFloat tau mul 
+	dup sin swap cos 
+
+:Interpolate
+	->weight ->num2 ->num1 #->num1 ->num2 ->weight
+	switch
+	
+	case(<-INTERPOLATION_TYPE eq0)
+		#Linear interpolation
+		<-num2 <-num1 sub <-weight mul <-num1 add
+	endcase
+	
+	case(<-INTERPOLATION_TYPE 1 eq)
+		#Cubic interpolation (smoothstep)
+		<-num2 <-num1 sub 3 <-weight 2 mul sub mul <-weight dup mul mul <-num1 add
+	endcase
+	
+	case(<-INTERPOLATION_TYPE 2 eq)
+		#Even smoother interpolation, with second derivative equal to 0 on boundaries
+		<-num2 <-num1 sub <-weight <-weight 6 mul 15 sub mul 10 add <-weight dup dup mul mul mul mul <-num1 add
+	endcase
+	
+	endswitch
+
+# Returns the distance to the closest point generated through this method:
+# place one point in each [spotScale] by [spotScale] box. Also takes a seed.
+:CellNoise
+	->seed ->spotScale ->spotZ ->spotX
+	
+	#Find the coordinates of the box we're in
+	<-spotX <-spotScale div AsInt ->regionX
+	<-spotZ <-spotScale div AsInt ->regionZ
+	
+	99999999 ->minDist
+	<-regionZ 2 add <-regionZ 1 sub do
+		<-regionX 2 add <-regionX 1 sub do
+			# <-spotDensity 0 do #scrapped having N points per region for performance reasons.
+				#Generate a flattened cell coordinate from 0 to (spotScale^2 - 1), seeded by the chunk position
+				i <-randOffsetX add <-seed add e mul 65536 mul j <-randOffsetZ add add @SeedRandFloat <-spotScale dup mul mul AsInt ->chunkPos
+				
+				#Turn that into a random cell in that chunk
+				<-chunkPos <-spotScale AsInt div i <-spotScale mul add ->pointX
+				<-chunkPos <-spotScale AsInt mod j <-spotScale mul add ->pointZ
+				<-pointX <-pointZ <-spotX <-spotZ DistanceCell <-minDist min ->minDist
+			# loop
+		loop
+	loop
+	<-minDist
+
+#More optimized version of CellNoise, returns false unless the cell is direcly on a generated point.
+:PointNoise
+	->seed ->spotScale ->spotZ ->spotX
+	<-spotX <-spotScale div AsInt ->regionX
+	<-spotZ <-spotScale div AsInt ->regionZ
+	<-regionX <-randOffsetX add <-seed add e mul 65536 mul <-regionZ <-randOffsetZ add add @SeedRandFloat <-spotScale dup mul mul AsInt ->chunkPos
+
+	<-chunkPos <-spotScale AsInt div <-regionX <-spotScale mul add ->pointX
+	<-chunkPos <-spotScale AsInt mod <-regionZ <-spotScale mul add ->pointZ
+	
+	<-pointX <-spotX eq <-pointZ <-spotZ eq &&
+
+#Gets the coordinates of the feature in that region
+:GetVoronoiCoord
+	->seed ->spotScale ->regionZ ->regionX
+	<-regionX <-randOffsetX add <-seed add e mul 65536 mul <-regionZ <-randOffsetZ add add @SeedRandFloat <-spotScale dup mul mul AsInt ->chunkPos
+
+	<-chunkPos <-spotScale AsInt div <-regionX <-spotScale mul add ->pointX
+	<-chunkPos <-spotScale AsInt mod <-regionZ <-spotScale mul add ->pointZ
+	
+	<-pointX <-OFFSET_X sub <-pointZ <-OFFSET_Z sub
+	
+#Finds the nearest cell a unit of footprint (Unitx, Unitz) can be built to the given cell
+#Returns -1 -1 if no cell is found
+:GetNearestBuildCell
+	->maxCells ->UnitZ ->UnitX ->centZ ->centX
+	false ->canBuild
+	FloodFillTerrain(<-centX <-centZ 1 21 <-maxCells) ->terrain
+	<-terrain GetListCount 0.1 mul 0 do
+		<-terrain[i 10 mul] EV2 <-UnitX <-UnitZ @CellBuildable if
+			true ->canBuild
+			<-terrain[i 10 mul] EV2 return
+		endif
+	loop
+	if(<-canBuild !)
+		-1 -1
+	endif
+
+:CellBuildable
+	->unitZ ->unitX dup2 ->cellZ ->cellX
+	GetTerrain dup ->centerTerrain
+	dup if
+		<-cellZ <-unitZ 0.5 mul ceil add <-cellZ <-unitZ 0.5 mul AsInt sub do
+			<-cellX <-unitX 0.5 mul ceil add <-cellX <-unitX 0.5 mul AsInt sub do
+				i j GetTerrain <-centerTerrain eq i j GetCellOccupiedCount ! && &&
+				dup ! if
+					return
+				endif
+			loop
+		loop
+	endif
+
+:GameLoaded
+	true CloseGameMessage
+
+:BaseSetup
+	250 ->TERRAIN_FEATURE_SIZE #Scale of the largest noise layer
+
+	#The more fractal layers there are, the more likely it is that the function will accidentally bypass these limits.
+	#They will still affect terrain gen in the same way though.
+	-27 ->MIN_HEIGHT #Can be negative, for higher chance of void
+	30 ->MAX_HEIGHT
+
+	9 ->FRACTAL_LAYERS
+	0.6 ->LAYER_SIZE_MULT
+	0.6 ->LAYER_EFFECT_MULT
+	1 ->INTERPOLATION_TYPE #0:linear, 1:cubic, 2:quintic (Higher degrees of interpolation are generally smoother, but slightly slower)
+	<-MAX_HEIGHT <-MIN_HEIGHT sub ->scale
+	
+:IslandSetup
+	100 ->TERRAIN_FEATURE_SIZE #Scale of the largest noise layer
+
+	#The more fractal layers there are, the more likely it is that the function will accidentally bypass these limits.
+	#They will still affect terrain gen in the same way though.
+	-30 ->MIN_HEIGHT #Can be negative, for higher chance of void
+	28 ->MAX_HEIGHT
+
+	3 ->FRACTAL_LAYERS
+	0.5 ->LAYER_SIZE_MULT
+	0.5 ->LAYER_EFFECT_MULT
+	1 ->INTERPOLATION_TYPE #0:linear, 1:cubic, 2:quintic (Higher degrees of interpolation are generally smoother, but slightly slower)
+	<-MAX_HEIGHT <-MIN_HEIGHT sub ->scale
+	
+:MesaSetup
+	75 ->TERRAIN_FEATURE_SIZE #Scale of the largest noise layer
+
+	#The more fractal layers there are, the more likely it is that the function will accidentally bypass these limits.
+	#They will still affect terrain gen in the same way though.
+	-4 ->MIN_HEIGHT #Can be negative, for higher chance of void
+	8 ->MAX_HEIGHT
+
+	5 ->FRACTAL_LAYERS
+	0.5 ->LAYER_SIZE_MULT
+	0.5 ->LAYER_EFFECT_MULT
+	1 ->INTERPOLATION_TYPE #0:linear, 1:cubic, 2:quintic (Higher degrees of interpolation are generally smoother, but slightly slower)
+	<-MAX_HEIGHT <-MIN_HEIGHT sub ->scale
+	
+	70.0 100.0 @GlobalRandRange ->MOUNTAIN_DIST
+	10 40 @GlobalRandRange ->MOUNTAIN_SIZE
+	-5 -10 @GlobalRandRange ->MOUNTAIN_HEIGHT
+	-1.0 3.0 @GlobalRandRange ->heightPad
+	1 ->noiseMult
+	2.3 ->MOUNTAIN_SEED
+	
+:CanyonSetup
+	75 ->TERRAIN_FEATURE_SIZE #Scale of the largest noise layer
+
+	#The more fractal layers there are, the more likely it is that the function will accidentally bypass these limits.
+	#They will still affect terrain gen in the same way though.
+	2 ->MIN_HEIGHT #Can be negative, for higher chance of void
+	10 ->MAX_HEIGHT
+
+	7 ->FRACTAL_LAYERS
+	0.6 ->LAYER_SIZE_MULT
+	0.6 ->LAYER_EFFECT_MULT
+	1 ->INTERPOLATION_TYPE #0:linear, 1:cubic, 2:quintic (Higher degrees of interpolation are generally smoother, but slightly slower)
+	<-MAX_HEIGHT <-MIN_HEIGHT sub ->scale
+	
+	70.0 100.0 @GlobalRandRange ->MOUNTAIN_DIST
+	10 40 @GlobalRandRange ->MOUNTAIN_SIZE
+	3 5 @GlobalRandRange ->MOUNTAIN_HEIGHT
+	-1.0 3.0 @GlobalRandRange ->heightPad
+	1 ->noiseMult
+	2.3 ->MOUNTAIN_SEED
+
+:MountainSetup
+	50 ->TERRAIN_FEATURE_SIZE #Scale of the largest noise layer
+
+	#The more fractal layers there are, the more likely it is that the function will accidentally bypass these limits.
+	#They will still affect terrain gen in the same way though.
+	-1 ->MIN_HEIGHT #Can be negative, for higher chance of void
+	1 ->MAX_HEIGHT
+	<-MAX_HEIGHT <-MIN_HEIGHT sub ->scale
+
+	5 ->FRACTAL_LAYERS
+	0.5 ->LAYER_SIZE_MULT
+	0.5 ->LAYER_EFFECT_MULT
+	1 ->INTERPOLATION_TYPE #0:linear, 1:cubic, 2:quintic (Higher degrees of interpolation are generally smoother, but slightly slower)
+	
+	70.0 100.0 @GlobalRandRange ->MOUNTAIN_DIST
+	60.0 80.0 @GlobalRandRange ->MOUNTAIN_SIZE
+	15.0 20.0 @GlobalRandRange ->MOUNTAIN_HEIGHT
+	-1.0 3.0 @GlobalRandRange ->heightPad
+	5 ->noiseMult
+	2.3 ->MOUNTAIN_SEED
+
+:MountainGenerator
+	->coordZ ->coordX 
+	<-TERRAIN_FEATURE_SIZE <-scaleMult 1 max div ->size
+	<-noiseMult ->mult
+	<-coordX <-coordZ <-MOUNTAIN_DIST <-MOUNTAIN_SEED @CellNoise ->dist
+	#Turn "distance from center of mountain" into "height up the cone of the mountain"
+	<-MOUNTAIN_SIZE <-dist sub 0 max <-MOUNTAIN_SIZE div <-MOUNTAIN_HEIGHT mul <-heightPad add
+	
+	#Add gradient noise on top
+	<-FRACTAL_LAYERS 0 do
+		<-coordX <-OFFSET_X sub <-coordZ <-OFFSET_Z sub <-size @PerlinNoiseValue @ToTerrain <-mult mul add
+		<-size <-LAYER_SIZE_MULT mul ->size
+		<-mult <-LAYER_EFFECT_MULT mul ->mult
+	loop
+	# @ToTerrain
+
+#Adds a mesa feature to this coordinate
+:GenerateMesa
+	->stepWidth ->stepHeight ->height ->radius ->z ->x
+	<-stepHeight <-height <-stepHeight mod sub ->mod
+	<-z <-radius 3 add add <-z <-radius sub 2 sub do
+		<-x <-radius 3 add add <-x <-radius sub 2 sub do
+			i j dup2 GetTerrain
+			
+			<-radius 
+			i j <-x <-z DistanceCell 
+			i <-OFFSET_X add j <-OFFSET_Z add 10 @PerlinNoiseValue 5 mul add
+			i <-OFFSET_X add e mul 25 mul j <-OFFSET_Z add add @SeedRandFloat 2 mul add
+			
+			sub <-stepHeight mul <-stepWidth div <-stepHeight div AsInt <-stepHeight mul <-mod sub  
+			<-height min
+			i <-OFFSET_X add j <-OFFSET_Z add 8 @PerlinNoiseValue 3 mul add 0 round 20 min
+			max 
+			SetTerrain
+		loop
+	loop
+	
+#Adds a canyon feature to this coordinate
+:StartGeneratingCanyon
+	->stepWidth ->stepHeight ->height ->radius ->z1 ->x1 ->z0 ->x0
+	#3605873
+	<-x0 <-x1 min <-radius sub 5 sub dup 0 max ->cMinX
+	<-x0 <-x1 max <-radius add 6 add dup <-mapX min ->cMaxX
+	<-z0 <-z1 min <-radius sub 5 sub dup 0 max ->cMinZ
+	<-z0 <-z1 max <-radius add 6 add dup <-mapX min ->cMaxZ
+	V4 trace 0 swap SetGameMessageText
+	<-x0 <-z0 V2 ->startCell
+	<-x1 <-z1 V2 ->endCell
+	<-stepHeight <-height <-stepHeight mod sub ->mod
+
+	-2 ->phase
+	<-cMinX ->x
+	<-cMinZ ->z
+	
+:GenerateCanyon
+	ElapsedTime ->startTime
+	99999 0 do
+		<-x <-z dup2 GetTerrain
+		
+		20
+		<-radius <-x <-z V2 <-startCell <-endCell DistancePointLine 
+		if(dup <-radius 5 add lt)
+			<-x <-OFFSET_X add e mul 25 mul <-z <-OFFSET_Z add add @SeedRandFloat 2 mul add
+			sub
+			 <-stepHeight mul <-stepWidth div <-stepHeight div AsInt <-stepHeight mul <-mod sub  
+			sub
+			<-height 20 clamp
+			<-x <-OFFSET_X add <-z <-OFFSET_Z add 8 @PerlinNoiseValue 3 mul add 0 round 20 min
+			0 max min 
+			SetTerrain
+		else
+			ClearStack
+		endif
+		
+		<-x 1 add ->x
+		if(<-x <-cMaxX gte)
+			<-cMinX ->x
+			<-z 1 add ->z
+			if(<-z <-cMaxZ gte)
+				#Finish and continue the next feature
+				2 ->phase
+				@IncrementCell
+				return
+			endif
+		endif
+		if(ElapsedTime <-startTime sub 25 gt)
+			return
+		endif
+	loop
+	

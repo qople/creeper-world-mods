@@ -1,0 +1,249 @@
+# --Factory-- 7/1/2023 1:54:22 PM
+
+$RANDOMIZE_UPGRADE_ORDER:0
+$UPDATE_RATE:10
+$MAX_RESOURCES:1000
+$$TRIES:40
+
+#Corners of the resource pile
+$$PILE_MIN_X:-1
+$$PILE_MAX_X:3
+$$PILE_MIN_Z:-3
+$$PILE_MAX_Z:3
+$$PILE_MIN_Y:0.3 #Bottom of the pile
+$PILE_SLOPE:0.1 #x and z size lost with each step up the sides
+$RESOURCE_CUBE_SIZE:0.7 #Only changes distance calculation, change the scale in the unit editor for it to match if you change this
+$CUBE_REPRESENTS:10 #Each cube is this many resource points
+
+$$resourceGUID:"9f0b5374-3933-49e5-b369-6297b82b8cb3"
+
+if(Self GetUnitConstructing)
+	return
+endif
+
+if(GetTimer0 eq0)
+	@GetResourceProduction
+	@TryToUpgrade
+	300 SetTimer0
+endif
+
+if(GetTimer1 eq0)
+	@GenerateResources
+	<-UPDATE_RATE SetTimer1
+endif
+
+#=====================================
+
+:GetResourceProduction
+	0 0 List ->resourceRates
+	"resourcered" 0 GetUnitsByType ->redonNodes
+	<-redonNodes 0 do
+		<-redonNodes[i] ->unit
+		if(<-unit GetUnitCell GetCreeper 1 gte)
+			<-resourceRates[0] <-UPDATE_RATE AsFloat <-unit GetUnitSettings {"Interval"} div add ->resourceRates[0]
+		endif
+	loop
+	"greenarMother" 0 GetUnitsByType ->greenarMothers
+	<-greenarMothers 0 do
+		<-greenarMothers[i] ->unit
+		if(<-unit GetUnitCell GetCreeper 1 gte)
+			<-resourceRates[1] <-UPDATE_RATE AsFloat <-unit GetUnitSettings {"Interval"} div 12 mul add ->resourceRates[1]
+		endif
+	loop
+
+:TryToUpgrade
+	2 0 do #0=redon, 1=greenar
+		if(<-numUpgrades[i]) #Don't try if all upgrades of this type are gone
+			if(<-queuedUpgrades[i] IsNull)
+				if(<-RANDOMIZE_UPGRADE_ORDER)
+					RandInt(0, <-numUpgrades[i]) ->queuedUpgrades[i]
+				else
+					0 ->queuedUpgrades[i]
+				endif
+			endif
+			
+			<-queuedUpgrades[i] ->upgrade
+			if(<-resources[i] <-upgradeCosts[i][<-upgrade] gte) #Check if you can afford
+				i <-upgradeCosts[i][<-upgrade] @UseResource #Also removes cubes from the pile
+				<-upgrades[i][<-upgrade] <-labID SendMsg #Picked up by the sleeper lab
+				Null ->queuedUpgrades[i]
+				<-upgrades[i] <-upgrade RemoveListElement
+				<-upgradeCosts[i] <-upgrade RemoveListElement
+				<-numUpgrades[i] 1 sub ->numUpgrades[i]
+			endif
+		endif
+	loop
+
+:GenerateResources
+	2 0 do
+		<-resources[i] <-CUBE_REPRESENTS div AsInt
+		<-resources[i] <-resourceRates[i] add <-MAX_RESOURCES min dup ->resources[i]
+		if(<-*sleeperAnimations)
+			<-CUBE_REPRESENTS div AsInt sub neg 0 do
+				j 0 @PlaceCube
+			loop
+		endif
+	loop	
+
+:PlaceCube
+	->unit ->type
+	if(<-unit !)
+		<-resourceGUID Vector0 0 CreateUnit ->unit
+	endif
+	
+	if(<-queuedPositions GetListCount)
+		<-queuedPositions PopList ->position
+		<-position[3] ->layer
+		<-unit <-position SetUnitPosition
+		<-resourcePile[<-layer] <-unit AppendToList
+		<-pilePositions[<-layer] <-position AppendToList
+		<-resourceTypes[<-layer] <-type AppendToList
+		if(<-type)
+			<-unit "Cube" V4(0.1 1 0.1 1) SetObjColor
+		else
+			<-unit "Cube" V4(1 0.2 0 1) SetObjColor
+		endif
+		return
+	endif
+	
+	<-TRIES 0 do
+		RandFloat <-maxX <-minX sub mul <-minX add dup ->x
+		RandFloat <-maxZ <-minZ sub mul <-minZ add dup ->z
+		if(0 swap V3 @CubeInRange !)
+			# <-resourceGUID V3(<-x <-pileY <-z) 0 CreateUnit ->unit
+			<-unit V3(<-x <-pileY <-z) SetUnitPosition
+			# <-unit "" V3(<-RESOURCE_CUBE_SIZE dup dup) SetObjScale
+			<-currentLayer <-unit AppendToList
+			<-layerPositions <-unit GetUnitPosition AppendToList
+			<-types <-type AppendToList
+			if(<-type)
+				<-unit "Cube" V4(0.1 1 0.1 1) SetObjColor
+			else
+				<-unit "Cube" V4(1 0.2 0 1) SetObjColor
+			endif
+			return
+		endif
+	loop
+	<-pileLayers 1 add ->pileLayers
+	<-resourcePile CreateList  AppendToList
+	<-pilePositions CreateList  AppendToList
+	<-resourceTypes CreateList  AppendToList
+	<-resourcePile[<-pileLayers] ->currentLayer
+	<-pilePositions[<-pileLayers] ->layerPositions
+	<-resourceTypes[<-pileLayers] ->types
+	@FindPileCoords
+	<-type <-unit @PlaceCube #Try again
+
+:FindPileCoords
+	<-PILE_MIN_X <-PILE_SLOPE <-pileLayers mul add Self GetUnitPosition [0] add ->minX
+	<-PILE_MAX_X <-PILE_SLOPE <-pileLayers mul sub Self GetUnitPosition [0] add ->maxX
+	<-PILE_MIN_Z <-PILE_SLOPE <-pileLayers mul add Self GetUnitPosition [2] add ->minZ
+	<-PILE_MAX_Z <-PILE_SLOPE <-pileLayers mul sub Self GetUnitPosition [2] add ->maxZ
+	Self GetUnitPosition[1] <-RESOURCE_CUBE_SIZE <-pileLayers mul add <-PILE_MIN_Y add ->pileY
+
+:CubeInRange
+	->testPos
+	<-layerPositions 0 do
+		if(<-testPos <-layerPositions[i] @SimpleDist <-RESOURCE_CUBE_SIZE lt)
+			true return
+		endif
+	loop
+	false return
+
+#Max of X and Z distance, used to stop cubes from overlapping
+:SimpleDist
+	sub EV3 abs swap pop swap abs max
+
+#Removes resource cubes from the pile
+:UseResource
+	->amt ->type
+	<-resources[<-type] <-amt sub ->resources[<-type]
+	0 ->numRemoved
+	-1 <-pileLayers do #top layer to bottom
+		<-resourceTypes[i] ->types
+		<-resourcePile[i] ->units
+		<-pilePositions[i] ->positions
+		-1 <-types GetListCount 1 sub do #Iterate backwards so removing elements doesn't make us skip items
+			if(<-types[i] <-type eq)
+				<-numRemoved 1 add ->numRemoved
+				<-units[i] 1 1 1 DestroyUnit
+				<-queuedPositions <-positions[i] EV3 j V4 AppendToList #Save position so we can replace the cube when another is generated
+				<-positions i RemoveListElement
+				<-types i RemoveListElement
+				<-units i RemoveListElement
+				if(<-numRemoved <-amt <-CUBE_REPRESENTS div gte)
+					return
+				endif
+			endif
+		loop
+	loop
+
+#Kills all resource cubes
+:DestroyPile
+	<-resourceGUID 0 GetUnitsByType ->units
+	<-units 0 do
+		<-units[i] 1 1 1 DestroyUnit
+	loop
+	--units
+
+:UseResources
+	<-_DATA EV2 @UseResource
+
+:Once
+	Self 0 "Siphons redon and greenar from across the map, then uses it to upgrade the sleeper lab." SetUnitUIText
+	"UseResources" "UseResources" RegisterForMsg
+	@DestroyPile
+	0 0 List ->resources
+	@InitPileLists
+	Null Null List ->queuedUpgrades
+	RegisterForMsg("SleeperAnimations" "SetAnimationMode")
+
+	
+	<-upgrades[0] GetListCount <-upgrades[1] GetListCount List ->numUpgrades
+
+:InitPileLists
+	CreateList List ->resourcePile
+	CreateList List ->pilePositions
+	CreateList List ->resourceTypes
+	0 ->pileLayers
+	<-resourcePile[<-pileLayers] ->currentLayer
+	<-pilePositions[<-pileLayers] ->layerPositions
+	<-resourceTypes[<-pileLayers] ->type
+	@FindPileCoords
+	CreateList ->queuedPositions #saved positions of removed cubes
+
+:SetAnimationMode
+	if(<-*sleeperAnimations)
+		@BuildPile
+	else
+		@DestroyPile
+	endif
+
+
+:BuildPile
+	@InitPileLists
+	CreateList ->allUnits
+	
+	#Create all cubes
+	<-resources[0] <-CUBE_REPRESENTS div 0 do
+		<-resourceGUID Vector0 0 CreateUnit ->unit
+		<-allUnits <-unit AppendToList
+		<-unit "Cube" V4(1 0.2 0 1) SetObjColor
+	loop
+	<-resources[1] <-CUBE_REPRESENTS div 0 do
+		<-resourceGUID Vector0 0 CreateUnit ->unit
+		<-allUnits <-unit AppendToList
+		<-unit "Cube" V4(0.1 1 0.1 1) SetObjColor
+	loop
+	
+	#Then place all the cubes onto the pile
+	0 <-allUnits do
+		RandInt(0 i) ->index
+		<-allUnits[<-index] dup "Cube" GetObjColor V4(0.1 1 0.1 1) eq swap @PlaceCube
+		<-allUnits <-index RemoveListElement
+	loop
+	--allUnits
+	
+:Destroyed
+	@DestroyPile
+	

@@ -1,0 +1,304 @@
+# --AStar-- 4/18/2024 4:54:06 PM
+#General-purpose shortest path algorithm for the network in this CPACK
+#Can use a fair bit of memory on large networks, but it cleans itself up when done running on its own
+
+#You can copy and paste this code below your script and use wherever.
+#The top four functions are slightly situational, and may need to be changed depending on your use case. This is explained more in those functions.
+
+#Functions to know are:
+
+#INSTANT RUNNING
+#AStar(int startNodeIndex, int endNodeIndex) - returns a path list of the nodes between the two nodes
+#AStarCell(V2 startCell, V2 endCell) - returns a path list of the nodes between the two nodes closest to the two cells
+    #Cell versions have potentially significant additional performance cost due to finding the closest nodes, especially on larger networks,
+    #or map areas with many nodes in close proximity to each other
+
+#Both of these functions will return an empty list if there is no path found for any reason (usually because none exists)
+
+
+#DISTRIBUTED RUNNING
+#Allows for smoothing of lag spikes for large pathfinds by spreading the load over several updates
+#SetUpAStar(int startNodeIndex, int endNodeIndex) - Sets up the A* algorithm for distributed running over several updates
+#SetUpAStarCell(V2 startCell, V2 endCell) - Same as above, but uses the nodes nearest the given cell coordinates
+    #Cell versions have potentially significant additional performance cost due to finding the closest nodes, especially on larger networks,
+    #or map areas with many nodes in close proximity to each other
+
+#DoAStarNode() - Does one iteration of A*, smallest amount of work that can be done for the algorithm
+    #Returns two values:
+    #A list of the path (empty if no path is found yet, or no path exists)
+    #A boolean for whether the algorithm is done yet
+
+    #So: 
+    #Returning "[] 0" means the algorithm is not done yet
+    #Returning "[] 1" means the algorithm is done, and no path was found
+    #Returning "[anything in the list] 1" means the list is the path to the destination
+
+#ConvertPathToPositions(List path) - Takes a node path returned by A* and converts it to a list of V2 cell positions you can use to follow the path in map space
+
+#To set up distributed running:
+#Call the setup function, either the node or cell version, for the start and end points you want
+#Set a flag that A* is running
+#Use this code block during the running of the script:
+#if(<-running)
+#    #If faster results are desired, the block below can be run in a do/loop block to multiply both the speed and performance cost.
+#    @DoAstarNode if
+#        ->path
+#        false ->running
+#        #Do what you want with the path
+#    else
+#        pop
+#    endif
+#    return
+#endif
+
+
+#Function used to determine if a cell is able to be pathed through
+#Used by A* cell to determine line of sight between cells and nodes
+#For example, to exclude nodes where there is void in the way between the start cell and the node from being valid start nodes for the search.
+#Takes a V2 <x,z>
+:CellValid
+    pop true return
+    #Mimics FPS collision rules
+    #False if on void, or a wall of 19 or 20
+    EV2 GetTerrain dup gt0 swap 19 lt &&
+
+#Function used to determine if a connection between two cells is valid
+#Used by A* cell to determine line of sight between cells and nodes
+#Disallows connections between two otherwise valid adjacent cells (no diagonals).
+#Takes two V2s <x,z>, one for each cell.
+:ConnectionValid
+    #Mimics FPS collision rules
+    #Returns false if the absolute difference in height between the two cells is greater than two.
+    EV2 GetTerrain swap EV2 GetTerrain sub abs 2 lte
+
+#Composite of the two above functions, for convenience
+#Takes two V2s, one for each cell
+:CanMakeConnection
+    ->cell2 ->cell1
+    <-cell1 @CellValid <-cell2 @CellValid &&
+    <-cell1 <-cell2 @ConnectionValid &&
+
+#Heuristic used by A*
+#Basically an estimation of the length of a path from any node to the goal node
+#Probably don't change this unless you know what you're doing.
+:Heuristic
+    Distance
+
+#Takes two cell V2s, and returns true if they can see each other through a continuous, straight-as-possible line of orthogonally connected cells.
+#Basically, "is there a wall in the way," using the functions above to say where walls are. 
+:GetCellLOS
+    ->endPos ->startPos
+
+    <-endPos <-startPos sub ->delta
+    <-delta.y <-delta.x atan2 ->angle
+    <-startPos <-endPos Distance ->dist
+
+    <-angle sin abs <-angle cos abs max ->divisor
+    <-dist <-divisor mul ->pseudoDist
+    <-startPos ->lastPos
+    
+	<-pseudoDist ceil 1 add 0 do
+		<-startPos <-delta i mul <-pseudoDist div add ->currentPos
+		<-currentPos.x 0 round <-currentPos.y 0 round ->z ->x
+
+
+		if(<-x <-lastPos.x neq <-z <-lastPos.y neq &&)
+			<-x <-lastPos.y V2 <-lastPos @CanMakeConnection
+		else
+            true
+        endif
+		<-x <-z V2 <-lastPos @CanMakeConnection &&
+        <-x <-z V2 ->lastPos
+        if(!)
+            0 return
+        endif
+	loop
+    1 return
+
+#Returns the index of the nearest node to the cell given
+#Takes a V2(x,z)
+:GetNearestNodeToCell
+    ->startPos
+    99 ->minDist #Max distance a cell can be from a node and still be seen by it, helps a lot with performance
+    -1 ->nearestNode
+    <-*pathfindNetwork 0 do
+        <-*pathfindNetwork[i] ->node
+        if(<-node[0] <-startPos Distance dup <-minDist lt)
+            if(<-startPos <-node[0] @GetCellLOS)    
+                ->minDist
+                i ->nearestNode
+            else
+                pop
+            endif
+        else
+            pop
+        endif
+    loop
+    <-nearestNode
+
+#Finds a path along the mapmaker-defined network, from one map cell to another.
+#Returns a list representing the cells (as V2s) of all visited nodes, in order from first to last.
+#Does not include the start and end cells you give in the returned list.
+#Returns an empty list if no path is found (either none exists, or the start or end cells aren't accessible by any nodes on the network)
+#Takes two cell V2s
+:AStarCell
+    ->endCell ->startCell
+
+    <-endCell @GetNearestNodeToCell ->goalIndex
+    <-startCell @GetNearestNodeToCell ->startIndex
+
+    <-startIndex <-goalIndex @AStar 
+
+#Takes two node indexes, and runs the full A* algorithm on it in one frame
+:AStar
+    @SetUpAStar
+
+    100,000,000 0 do #Done this way to make distributed running easy to implement later
+        @DoAstarNode if
+            return
+        else
+            pop
+        endif
+    loop
+
+    CreateList 1 Return #Path not found
+
+:SetUpAStarCell
+    @GetNearestNodeToCell swap
+    @GetNearestNodeToCell swap
+    @SetUpAStar
+
+:SetUpAStar
+    ->goalIndex ->startIndex
+    
+    if(<-startIndex lt0 <-startIndex <-*pathfindNetwork GetListCount gte ||)
+        true ->invalidIndex
+    endif
+
+    if(<-goalIndex lt0 <-goalIndex <-*pathfindNetwork GetListCount gte ||)
+        true ->invalidIndex
+    endif
+
+    <-*pathfindNetwork[<-goalIndex][0] ->goalCell
+
+    <-*pathfindNetwork 0 do
+        1,000,000,000.0 #Just any big number will do here
+    loop 
+    List ->costToNodes
+    <-costToNodes Copy ->costFromNodes
+    <-*pathfindNetwork GetListCount CreateListStartingSize ->cameFrom
+    
+    #Temporary data type: open set is a sorted array, where elements are inserted through binary search.
+    #This means insertion is O(N), so a hash map or some other solution might be better in the future
+    #"open set" is a collection of all neighboring nodes that could be visited on the next pass of the algorithm.
+    #The node with the lowest cost in this set is chosen each time.
+    <-startIndex List ->openSet
+
+    #Set up the start node with data
+    0 ->costToNodes[<-startIndex] 
+    <-*pathfindNetwork[<-startIndex][0] <-goalCell @Heuristic ->costFromNodes[<-startIndex]
+    
+
+
+#One iteration of A*
+#Returns two values:
+#A list of the path (empty if no path is found yet, or no path exists)
+#A boolean for whether the algorithm is done yet
+
+#So: 
+#Returning "[] 0" means the algorithm is not done yet
+#Returning "[] 1" means the algorithm is done, and no path was found
+#Returning "[anything in the list] 1" means the list is the path to the destination
+:DoAstarNode
+    @FindBestNode ->bestIndex
+
+    if(<-invalidIndex)
+        CreateList 1 
+        @CleanUpAStar
+        Return
+    endif
+
+    if(<-bestIndex <-goalIndex eq) #We made it!
+        <-bestIndex <-cameFrom[<-bestIndex] @ReconstructPath 1 
+        @CleanUpAStar return  
+    endif
+
+    <-*pathfindNetwork[<-bestIndex] ->node
+    <-costToNodes[<-bestIndex] ->currentScore
+    <-node[1] ->neighbors
+    <-neighbors 0 do
+        <-neighbors[i] ->neighborIndex
+        <-*pathfindNetwork[<-neighborIndex] ->neighbor
+        
+        #For each neighboring cell, calculate the cost of the node
+        <-currentScore <-neighbor[0] <-node[0] Distance add ->tentativeCost
+        
+        if(<-tentativeCost <-costToNodes[<-neighborIndex] lt) 
+            #This is the best known path to this node. Write it down!
+            <-tentativeCost ->costToNodes[<-neighborIndex]
+            <-bestIndex ->cameFrom[<-neighborIndex]
+            <-tentativeCost <-neighbor[0] <-goalCell @Heuristic add ->costFromNodes[<-neighborIndex]
+
+            #O(N), might be good to change this eventually
+            if(<-openSet <-neighborIndex ListContains !)
+                <-neighborIndex @AddToOpenSet
+            endif
+        endif 
+    loop
+    if(<-openSet !)
+        CreateList 1
+        @CleanUpAStar return
+    endif
+    CreateList 0
+
+#Should also remove the found element from the open set
+:FindBestNode
+    <-openSet PopList
+
+:AddToOpenSet
+    ->itemToAdd
+    <-costFromNodes[<-itemToAdd] ->itemCost
+
+    #Linear search  
+    #TODO: change to binary search
+    -1 <-openSet 1 sub do
+        if(<-costFromNodes[<-openSet[i]] <-itemCost gte)
+            <-openSet i <-itemToAdd InsertListElement #This operation is O(N), unclear if this matters for the smallish networks we'll be dealing with
+            return
+        endif
+    loop
+
+    #Above fails if the new element is to be the last element
+    #So compensate for that
+    <-openSet <-itemToAdd PrependToList #O(N), change?
+
+:ReconstructPath
+    ->lastIndex ->thisIndex
+    <-thisIndex <-lastIndex 2 ListN ->path
+    if(<-lastIndex IsNull !)
+        while <-lastIndex <-startIndex neq repeat
+            <-cameFrom[<-lastIndex] ->lastIndex
+            <-path <-lastIndex AppendToList
+        endwhile
+    else
+        <-path PopList pop
+    endif
+    #<-path <-startCell PrependToList
+    #<-path <-endCell AppendToList
+    <-path ReverseList return
+
+#Converts a list of node indexes to a list of the V2 cell positions of those nodes
+:ConvertPathToPositions
+    ->pathList
+    <-pathList 0 do
+        <-*pathfindNetwork[<-pathList[i]][0]
+    loop
+    <-pathList GetListCount ListN
+
+#Deletes the big lists that A* uses to save on memory and save file size
+:CleanUpAStar
+    --costToNodes
+    --costFromNodes
+    --cameFrom
+    --openSet
+    0 ->invalidIndex

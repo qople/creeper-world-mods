@@ -1,0 +1,61 @@
+# --TextDisplay-- 4/1/2021 3:48:02 PM
+
+:WhilePaused
+	if(GetCameraTopDown)
+		Self "Text" "" SetObjText
+		Self <-pausedText LF <-text LF concat4 SetUnitDebugText
+	else
+		Self "" SetUnitDebugText
+		Self "Text" <-pausedText LF <-text concat3 SetObjText
+	endif
+	"" ->pausedText
+	if(GetPause !)
+		"" ->text
+	endif
+
+:Awake
+	RegisterForMsg("AddText" "AddText")
+	RegisterForMsg("ClearText" "ClearText")
+	RegisterForMsg("Moved" "Move")
+	RegisterForMsg("MSG_PreUpdate" "WhilePaused")
+	"" ->text
+	"" ->pausedText
+	Self "Text" "" SetObjText
+	Self "" SetUnitDebugText
+	"pos" NotPersist
+	"rot" NotPersist
+
+:Move
+	if(GetCameraTopDown !)
+		#Probably a bad way of doing things here, but it works fine.
+		GetRPLCamPosition ->pos #Save the RplCam position and rotation
+		GetRPLCamRotation ->rot
+		RPLCamCopyPosAndRot		#Move RplCam to match the normal camera
+		
+		#Now we can use GetRPLCamForward to avoid calculating the camera's forward out of RplCam
+		#All so we can always put the unit in front of the camera
+		Self GetCameraPosition GetRPLCamForward Normalize 1.1 mul add SetUnitPosition
+		Self GetRPLCamForward SetUnitForward
+		
+		#Return RplCam to where it was at the start.
+		<-pos SetRPLCamPosition
+		<-rot SetRplCamRotation
+	else
+		Self GetPointerTerrainCoords GetCameraPosition EV2 1 sub swap pop swap V3 SetUnitPosition
+		# Self V3(0 0 1) SetUnitForward
+		# Self GetCameraRotation EV2 Deg2Rad mul ->rot pop
+		# Self GetCameraPosition V3(0 10 0) sub SetUnitPosition
+	endif
+	
+:AddText
+	if(<-_DATA "WP:" StartsWith)
+		#Ignore the "WP:" indicator, and concat the rest
+		<-pausedText dup StringLength if LF concat endif <-_DATA dup 3 swap StringLength 3 sub SubString concat ->pausedText
+	else
+		#Concat the whole string to the 
+		<-text dup StringLength if LF concat endif <-_DATA concat ->text 
+	endif 
+
+:ClearText
+	"" ->text
+	"" ->pausedText 

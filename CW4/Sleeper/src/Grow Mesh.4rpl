@@ -1,0 +1,101 @@
+# --Grow Mesh-- 6/29/2023 11:00:28 AM
+$FORCE_ALWAYS_ON:0 #Makes script ignore factory unlock status
+$SPEC_CHANCE:0.05
+$SPEC_AMT:1
+$SPEC_TIME:8
+$TERRAIN_MOD:1.5 #Chance is multiplied by this going downhill, divided going uphill
+$TOWARDS_LAB_MOD:10.0 #Multiplier to spec chance when moving towards the rift lab
+
+if(GetTimer0 eq0 <-enabled &&)
+	<-SPEC_TIME SetTimer0
+	<-SPEC_AMT 0 do
+		if(<-specList GetListCount eq0)
+			<-backupList ->specList
+		endif
+		if(<-specList[<-index] UFC GetCreeper 1 gte)
+			<-specList[<-index] UFC @ExpandSpec
+		endif
+	loop
+	# Self <-specList GetListCount SetUnitDebugText
+endif
+
+
+:ExpandSpec
+	->centZ ->centX
+	0 ->adjacentNum
+	CreateList ->mverseList
+	2 -1 do
+		2 -1 do
+			if(i j xor)
+				if(i <-centX add j <-centZ add GetTerrainSpecial <-*MESH_SLOT eq)
+					<-adjacentNum 1 add ->adjacentNum
+				else if(randFloat i j @SpecChance lte)
+					i <-centX add j <-centZ add dup2 <-*MESH_SLOT SetTerrainSpecial
+					dup2 <-centX <-centZ -1 0 AddCreeperWithCap
+					dup2 FC <-mverseList swap AppendToList
+					FC <-specList swap dup2 ListContains ! if <-index 1 add swap InsertListElement else pop pop endif
+					<-adjacentNum 1 add ->adjacentNum
+				endif endif
+			endif
+		loop
+	loop 
+	if(<-adjacentNum 2 gte)
+		if(<-adjacentNum 4 lt)
+			if(<-backupList <-specList[<-index] ListContains !)
+				<-backupList <-specList[<-index] AppendToList
+			endif
+		endif
+		<-specList <-index RemoveListElement
+	else
+		<-index 1 add ->index
+	endif
+	if(<-index <-specList GetListCount gte)
+		0 ->index
+	endif
+	if(<-mverseList GetListCount)
+		"MVerseGrowMesh" <-mverseList SendMVerseMsg
+	endif
+
+:SpecChance
+	->j ->i
+	GetRiftLab GetUnitCell V2 ->labPos
+	<-SPEC_CHANCE
+
+	if(<-centX <-centZ V2 <-labPos @SimpleDist <-i <-centX add <-j <-centZ add V2 <-labPos @SimpleDist gte <-labPos &&)
+		<-TOWARDS_LAB_MOD mul
+	endif
+	i <-centX add j <-centZ add GetTerrain <-centX <-centZ GetTerrain 
+	if(dup2 lt)
+		pop pop <-TERRAIN_MOD mul
+	else if(gt)
+		<-TERRAIN_MOD div
+	endif endif
+
+#Max of x and z difference
+:SimpleDist
+	sub EV2 abs swap abs max
+
+:MVerseGrowMesh
+	<-_DATA ->mverseList
+	<-mverseList 0 do 
+		<-mverseList[i] UFC <-*MESH_SLOT SetTerrainSpecial
+	loop
+
+:Once
+	Self GetUnitCell <-*MESH_SLOT SetTerrainSpecial
+	RegisterForMsg("BeginMesh" "StartMesh")
+	false ->enabled
+	GetMapSize ->mapZ ->mapX
+	Self GetUnitCell FC List ->specList
+	CreateList ->backupList
+	RegisterForMsg("MVerseGrowMesh" "MVerseGrowMesh")
+	Self true SetUnitGrowsMesh
+
+	if(<-FORCE_ALWAYS_ON)
+		@StartMesh
+	endif
+
+:StartMesh
+	true ->enabled
+	0 ->index
+	

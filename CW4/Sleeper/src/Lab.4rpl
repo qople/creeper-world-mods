@@ -1,0 +1,413 @@
+# --Lab-- 6/23/2023 4:19:59 PM
+
+#How many updates build attempts are split into. This is the longest number of updates a build can take to complete.
+#Decreasing this directly increases performance cost for build operations.
+$MAX_BUILD_DELAY:150 
+
+#Allows itself to ignore the build timer, letting the sleeper build units in rapid succession with low performance cost
+#When this is anything other than 0, instead of waiting for the build rate timer, the lab will only wait this many frames 
+#before starting the next build attempt. 
+#This is a good way to increase the build rate without increasing the worst-case performance cost of the script.
+$MIN_BUILD_DELAY:150
+
+#UNIT LIMITS
+$CANNON_TARGET:25
+$MORTAR_TARGET:20
+$SHIELD_TARGET:5
+$MISSILE_TARGET:10
+$BERTHA_TARGET:10
+$STASH_TARGET:5
+$CRYSTAL_TARGET:3
+
+#BUILD OPTIONS
+$MIN_TOWER_DIST:15 #Minimum distance apart towers can be
+$MIN_UNIT_DIST:5 #Minimum distance any unit can be placed from another
+$TOWER_CROWDING_LIMIT:4 #Number of units that have to be nearby to prevent the AI from building towers there
+$GLOBAL_CROWDING:6 #Number of nearby units for *no* more sleeper units to be built nearby
+$CROWDING_DIST:20 #Distance checked for the crowding limit
+$BUILD_MIN_CREEP:1.0
+$BUILD_GRANULARITY:2 #1 checks every cell, 2 checks every second cell, etc. Higher numbers are more performant, but may result in more failed build attempts. Min value is 1.
+
+$SURGE_COOLDOWN:9000
+$START_WITH_SURGE:0 #Creates a wave of creeper when spawned if true
+
+$NULLIFIER_DAMAGE:45
+
+$WIN_ON_DESTROY:1 #Completes the custom objective when destroyed if true
+
+#Min and max size of the floodfill used to find build cells
+#These default numbers mean there is no bias in terms of which direction the AI tries to build in first 
+#(The final cell of the floodfill is in a completely random direction)
+$$BUILD_MIN_CHECK:1012
+$$BUILD_MAX_CHECK:1104
+
+#Unit GUIDs
+$$towerGUID:"4202fb7f-2f7c-4988-b0fd-63cf7be1bd82"
+$$cannonGUID:"936fa49a-32b5-4796-b1a6-5c5b61d7e37d"
+$$mortarGUID:"3ab971ee-0a03-4f12-878e-866b7b0a926a"
+$$shieldGUID:"05ba3c56-c77c-49ec-9cc7-9b029a130c1c"
+$$missileGUID:"10f737df-cbda-4c28-9bc3-818f0f17c4b5"
+$$berthaGUID:"927f54d2-3fdf-48b4-b2ba-0439048e9b1b"
+$$dummyGUID:"b900388f-3e10-4b6c-a879-6193ff9a01cc" #gives sleeper-type health and construction to placed stashes and crystals
+$$factoryGUID:"881492ef-ee73-4662-ad3c-fdeb309be567"
+$$miteGUID:"135cffd6-32c7-4219-9733-672813dac731"
+
+# Self <-unitAmounts SetUnitDebugText #Shows unit amounts above the lab for debug
+
+if(<-lastHealth Self GetUnitHealth lt GetTimer1 eq0 &&) #When damaged
+	@Surge
+	<-SURGE_COOLDOWN SetTimer1
+	SendMVerseMsg("SleeperLabDamaged" <-lastHealth Self GetUnitHealth sub)
+endif
+Self GetUnitHealth ->lastHealth
+if(GetTimer0 eq0)
+	@TryBuildTower
+endif
+if(GetTimer2 eq0)
+	30 SetTimer2
+	GetUnits("Conversion" Self GetUnitPosition 15 false false false 0 0 0) ->conversion
+	<-conversion 0 do
+		<-conversion PopList 0 0 0 DestroyUnit
+	loop
+else if(GetTimer2 1 eq)
+	@FindBuildingNullifiers
+endif endif
+
+@FindActiveNullifiers
+@FindBuildCell
+
+:FindBuildingNullifiers
+	GetUnits("nullifier" Self GetUnitPosition 9 false false false 2 2 1) ->unbuiltNullifiers
+	<-unbuiltNullifiers 0 do
+		if(<-nullifiers <-unbuiltNullifiers[i] ListContains !)
+			<-nullifiers <-unbuiltNullifiers[i] AppendToList
+		endif
+	loop
+
+:FindActiveNullifiers
+	-1 <-nullifiers 1 sub do
+		<-nullifiers[i] ->nulli
+		if(<-nulli GetUnitDestroyed)
+			<-nullifiers i RemoveListElement
+		else if(<-nulli GetUnitConstructing ! <-nulli GetUnitAmmo 25 eq && <-nulli GetUnitEnabled && <-nulli GetUnitArmed &&)
+			<-nulli GetUnitPosition <-nulli GetUnitFireOffset add Self CreateSniperShot #Simplest way to make a beam from the nullifier to us
+			<-nulli 0 0 0 DestroyUnit
+			Self <-NULLIFIER_DAMAGE 0.2 sub DamageUnit
+			<-nullifiers i RemoveListElement
+			
+		endif endif
+	loop
+
+:Surge
+	Self GetUnitCell 3 false 850 true SetCreeperInRange
+	# Self GetUnitCell 2000 SetCrimson
+	if(<-meshEnabled GetMVersePlayerNum -1 eq &&)
+		5 0 do
+			"forb" Self GetUnitCell 0 CreateUnitOnTerrain
+		loop
+	endif
+
+:TryBuildTower
+	<-MAX_BUILD_DELAY SetTimer0
+	if(<-towers !)
+		@ResetTowerList
+	endif
+	false ->validTower
+	
+	
+	false ->builtUnit
+	0 ->tries
+	while <-validTower ! <-towers && repeat
+		<-tries 1 add ->tries
+		RandInt(0 <-towers GetListCount) ->index
+		<-towers[<-index] ->randomTower
+		if(<-randomTower GetUnitDestroyed)
+			<-towers <-index RemoveListElement
+			<-fullTowerList dup <-randomTower GetListIndex RemoveListElement
+		else
+			GetUnitsInRange(<-randomTower GetUnitPosition <-CROWDING_DIST false false false 1 0 1) GetListCount ->unitsInRange
+			@SelectBuildUnit
+			if(<-heavy <-consumers || <-producers ||)
+				true ->validTower
+
+				<-randomTower GetUnitCell <-FOOTPRINT_X <-FOOTPRINT_Z RandInt(<-BUILD_MIN_CHECK <-BUILD_MAX_CHECK) @StartFindingBuildCell
+			endif
+			<-towers <-index RemoveListElement
+		endif
+	endwhile
+
+	
+#Performs a small fraction of the potentially expensive act of finding valid build cells every frame
+:FindBuildCell
+	<-dIndex 0 do
+		if(<-terrain[<-buildIndex <-BUILD_GRANULARITY mul] dup dup ->v EV2 <-FOOTPRINT_X <-FOOTPRINT_Z @CellBuildable)
+			true ->canBuild
+			if(GetUnitsInRange(<-v EV2 0 swap V3 <-minDist false false false 1 0 1) !)
+				EV2 @FinishBuild
+				<-MIN_BUILD_DELAY 2 GetTimer0 clamp SetTimer0 #Almost immediately start building the next unit
+				return
+			else
+				pop
+			endif
+		else
+			pop
+		endif
+		<-buildIndex 1 sub ->buildIndex
+	loop
+
+:FinishBuild
+	->towerZ ->towerX
+	0 ->dIndex
+	true ->builtUnit
+	if(<-buildUnit "DUMMY_" StartsWith)
+		<-buildUnit @CreateDummy ->unit
+	else
+		<-buildUnit <-towerX <-towerZ 0 CreateUnitOnTerrain ->unit
+		<-unit "CoreSleeper.4rpl" "unitAmounts" <-unitAmounts SetScriptVar
+		if(<-unit GetUnitType <-factoryGUID eq)
+			<-unit "Factory.4rpl" "labID" Self SetScriptVar
+			<-unit "Factory.4rpl" "upgrades" <-upgrades SetScriptVar
+			<-unit "Factory.4rpl" "upgradeCosts" <-upgradeCosts SetScriptVar
+			
+		endif
+		if(<-producer)
+			<-towers <-unit AppendToList
+			<-fullTowerList <-unit AppendToList
+		endif
+	endif
+	<-unit false SetUnitEnabled
+	<-unit "" Vector0 SetObjScale
+	Table("UNIT_ID" <-unit "UNIT_NAME" <-buildName "TARGET_X" <-towerX "TARGET_Z" <-towerZ) ->initParams
+	<-miteGUID Self GetUnitCell <-initParams CreateUnitOnTerrain
+
+:SelectBuildUnit
+	<-producerTypes Copy ->buildTypes
+	<-producerFootprints Copy ->buildFootprints
+	<-producerNames Copy ->buildNames
+	
+	false ->heavy
+	false ->consumers
+	true ->producers
+	
+	if(<-unitsInRange <-GLOBAL_CROWDING gt)
+		false ->heavy
+		false ->consumers
+	else if(<-unitsInRange 4 gt)
+		true ->heavy
+		true ->consumers
+	else if(<-unitsInRange 2 gt)
+		false ->heavy
+		true ->consumers
+	endif endif endif
+	
+	if(GetUnits(<-towerGUID <-randomTower GetUnitPosition <-CROWDING_DIST false false false 1 0 1) GetListCount <-TOWER_CROWDING_LIMIT gt)
+		false ->producers
+		CreateList ->buildTypes
+		CreateList ->buildFootprints
+		CreateList ->buildNames
+	endif
+	
+	if(<-heavy)
+		<-heavyTypes 0 do
+			<-heavyTypes[i] ->type
+			<-heavyLimits[i] ->limit
+			if(<-unitAmounts{<-type "DUMMY_" "" StringReplace} <-limit lt <-randomTower GetUnitCell 10 true true false GetCreeperInRange <-heavyRequirements[i] gte &&)
+				<-type "DUMMY_" "" StringReplace <-randomTower GetUnitPosition 
+				<-buildTypes <-type AppendToList
+				<-buildFootprints <-heavyFootprints[i] AppendToList
+				<-buildNames <-heavyNames[i] AppendToList
+			endif
+		loop
+	endif
+	
+	if(<-consumers)
+		<-consumerTypes 0 do
+			<-consumerTypes[i] ->type
+			<-consumerLimits[i] ->limit
+			if(<-unitAmounts{<-type} <-limit lt <-randomTower GetUnitCell 10 true true false GetCreeperInRange <-consumerRequirements[i] gte &&)
+				<-buildTypes <-type AppendToList
+				<-buildFootprints <-consumerFootprints[i] AppendToList
+				<-buildNames <-consumerNames[i] AppendToList
+			endif
+		loop
+	endif
+	# Self <-buildTypes GetListCount SetUnitDebugText
+	RandInt(0 <-buildTypes GetListCount) ->index
+	<-buildTypes[<-index] ->buildUnit
+	<-buildFootprints[<-index] dup ->FOOTPRINT_X ->FOOTPRINT_Z
+	<-buildNames[<-index] ->buildName
+	
+
+	if(<-index <-producerTypes GetListCount lt)
+		true ->producer
+		<-MIN_TOWER_DIST ->minDist
+	else
+		false ->producer
+		<-MIN_UNIT_DIST ->minDist
+	endif
+	
+:ResetTowerList
+	<-fullTowerList copy ->towers
+
+:CreateDummy
+	"DUMMY_" "" StringReplace ->type
+	<-unitAmounts{<-type} 1 add ->unitAmounts{<-type}
+	<-dummyGUID <-towerX <-towerZ "GUID" <-type "isMVerseSlave" -1 2 TableN CreateUnitOnTerrain
+	dup "DummyUnit.4rpl" "unitAmounts" <-unitAmounts SetScriptVar
+
+:Once
+	CreateList ->nullifiers
+	Self List ->fullTowerList
+	Self 0 GetUnitUIState ! ->*sleeperAnimations 
+	Self GetUnitHealth ->lastHealth
+	5 SetTimer1 #Stops the lab from immediately retaliating
+	
+	#Make local copies of the global upgrade list
+	<-*upgrades DeepCopy ->upgrades
+	<-*upgradeCosts DeepCopy ->upgradeCosts
+	
+	#Lists of unit build information
+	#Controls what unit types the lab builds and where
+	"bertha" "crystal" "stash" "factory" List ->heavyNames
+	<-berthaGUID "DUMMY_crystal" "DUMMY_stash" <-factoryGUID List ->heavyTypes #Unit types
+	5 3 3 7 List ->heavyFootprints #Build footprint size (assumed square)
+	0 0 0 1 List ->heavyLimits #Build limits (zeroes are overwritten when the factory unlocks it)
+	2000 1000 1000 100 List ->heavyRequirements #Amount of creeper that must be in the area for building
+	
+	"cannon" "mortar" "shield" "missile launcher" List ->consumerNames
+	<-cannonGUID <-mortarGUID <-shieldGUID <-missileGUID List ->consumerTypes
+	3 3 3 3 List ->consumerFootprints
+	<-CANNON_TARGET <-MORTAR_TARGET 0 0 List ->consumerLimits
+	250 500 800 750 List ->consumerRequirements
+	
+	"tower" List ->producerNames
+	<-towerGUID List ->producerTypes
+	1 List ->producerFootprints
+	
+	<-berthaGUID 0 "crystal" 0 "stash" 0 <-factoryGUID 0 <-cannonGUID 0 <-mortarGUID 0 <-shieldGUID 0 <-missileGUID 0 <-towerGUID 0 Table ->unitAmounts
+	
+	RegisterForMsg("UnlockStash" "UnlockStash")
+	RegisterForMsg("UnlockCrystal" "UnlockCrystal")
+	RegisterForMsg("UnlockBertha" "UnlockBertha")
+	RegisterForMsg("BeginMesh" "BeginMesh")
+	RegisterForMsg("UnlockShield" "UnlockShield")
+	RegisterForMsg("UnlockMissile" "UnlockMissile")
+	
+	RegisterForMsg("SleeperLabDamaged" "MVerseDamaged")
+	
+	if(<-START_WITH_SURGE)
+		@Surge
+	endif
+
+:MVerseDamaged
+	Self <-_DATA DamageUnit
+	Self GetUnitHealth ->lastHealth
+	5 SetTimer1
+
+:Destroyed
+	#Health check means it doesn't complete the mission when "update unit instances" is hit in the editor
+	if(<-WIN_ON_DESTROY Self GetUnitHealth Self GetUnitMaxHealth neq &&) 
+		5 true AcquireMissionObjective
+	endif
+	
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	Self true SetUnitOutlineEnabled
+	Self V4(1 0 0 0.5) SetUnitOutlineColor
+	Self 1 "Core of the Sleeper." 
+	if(<-WIN_ON_DESTROY)
+		" Destroy this to win the level." concat
+	endif
+	LF concat SetUnitUIText
+	Self 2 "Currently can make:" LF "-Towers" LF concat4 "-Cannons" LF "-Mortars" concat4 SetUnitUIText
+	GetMVersePlayerNum 0 do
+		RandFloat
+	loop
+
+:_UICallback
+	Self 0 GetUnitUIState ! ->*sleeperAnimations
+	SendMsg("SleeperAnimations" <-*sleeperAnimations)
+
+#Factory upgrades
+:UnlockStash
+	if(<-_DATA Self eq)
+		<-STASH_TARGET ->heavyLimits[2]
+		Self 2 dup2 GetUnitUIText Lf "-Stashes" concat3 SetUnitUIText
+	endif
+:UnlockCrystal
+	if(<-_DATA Self eq)
+		<-CRYSTAL_TARGET ->heavyLimits[1]
+		Self 2 dup2 GetUnitUIText Lf "-Crystals" concat3 SetUnitUIText
+	endif
+:UnlockBertha
+	if(<-_DATA Self eq)
+		<-BERTHA_TARGET ->heavyLimits[0]
+		Self 2 dup2 GetUnitUIText Lf "-Berthas" concat3 SetUnitUIText
+	endif
+:BeginMesh
+	if(<-_DATA Self eq)
+		Self 2 dup2 GetUnitUIText Lf "-Mesh" concat3 SetUnitUIText
+		true ->meshEnabled
+	endif
+:UnlockShield
+	if(<-_DATA Self eq)
+		<-SHIELD_TARGET ->consumerLimits[2]
+		Self 2 dup2 GetUnitUIText Lf "-Shields" concat3 SetUnitUIText
+	endif
+:UnlockMissile
+	if(<-_DATA Self eq)
+		<-MISSILE_TARGET ->consumerLimits[3]
+		Self 2 dup2 GetUnitUIText Lf "-Missiles" concat3 SetUnitUIText
+	endif
+
+#=========================================================
+
+#Finds the furthest cell the unit of footprint (Unitx, Unitz) can be built to the given cell
+#Returns -1 -1 if no cell is found
+:GetFurthestBuildCell
+	->maxCells ->FOOTPRINT_Z ->FOOTPRINT_X ->centZ ->centX
+	false ->canBuild
+
+	FloodFillTerrain(<-centX <-centZ 1 21 <-maxCells) ->terrain
+	<-terrain GetListCount 0.5 mul <-minDist @CellsInFloodFillRange 0.5 mul do
+		<-terrain PopList pop
+		if(<-terrain PopList dup dup ->v EV2 <-FOOTPRINT_X <-FOOTPRINT_Z @CellBuildable)
+			true ->canBuild
+			if(GetUnitsInRange(<-v EV2 0 swap V3 <-minDist false false false 1 0 1) !)
+				EV2 
+				return
+			else
+				pop
+			endif
+		else
+			pop
+		endif
+	loop
+	if(<-canBuild !)
+		-1 -1
+	endif
+
+:StartFindingBuildCell
+	->maxCells ->FOOTPRINT_Z ->FOOTPRINT_X ->centZ ->centX
+	FloodFillTerrain(<-centX <-centZ 1 21 <-maxCells) ->terrain
+	<-terrain GetListCount <-BUILD_GRANULARITY div ->buildIndex
+	<-minDist @CellsInFloodFillRange <-BUILD_GRANULARITY div ->minIndex
+	<-buildIndex <-minIndex sub <-MAX_BUILD_DELAY div ->dIndex
+	
+
+:CellsInFloodFillRange
+	dup dup mul 2 mul swap 2 mul add
+
+:CellBuildable
+	->FOOTPRINT_Z ->FOOTPRINT_X dup2 ->cellZ ->cellX
+	GetTerrain dup ->centerTerrain
+	dup if
+		<-cellZ <-FOOTPRINT_Z 0.5 mul ceil add <-cellZ <-FOOTPRINT_Z 0.5 mul AsInt sub do
+			<-cellX <-FOOTPRINT_X 0.5 mul ceil add <-cellX <-FOOTPRINT_X 0.5 mul AsInt sub do
+				i j GetTerrain <-centerTerrain eq i j GetCellOccupiedCount ! i j GetCreeper <-BUILD_MIN_CREEP gte && && &&
+				dup ! if
+					return
+				endif
+			loop
+		loop
+	endif 

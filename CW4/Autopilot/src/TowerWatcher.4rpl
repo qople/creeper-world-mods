@@ -1,0 +1,207 @@
+# # --TowerWatcher-- 3/17/2021 8:19:10 PM
+$delay:30
+$maxCheckNum:5
+
+$DISCONNECT_DESTROY_TIME:300 #Time after a tower has been disconnected from the rift lab to destroy it
+$$towerWatcherGUID:"8f3fade4-89a2-44b2-9043-b62b4e9a0a8f"
+
+if(GetMVersePlayerNum gt0 <-*playingAsHumans || <-*autopilotDelay ||)
+	return
+endif
+
+"TowerCheck" @StartMeasure
+<-amt 0 do
+	if(<-index lt0)
+		# GetUnitsByType("tower" 0) ->towerList
+		<-towerList GetListCount dup 1 sub ->index <-delay div 1 <-maxCheckNum clamp ->amt
+	else
+		<-towerList[<-index] dup ->tower
+		if(GetUnitDestroyed)
+			# PlaySound("Notify" 1)
+			<-*towerPosTable{<-tower} ->pos
+			0 ->pos.w
+			true @RemoveTower
+		
+		#TODO: build beacon on this tower when in a dark tower's area
+		#else 
+		#	if(<-tower GetUnitConnectedToRiftLab !)
+		#		#Either in a dark tower's range, or has been legitimately disconnected
+		#		if(<-disconnectedTowers{<-tower} IsNull)
+		#			if(<-tower GetUnitCell GetCellOccupiedCount 99 gte) #In dark cell
+		#				#BUILD BEACON
+		#			endif
+		#			#GetGameUpdateCount ->disconnectedTowers{<-tower}
+		#		endif
+		#	endif
+		endif
+		<-index 1 sub ->index
+	endif
+loop
+"TowerCheck" @EndMeasure
+
+"BuildCheck" @StartMeasure
+<-amt2 0 do
+	if(<-index2 lt0)
+		# GetUnitsByType("tower" 0) ->towerList
+		<-*allUnits GetListCount dup 1 sub ->index2 <-delay div 1 <-maxCheckNum clamp ->amt2
+	else
+		<-*allUnits[<-index2] ->tower
+		if(<-tower GetUnitConstructing ! <-tower GetUnitDestroyed ||)
+			if(-?*sleeperFactory)
+				<-*allUnits <-index2 RemoveListElement
+			endif
+			<-disconnectedTowers <-tower RemoveTableElement
+		else if(<-tower GetUnitConnectedToRiftLab !)
+			if(<-tower GetUnitCell GetCellOccupiedCount 99 gte) #In a dark cell
+				#If there's no beacon nearby, start building one
+			else if(<-disconnectedTowers{<-tower} IsNull)
+				GetGameUpdateCount ->disconnectedTowers{<-tower}
+			else if(GetGameUpdateCount <-disconnectedTowers{<-tower} sub <-DISCONNECT_DESTROY_TIME gte <-destroyBlacklist{<-tower} IsNull &&)
+				<-tower 1 1 1 DestroyUnit
+				<-*allUnits <-index2 RemoveListElement
+				<-disconnectedTowers <-tower RemoveTableElement
+			endif endif endif
+		endif endif
+		<-index2 1 sub ->index2
+	endif
+loop
+"BuildCheck" @EndMeasure
+# GetRiftLab <-towerList GetListCount SetUnitDebugText
+
+#Removes all internal mentions and caches of the current tower in the loop
+#Takes a bool for whether to send a focus message on the tower's position
+#Does not destroy the tower.
+:RemoveTower
+	<-towerList <-index RemoveListElement
+	<-disconnectedTowers <-tower RemoveTableElement
+	<-*towerRegions[<-pos.x AsInt <-pos.z AsInt @Region]
+	dup <-pos GetListIndex RemoveListElement
+	if
+		"Focus" <-*towerPosTable{<-tower} SendMsg
+	endif
+	RemoveTableElement(<-*towerPosTable <-tower)
+	RemoveTableElement(<-*emptyTowers <-tower)
+
+:TowerDestroyed
+	<-_DATA ->pos
+	
+	#Add towers around the destroyed tower back to the list of towers to build off of
+	if(GetTimer0 eq0)
+		#20 SetTimer0
+		GetRegisteredScriptVar("RiftLabAI" "towers") ->towers
+		GetUnits("tower" <-pos 20 false false false 0 1 0) ->list
+		if(<-pos GetRiftLab GetUnitPosition Distance 20 lte)
+			<-list GetRiftLab AppendToList
+		endif
+		<-list GetListCount 3 min 0 do
+			if(<-towers <-list[i] ListContains)
+				<-towers <-list[i] dup2 GetListIndex RemoveListElement
+			endif
+			if(<-*emptyTowers{<-list[i]} !)
+				<-*emptyTowers <-list[i] true SetTableElement
+			endif
+			<-towers <-list[i] AppendToList
+		loop
+		"RiftLabAI" "towers" <-towers SetRegisteredScriptVar
+		# "RiftLabAI" "nextTurbo" true SetRegisteredScriptVar
+	endif
+	
+	#Move reserves to the breach
+	if(<-pos.w gte0)
+		<-*reserves GetTableKeys ->reserveUnits
+		<-*autopilotDelay <-*AP_BUILD_TIME add ->*autopilotDelay
+		<-reserveUnits 0 do
+			<-reserveUnits[i] ->reserveUnit
+			#Remove destroyed units
+			<-reserveUnit GetUnitDestroyed ! <-reserveUnit GetUnitMoveCell add lt0 and if
+				<-reserveMoved 1 add ->reserveMoved
+				<-reserveUnit <-pos ToCell 3 3 2 200 @GetNearestBuildCell dup2 ->z ->x
+				dup2 add gte0 if 
+					SetUnitMoveCell
+					"UnitMove" "lastPos" GetRegisteredScriptVar <-reserveUnit <-x 0 <-z V3 SetTableElement 
+				else 
+					pop pop pop 
+				endif
+			endif
+			<-reserveUnit true SetUnitArmed
+			<-*reserves <-reserveUnit RemoveTableElement
+			<-reserveUnit "" SetUnitDebugText
+			<-reserveMoved 3 eq if
+				0 ->reserveMoved
+				break
+			endif
+			
+		loop
+		if(GetGameUpdateCount <-pos.w sub 900 gt <-pos.w &&)
+			SetRegisteredScriptVar("RiftLabAI" "weaponFocusOverride" <-pos)
+			SetRegisteredScriptVar("RiftLabAI" "focusTimer" 0)
+		endif
+	endif
+	
+	SetRegisteredScriptVar("RiftLabAI" "OrbitalTarget" <-pos)
+
+:StartMeasure
+	"StartMeasure" swap SendMsg
+
+:EndMeasure
+	"EndMeasure" swap SendMsg
+
+:GetNearestBuildCell
+	->maxCells ->MaxCreep ->UnitZ ->UnitX ->centZ ->centX
+	false ->canBuild
+	FloodFillTerrain(<-centX <-centZ 1 21 <-maxCells) ->terrain
+	<-terrain GetListCount 0 do
+		<-terrain[i] EV2 <-UnitX <-UnitZ <-MaxCreep @CellBuildable if
+			true ->canBuild
+			<-terrain[i] EV2 break
+		endif
+	loop
+	if(<-canBuild !)
+		-1 -1
+	endif
+	return
+
+:CellBuildable
+	->maxCreep ->unitZ ->unitX ->cellZ ->cellX
+	<-cellX <-cellZ GetTerrain dup ->centerTerrain
+	dup if
+		<-cellZ <-unitZ 0.5 mul ceil add <-cellZ <-unitZ 0.5 mul AsInt sub do
+			<-cellX <-unitX 0.5 mul ceil add <-cellX <-unitX 0.5 mul AsInt sub do
+				i j GetTerrain dup <-centerTerrain eq i j GetCellOccupiedCount ! i j GetCreeper <-maxCreep lte && && && &&
+				dup ! if
+					return
+				endif
+			loop
+		loop
+	endif
+	return
+
+:Awake
+	RegisterForMsg("Focus" "TowerDestroyed")
+	RegisterScript("Watcher")
+
+:Once
+	CreateTable ->*towerPosTable
+	CreateTable ->disconnectedTowers
+	1 ->amt
+	1 ->amt2
+	"tower" 0 GetUnitsByType ->towerList
+	
+	GetMapSize ->mapZ ->mapX
+	<-mapX 12 div 1 add ->xRegions
+	<-mapZ 12 div 1 add ->zRegions
+
+	GetUnits("" Vector0 1000 false false false 2 0 1) ->units
+	<-units 0 do
+		<-units[i] 1
+	loop
+	Table ->destroyBlacklist
+
+	CreateList ->*allUnits #Overridden by sleeper globals, but the above section means it won't cause any discrepancies in behavior
+
+:Region
+	12 div <-xRegions mul swap 12 div add
+
+:GameLoaded
+	RegisterScript("Watcher")
+	

@@ -1,0 +1,7 @@
+# --AI Influencers-- 3/6/2021 6:23:52 PM
+$enabled:0
+
+#Pressing Middle Mouse overrides weapon focus to the pointer location
+if(GetMouseButtonDown(2 1) <-enabled &&)
+	"Focus" GetPointerTerrainCoords FromCell SendMsg
+endif 

@@ -1,0 +1,71 @@
+# --Background-- 5/10/2021 2:31:06 PM
+
+#Extra size added to the scale of the background. Basically border width.
+$$X_PADDING:3
+$$Z_PADDING:3
+
+$$SCALE_MULT:0.1
+
+$$LEVEL_GUID:"627724b4-1a7b-4e6b-9764-e66ddf5edd1e"
+
+:WhilePaused
+	once
+		@MoveBG
+	endonce
+
+:MoveBG
+	if(<-_DATA -1 eq)
+		@FindBounds
+		<-minX 0 min ->minX
+		<-maxX <-mapX 1 sub max ->maxX
+		<-minZ 0 min ->minZ
+		<-maxZ <-mapZ 1 sub max ->maxZ
+		
+		<-maxX <-minX dup2 sub <-SCALE_MULT mul ->scaleX avg2 ->centerX
+		<-maxZ <-minZ dup2 sub <-SCALE_MULT mul ->scaleZ avg2 ->centerZ
+		
+		Self V3(<-centerX 0 <-centerZ) SetUnitPosition
+		Self "" V3(<-scaleX 1 <-scaleZ) SetObjScale
+		V3(0 0 <-maxZ neg) ->*posOffset
+		return
+	endif
+	
+	@FindBounds 
+	<-maxX <-minX dup2 sub <-SCALE_MULT mul ->scaleX avg2 ->centerX
+	<-maxZ <-minZ dup2 sub <-SCALE_MULT mul ->scaleZ avg2 ->centerZ
+	Self V3(<-centerX 0 <-centerZ) SetUnitPosition
+	Self "" V3(<-scaleX 1 <-scaleZ) SetObjScale
+
+:FindBounds
+	#Get a list of all levels
+	GetUnits(<-LEVEL_GUID Vector0 99999 false false false 0 0 0) ->levels
+	if(<-levels !)
+		0 0 0 0 return
+	endif
+	-9999 dup ->maxX ->maxZ
+	9999 dup ->minX ->minZ
+	
+	#Find outer bounds of the level map
+	<-levels 0 do
+		<-levels[i] GetUnitPosition ->pos
+		<-pos.x dup <-maxX max ->maxX <-minX min ->minX
+		<-pos.z dup <-maxZ max ->maxZ <-minZ min ->minZ
+	loop
+	<-minX <-minZ <-maxX <-maxZ 
+		<-Z_PADDING add ->maxZ 
+		<-X_PADDING add ->maxX 
+		<-Z_PADDING sub ->minZ 
+		<-X_PADDING sub ->minX
+	return
+
+:Awake
+	Self false SetMVerseCreatesUnitGhost
+	GetMapSize ->mapZ ->mapX
+	Self V3(<-mapX 2.0 div 0 <-mapZ 2.0 div) SetUnitPosition
+	Self "Base" V3(1 1 1) SetObjScale
+	Self "" V3(<-mapX 10.0 div 1 <-mapZ 10.0 div) SetObjScale
+	
+	RegisterForMsg("SetMap" "MoveBG")
+	RegisterForMsg("MoveBG" dup)
+	RegisterForMsg("MSG_PreUpdate" "WhilePaused")
+	@MoveBG

@@ -1,0 +1,197 @@
+# --weaponLoader-- 1/8/2021 6:23:17 PM
+
+#Weapon stat info can be found on the wiki documentation page (First Person Tools)
+
+#-----------------------
+# Debug and version info
+# If you modify this script, Update these. 
+# If you don't, leave them, even if you modified another script in the CPACK.
+
+# Current version of this script. If you branch someone else's version, add a period 
+# and start a new number ("10" -> "10.0"). If you edit your own version, add 1 to the last number ("10.0" -> "10.1")
+$$Script_Version:"5" 
+
+# The authors who have directly modified this script. There should be one name for each number in the script version.
+# If you don't want to attach your name, anything that separates your version from other possible branches works.
+$$Edit_History:"qople,"  
+
+$$Intended_Version:"1.5.1" #The CPACK version this script is intended for. The CPACK version is in the settings section of FpsCore.
+
+#Any other info that should be printed on startup, such as dependencies.
+#This is printed as-is (no extra formatting).
+$$Notes:"" 
+
+#=======================
+
+
+:InitializeWeapons
+	<-_DATA ->script
+	GetRegisteredScriptVar(<-script "weaponsAdded") ->weaponsAdded
+	GetRegisteredScriptVar(<-script "customAttributes") ->customAttributes
+	<-defaultTable GetTableKeys ->attributeList 
+	
+	#Add custom attributes
+	if(<-customAttributes "" neq)
+		<-customAttributes RemoveWhiteSpace "," Split ->customAttributes
+		<-customAttributes GetListCount 0 do
+			if(<-attributeList <-customAttributes[i] ListContains !)
+				<-attributeList <-customAttributes[i] AppendToList
+			endif
+		loop
+	endif
+  
+	#Initialize weapons
+	<-weaponsAdded GetListCount 0 do
+		<-weaponsAdded[i] ->weapon
+		if(<-weapon AsString "0" neq)
+			createTable ->statTable
+		
+			#Values from script vars
+			<-attributeList getListCount 0 do
+				<-attributeList[i] ->attribute
+				<-weapon <-attribute concat ->attributeString
+				GetRegisteredScriptVar(<-script <-attributeString) ->attributeValue
+				if(<-attributeValue IsNull !)
+					<-attributeValue ->statTable{<-attribute}
+				else
+					<-defaultTable{<-attribute} ->statTable{<-attribute}
+				endif
+			loop
+		
+			#interpret the "other" string
+			GetRegisteredScriptVar(<-script <-weapon "Other" concat) RemoveWhiteSpace ->other
+			if(<-other "" neq)
+				<-other "," split ->otherList
+				<-otherList getListCount 0 do
+					<-otherList[i] ":" split ->pair
+					#Figure out if the string should actually be a float
+					if(<-pair[1] AsFloat ! <-pair[1] "0" StartsWith ! &&)
+						<-pair[1] ->statTable {<-pair[0]}
+					else
+						<-pair[1] AsFloat ->statTable{<-pair[0]}
+					endif
+				loop
+			endif
+			@WeaponDps ->statTable{"BaseDPS"}
+			<-statTable ->*weaponAttributes{<-weapon}
+		endif
+		<-weapon " initialized: " <-statTable concat3 trace
+	loop
+	
+
+:DoWeaponEffects
+	<-_DATA[0] ->weapon
+	<-_DATA[1] ->pos
+	
+	<-defaultTable GetTableKeys ->attributeList 
+	<-attributeList GetListCount 0 do
+		<-*weaponAttributes{<-weapon}{<-attributeList[i]} <-attributeList[i] ->!
+	loop
+	
+	#normal damage
+	<-DmgIterations 0 do
+		damageCreeper(<-pos toCell <-DmgMaxCells <-DmgIterations div <-DmgDist <-DmgDepth false)
+	loop
+	
+	#add AC
+	AddCreeperWithCapInRange(<-pos toCell <-AcDist false <-AcDepth abs neg <-AcCap)
+	
+	#mesh damage
+	DamageMesh(<-pos toCell <-MeshDist <-MeshDmg)
+	
+	#unit damage
+	getUnitsInRange(<-pos V3(0 3 0) add <-UnitDmgDist false true true 1 0 1) ->units
+	<-units getListCount 0 do
+		damageUnit(<-units[i] <-UnitDmgAmt)
+	loop
+	
+	#Sound on hit
+	PlaySoundAtPosition(<-HitSound <-HitVolume <-pos)
+	if(<-EffectName "" neq <-Rate 3 gt &&)
+		CreateEffect(<-EffectName <-pos V3(<-EffectScale dup dup))
+	endif	
+
+:WeaponDps
+	# ->thisWeapon
+	"DmgDepth" @Stat 0.00001 max ->dmgDepth
+	"DmgIterations" @Stat ->iterations
+	
+	"DmgDist" @Stat AsInt ->dmgDist
+	<-cellsInRadii[<-dmgDist] ->numCells
+	<-dmgDepth "DmgMaxCells" @Stat <-numCells min mul
+
+	#add ac added per shot
+	"AcDist" @Stat AsInt ->acDist
+	<-cellsInRadii[<-acDist] ->numCells
+	"AcDepth" @Stat <-numCells mul add
+	
+	#Divide by fire rate
+	"Rate" @Stat AsInt 1 max div 30 mul
+	return
+
+:Stat
+	<-statTable swap GetTableElement return
+
+:GameLoaded
+	once @SendDebugInfo endonce
+
+:SendDebugInfo
+	if(GetEditMode)
+		"Version " <-Script_Version LF concat3
+		"Edit History: " <-Edit_History LF concat4
+		"Made for FpsCore v" <-Intended_Version concat3
+		if(<-Notes RemoveWhiteSpace StringLength)
+			LF <-Notes concat3
+		endif
+		
+		#Check if the version matches
+		if(<-Intended_Version RemoveWhiteSpace <-*fpsCoreVersion RemoveWhiteSpace neq)
+			LF "VERSION MISMATCH: CPACK version (" <-*fpsCoreVersion ") does not match intended version." concat4 concat
+		endif
+		
+		LF concat Print
+	endif
+
+:Awake
+	once
+	#List of how many cells are in a circle with a radius of the index, up to 50.
+	List(1 9 21 37 69 97 137 177 225 293 349 421 489 577 665 749 861 973 1085 1201 1313 1457 1597 1741 1885 2053 2217 2377 2561 2733 2933 3125 3313 3521 3745 3969 4197 4421 4669 4905 5169 5417 5681 5957 6221 6509 6785 7089 7393 7705)
+			->cellsInRadii
+	RegisterForMsg("Initialize" "InitializeWeapons")
+	RegisterForMsg("WeaponEffect" "DoWeaponEffects")
+	CreateTable ->*weaponAttributes
+	
+	#table of all attributes and their default values
+	Table(
+			"Rate"			30
+			"DmgDepth"		0.0
+			"DmgDist"		0.0
+			"DmgMaxCells"	9999
+			"DmgIterations"	1
+			"ProjSpeed"		10
+			"MinRange"		0
+			"MaxRange"		100
+			"AcDepth"		0.0
+			"AcDist"		0.0
+			"AcCap"			0.0
+			"MeshDmg"		0.0
+			"MeshDist"		0.0
+			"UnitDmgAmt"	0.0
+			"UnitDmgDist"	0.0
+			"BaseDPS"		0.001	#Set automatically on game start by the DPS monitor. Changing will mess with displayed upgrade strengths.
+			
+			#hidden attributes (Affect visuals, not balance)
+			"Path"			0
+			"Color"			V3(1 1 1)
+			"Trail"			v2(0 0)
+			"FireSound"		""
+			"FireVolume"	1
+			"HitSound"		""
+			"HitVolume"		1
+			"EffectName"	""
+			"EffectScale"	1
+			"BulletGUID"	""
+			) ->defaultTable
+	<-defaultTable GetTableKeys ->attributeList 
+	endonce
+	

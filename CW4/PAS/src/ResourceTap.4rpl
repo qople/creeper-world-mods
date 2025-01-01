@@ -1,0 +1,89 @@
+# --ResourceTap-- 11/10/2023 10:09:24 PM
+$bluiteMult:100.0 #Creeper produced per bluite
+
+if(Self "CoreSleeper.4rpl" "wait" GetScriptVar !)
+	once
+		<-target <-disabled SetUnitSettings
+		Self GetUnitPosition ->pos
+		<-z 2 add <-z 1 sub do
+			<-x 2 add <-x 1 sub do
+				i j dup2 GetCellOccupiedCount 1 add SetCellOccupiedCount
+			loop
+		loop
+	endonce
+endif
+
+:Awake
+	once
+	Table("Interval" 2147000000) ->disabled
+	"greenarmother" "resourcered" "resourceblue" List ->resourceTypes
+	Self GetUnitPosition 4 false false false 2 1 2 GetUnitsInRange ->units
+	Self GetUnitType 0 GetUnitsByType ->taps
+	-1 ->target
+	<-units 0 do
+		if(<-resourceTypes <-units[i] GetUnitType ListContains)
+			<-units[i] ->target
+			#Check if any resource taps have this unit as their target
+			
+			<-taps 0 do
+				<-taps[i] ->tap
+				if(<-tap "ResourceTap.4rpl" "target" GetScriptVar <-target eq <-tap self neq &&)
+					-1 ->target
+					break
+				endif
+			loop
+			if(<-target -1 neq)
+				break
+			endif
+		endif
+	loop
+	if(<-target -1 eq)
+		Self 1 1 1 DestroyUnit
+	endif
+	Self <-target GetUnitPosition SetUnitPosition
+	<-target GetUnitType ->type
+	<-type "greenarmother" eq ->resource
+	<-target GetUnitSettings ->settings
+	1.0 <-settings{"Interval"} div if(<-resource) 12 mul endif ->rate
+	if(<-type "resourceblue" eq)
+		2 ->resource
+		<-rate <-bluiteMult mul 30 mul ->rate
+		Self "CoreSleeper.4rpl" "EMIT_AMT" <-rate 9.0 div SetScriptVar
+		Self "Bluite Tap" SetUnitPopupText0
+		Self <-rate 2 round " every 1.0s" concat SetUnitPopupText1
+		# Self <-rate SetUnitDebugText
+	else
+		Self
+		if(<-resource)
+			"Greenar "
+		else
+			"Redon "
+		endif
+		"tap" concat SetUnitPopupText0
+		Self <-rate 30 mul 2 round " every second" concat SetUnitPopupText1
+	endif
+	Self true SetUnitPopupEnabled
+	
+	if(<-resource eq0)
+		Self "Light" V3(1 0.2 0.2) SetObjColor
+	else if(<-resource 1 eq)
+		Self "Light" V3(0.1 1 0.1) SetObjColor
+	else if(<-resource 2 eq)
+		Self "Light" V3(0.6 0.6 1) SetObjColor
+	endif endif endif
+	
+	Self GetUnitCell ->z ->x
+
+	--taps
+	--units
+	--resourceTypes
+	endonce
+
+
+:Destroyed
+	<-z 2 add <-z 1 sub do
+		<-x 2 add <-x 1 sub do
+			i j dup2 GetCellOccupiedCount 1 sub 2 max SetCellOccupiedCount
+		loop
+	loop
+	<-target <-settings SetUnitSettings 

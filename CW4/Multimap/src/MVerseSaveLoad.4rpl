@@ -1,0 +1,383 @@
+# --MVerseSaveLoad-- 10/31/2023 7:48:40 AM
+# Allows saving and loading in the middle of an MVerse match. 
+# Works by encoding unit data from all instances in the host's save game
+# Then loading the correct save data for each instance on rejoin.
+
+# Is included with, but does not depend on, the Multimap CPACK. It can be added as a standalone addition to any map.
+
+# Another note: Custom units will send EVERY DEFINED VARIABLE (name and value) over the network when they save.
+# For complex units, this might cause failure. Honestly I'm not sure.
+
+$msgButtonSlot:2 #which msg button is used by the script
+$timeToShow:30 #Number of frames the game must be paused for the button to appear. Also, the difference in UPS between MVerse players before it starts glitching in and out of appearance due to MVerse's auto pause.
+
+#Max number of vanilla units to send data for every frame. 
+#There is a forced max of one CMOD unit per frame, since they tend to have a lot more settings attached to them.
+#This limit is there to avoid any issues with network failure, and reduce lag during the save process that might cause issues.
+$$SAVE_SPEED:5 
+
+if(GetTimer0 1 eq -?dropInSave &&) #Load the save
+	@LoadMVerseSave
+endif
+
+if(GetMVersePlayerNum eq0) #Host of the MVerse game
+
+	#Set msg button when paused and unpaused
+	if(GetPause)
+		
+		<-pausedTime 1 add ->pausedTime
+		if(<-pausedTime <-timeToShow eq)
+			SetMsgButton(<-msgButtonSlot true "Press this before saving" V4(0.3 0.3 1 1) "BeginDropInSave" "0")
+		endif
+	else
+		if(<-pausedTime) #Frame the game is unpaused
+			SendMVerseMsg("AbortSave" 0)
+			SetMsgButton(<-msgButtonSlot false "" Vector0 "" "")
+			--dropInSave
+			0 ->savesCompleted
+			0 ->pausedTime
+		endif
+	endif
+
+else 
+	if(<-lastPause GetPause dup ->lastPause neq GetPause ! &&)
+		SetMsgButton(<-msgButtonSlot false "" Vector0 "" "")
+	endif
+		
+if(GetMVersePlayerNum gt0) #Other MVerse instances
+	if(-?currentIndex) #While saving
+		#To avoid sending massive amounts of data in one message, send data of a few units every game update in their own message
+		CreateList ->nextSave
+		<-SAVE_SPEED 0 do
+			<-units[<-currentIndex] ->unit
+			if(<-saveMethods{<-unit GetUnitType} eq0 <-unit GetUnitType StringLength gt0 &&)
+				if(<-unit GetUnitType StringLength 25 gt) #if it's a CMOD unit
+					if(<-nextSave GetListCount !)
+						@SaveUnit
+					endif
+					break #Limit of one CMOD unit (If @SaveUnit is not called, currentIndex will not increase)
+				else
+					@SaveUnit
+				endif
+			else
+				<-currentIndex 1 add ->currentIndex #Skip this unit
+			endif
+		loop
+		
+		SendMVerseMsg("DropInSaveData" <-nextSave)
+		SetMsgButton(<-msgButtonSlot 1 <-nextSave GetListCount " units saved" concat V4(0.3 0.3 1 1) "" "")
+
+		if(<-currentIndex <-units GetListCount eq) #Stop saving
+			--units 
+			--currentIndex
+			SendMVerseMsg("FinishedSave" GetMVersePlayerNum)
+			SetMsgButton(<-msgButtonSlot 0 0 0 0 0)
+		endif
+	endif
+
+endif 
+endif
+
+:SaveUnit
+	#For each unit, we need:
+	#	-type
+	#	-position
+	#	-orientation
+	#	-settings, if any
+	#	-constructing data, if not built
+	#	-ammo, if built
+	#	-health, if built
+	#	-move cell, if moving
+	#And once we have all that, we can make the same unit again later.
+	
+	#Start with the settings we always need
+	Table(
+		if(<-unit GetRiftLab eq)
+			"T" "riftlab"
+		else
+			"T" <-unit GetUnitType
+		endif
+		"P" <-unit GetUnitPosition
+	) ->saveData
+	
+	#Other settings will have a "default" state that we can use, so we don't have to always define a table element for each one.
+	
+	#Unit settings
+	#We have to do something kind of odd because GetUnitSettings can sometimes put nothing on the stack
+	0 StackSize
+	<-unit GetUnitSettings
+	swap StackSize neq if 
+		dup GetTableCount if
+			->saveData{"S"}
+		else
+			pop
+		endif
+	endif
+	
+	#Orientation
+	<-unit GetUnitOrientation if
+		<-unit GetUnitOrientation ->saveData{"O"}
+	endif
+	
+	<-unit GetUnitConstructing if
+		#Constructing data
+		<-unit GetUnitConstructingData[0] ->saveData{"C"}
+	else
+		#Ammo (default is no ammo)
+		if(<-unit GetUnitAmmo)
+			<-unit GetUnitAmmo ->saveData{"A"}
+		endif
+		
+		#Health (default is max health)
+		if(<-unit GetUnitHealth <-unit GetUnitMaxHealth neq)
+			<-unit GetUnitHealth ->saveData{"H"}
+		endif
+		
+		#Move cell
+		if(<-unit GetUnitMoveCell V2 IsV2InMap)
+			<-unit GetUnitMoveCell FC ->saveData{"M"}
+		endif
+	endif
+	
+	#Send the unit's save data to the host, with a note on which instance it's from
+	<-nextSave ListN(GetMVersePlayerNum <-currentIndex <-saveData 3) AppendToList
+	
+	<-currentIndex 1 add ->currentIndex
+
+:Once
+	10 ->savesNeeded
+	if(GetEditMode !)
+		SetMsgButton(<-msgButtonSlot 0 0 0 0 0)
+	endif
+	RegisterForMsg("BeginDropInSave" "BeginDropInSave")
+	RegisterForMsg("MSG_SaveGame" "OnSave")
+	
+	#Save behavior table
+	#Any unit type not in this table, or with a value of 0 in the table, will be separate for each instance
+	#If the value for the unit type is 1, all units of that type will be copied from the host instance to all instances on load
+	#	(this is for units such as towers and emitters, which have local copies for all players)
+	#This works by excluding these units from the save process, and letting them be loaded from the parent save.
+	Table(
+		#Enemy units
+		"emitter" 1
+		"airsaccauldron" 1
+		"sporelauncher" 1
+		"blobnest" 1
+		"skimmerfactory" 1
+		"egg" 1
+		"stash" 1
+		
+		#Map units
+		"greenarmother" 1
+		"resourcered" 1
+		"resourceblue" 1
+		"crazonium" 1
+		"wall" 1
+		
+		# #Player units
+		"tower" 1
+		"pylon" 1
+		"greenarrefinery" 1
+		"miner" 1
+		"platform" 1
+		"cannon" 0
+		"mortar" 0
+		"sprayer" 0
+		"sniper" 0
+		"missilelauncher" 0
+		"nullifier" 0
+		"beacon" 0
+		"terp" 0
+		"runway" 0
+		"bomberpad" 0
+		"acbomberpad" 0
+		"rocketpad" 0
+		
+		# #Custom units (Add yours here if you want)
+		
+		# #Multimap units
+		"6eaaa753-3a53-4ef1-a9f4-de991889c4e5" 1 #Background
+		"627724b4-1a7b-4e6b-9764-e66ddf5edd1e" 1 #Levels
+		"651ecd06-600d-4166-94d0-afde51f8b813" 1 #Transitions
+		) ->saveMethods
+		
+
+#Begin the process of saving. 
+:BeginDropInSave
+	if(<-_DATA "0" eq) #Prepare the host insance to receive save data
+		#Other game instances send their save data along these msg channels
+		RegisterForMsg("ReadyToSave" "InstanceReady")
+		RegisterForMsg("DropInSaveData" "AddSaveData")
+		RegisterForMsg("FinishedSave" "InstanceSaved")
+		GetMVersePlayers ->playerNames
+		4 CreateListStartingSize ->dropInSave #Each element will have that player's save data in it
+		4 CreateListStartingSize ->saveLengths
+		4 CreateListStartingSize ->saveProgress
+		0
+		4 1 do
+			GetMVersePlayers[i] IsNull ! if
+				1 add
+			endif
+		loop
+		->savesNeeded
+		0 ->savesCompleted
+		"" "" "" "" List ->progressText
+		GetUnits("" Vector0 1000 true false false 0 0 0) ->units #Units to save
+		-1 <-units 1 sub do #Remove synced units from the save
+			if(<-saveMethods{<-units[i] GetUnitType} 1 eq <-units[i] GetUnitType StringLength eq0 ||)
+				<-units i RemoveListElement
+			endif
+		loop
+		<-units ->dropInSave[0]
+		
+		SendMVerseMsg("BeginDropInSave" "1") #Starts other instances gathering and sending save data
+	else #Begin making the save data
+		GetUnits("" Vector0 1000 true false false 0 0 0) ->units #Units to save
+		-1 <-units 1 sub do #Remove synced units from the save
+			if(<-saveMethods{<-units[i] GetUnitType} 1 eq <-units[i] GetUnitType StringLength eq0 ||)
+				<-units i RemoveListElement
+			endif
+		loop
+		0 ->currentIndex
+		SendMVerseMsg("ReadyToSave" ListN(GetMVersePlayerNum <-units GetListCount 2)) #Give the length of save data to the host
+		RegisterForMsg("AbortSave" "AbortSave")
+	endif
+
+#Stops the save process
+:AbortSave
+	--units 
+	--currentIndex
+
+#Prepare the instance for being 
+:InstanceReady
+	<-_DATA ->data
+	<-data[0] ->instanceNum
+	<-data[1] ->saveLengths[<-instanceNum]
+	CreateList ->dropInSave[<-instanceNum]
+	"Player " <-instanceNum ": 0%<br>" concat3 ->progressText[<-instanceNum]
+
+#Add data from another instance to the host instance's save
+:AddSaveData
+	<-_DATA ->saveList
+	<-saveList 0 do
+		<-saveList[i] ->data
+		<-data[0] ->instanceNum
+		<-dropInSave[<-instanceNum] <-data[2] DeepCopy AppendToList
+	loop
+
+	#Update progress text
+	<-data[1] ->saveProgress[<-instanceNum]
+	GetMVersePlayers[<-instanceNum] ": " <-saveProgress[<-instanceNum] <-saveLengths[<-instanceNum] AsFloat div 100 mul 1 round "%<br>" concat4 ->progressText[<-instanceNum]
+	@UpdateMsgButton
+
+#Runs when each instance finishes saving
+:InstanceSaved
+	#Check if we're done saving
+	<-savesCompleted 1 add ->savesCompleted
+	if(<-savesCompleted <-savesNeeded eq)
+		@FinishSave
+	endif
+
+#Sets the text on the msg button
+:UpdateMsgButton
+	"Syncing MVerse data...<br>DO NOT UNPAUSE OR SAVE<br>" 
+	4 1 do
+		<-progressText[i] concat
+	loop
+	->buttonText
+	SetMsgButton(<-msgButtonSlot true <-buttonText V4(0.3 0.3 1 1) "" "")
+
+#Cleans up after the save is done for the host
+:FinishSave
+	SetMsgButton(<-msgButtonSlot true "Save now.<br>DO NOT UNPAUSE BEFORE SAVING" V4(0.3 0.3 1 1) "" "")
+
+:OnSave
+	if(<-savesCompleted <-savesNeeded eq)
+		SetMsgButton(<-msgButtonSlot 1 "Make sure players have the same names on rejoin." V4(0.3 0.3 1 1) 0 0)
+	endif
+
+#==========================================
+#Loading save data
+:GameLoaded
+	if(GetMVersePlayerNum lt0 -?dropInSave &&)
+		"MVerse save data is present for "
+		4 1 do
+			if(<-dropInSave[i])
+				<-playerNames[i] ", " concat3
+			endif
+		loop
+		->buttonText
+		SetMsgButton(<-msgButtonSlot 1 <-buttonText V4(0.3 0.3 1 1) 0 0)
+	else
+		SetMsgButton(<-msgButtonSlot 0 0 0 0 0)
+	endif
+	GetMVersePlayers[GetMVersePlayerNum] ->myName
+	
+	#Don't load a save if you're the host or weren't in the last session
+	# if(-?dropInSave ) 
+		4 SetTimer0
+	# endif
+
+:LoadMVerseSave
+	if(GetMVersePlayerNum lte0)
+		0 ->justLoaded
+		return
+	endif
+	GetMVersePlayers[GetMVersePlayerNum] ->myName
+	SetMsgButton(<-msgButtonSlot 1 "Loading save for " <-myName concat V4(0.3 0.3 1 1) 0 0)
+
+	#First, remove all units that aren't synced
+	<-dropInSave[0] ->units
+	<-units 0 do #Remove synced units from the save
+			<-units[i] 1 1 1 DestroyUnit
+	loop
+	
+	
+	#Find which save is yours
+	<-playerNames <-myName GetListIndex ->saveSlot
+	<-dropInSave[<-saveSlot] ->mySave
+
+	GetUnits("" Vector0 1000 true false false 0 0 0) ->units #Units to save
+	
+	#Each item in the save list is a table containing the following:
+	#	-type
+	#	-position
+	#	-orientation
+	#	-settings, if any
+	#	-constructing data, if not built
+	#	-ammo, if built
+	#	-health, if built
+	#	-move cell, if moving
+	
+	#Make the units
+	<-mySave 0 do
+		<-mySave[i] ->data
+		if(<-data{"T"} "riftlab" eq GetRiftLab gte0 &&)
+			GetRiftLab <-data{"P"} SetUnitPosition
+			GetRiftLab ->unit
+		else
+			<-data{"T"} <-data{"P"} <-data{"S"} CreateUnit ->unit
+		endif
+		
+		#Orientation
+		if(<-data{"O"} IsNull !)
+			<-unit <-data{"O"} SetUnitOrientation
+		endif
+		
+		if(<-data{"C"} IsNull) #Not constructing
+			<-unit 99999999 ConstructUnit
+			if(<-data{"A"} IsNull !)
+				<-unit <-data{"A"} SetUnitAmmo #Ammo
+			endif
+			if(<-data{"H"} IsNull !)
+				<-unit <-data{"H"} SetUnitHealth #Health
+			endif
+			if(<-data{"M"} IsNull !)
+				<-unit <-data{"M"} UFC SetUnitMoveCell #Move cell
+			endif
+		else
+			<-unit <-data{"C"} ConstructUnit
+		endif
+	loop
+	0 ->justLoaded
+	

@@ -1,0 +1,159 @@
+# --Tower-- 11/8/2023 6:47:35 PM
+# Manages connections between towers
+$CONNECTION_DIST:20
+$MAX_CONNECTIONS:5
+$FALLOFF:0.25
+
+:Awake
+	once
+		CreateList ->connectedTowers
+		<-*sleepertowerRegions[Self GetUnitCell @Region] Self AppendToList
+		true ->*sleeperemptyTowers{Self}
+		<-*sleeperLab "Lab.4rpl" "towers" GetScriptVar dup GetListCount 3 sub Self InsertListElement
+		V3(0 4 0) ->height
+		Self GetUnitType ->towerGUID
+		Self GetUnitPosition ->myPos
+		Self "CoreSleeper.4rpl" "EMIT_AMT" GetScriptVar ->baseEmit
+		1 <-FALLOFF div <-MAX_CONNECTIONS add ->connection_limit
+		RegisterForMsg("AddConnection" Self concat "AddConnection")
+		RegisterForMsg("RemoveConnection" Self concat "RemoveConnection")
+		RegisterForMsg("UpdateConnections" "UpdateConnections")
+		-1 ->exclude
+		@Initialize
+	endonce
+
+:Region
+	20 div <-*mapX 20 div 1 add mul swap 20 div add
+
+:Initialize
+	@FindTowers ->nearbyTowers
+	<-nearbyTowers GetListCount 1 sub ->connections #subtract 1 because the tower doesn't connect to itself
+	<-nearbyTowers 0 do
+		if(<-nearbyTowers[i] self neq)
+			<-connectedTowers <-nearbyTowers[i] AppendToList
+			SendMsg("AddConnection" <-nearbyTowers[i] concat Self)
+		endif
+	loop
+	@SetEmitAmt
+	if(<-*sleeperConnections !)
+		SendMsg("TowerConnected" Self)
+	else
+		@UpdateConnections
+	endif
+
+:FindTowers
+	<-towerGUID Self GetUnitPosition <-CONNECTION_DIST false true false 0 0 0 GetUnits ->nearbyTowers
+	-1 <-nearbyTowers GetListCount 1 sub do
+		<-nearbyTowers[i] GetUnitPosition <-height add Self GetUnitPosition <-height add dup2 true GetTerrainLOS [1] gte0 ->hit
+		swap true GetTerrainLOS [1] gte0 <-hit || ->hit
+		if(<-hit)
+			<-nearbyTowers i RemoveListElement
+		endif
+	loop
+	<-nearbyTowers
+
+:SetEmitAmt
+	1 <-connections <-MAX_CONNECTIONS sub 0 max <-FALLOFF mul sub <-baseEmit mul 0 max ->amt
+	Self "CoreSleeper.4rpl" "EMIT_AMT" <-amt SetScriptVar
+	
+
+:Destroyed
+	<-connectedTowers 0 do
+		SendMsg("RemoveConnection" <-connectedTowers[i] concat Self)
+	loop
+	<-*sleepertowerRegions 0 do
+		<-*sleepertowerRegions[i] dup Self GetListIndex RemoveListElement
+	loop
+	<-towerGUID Self GetUnitPosition 20 false true false 0 0 0 GetUnits ->nearbyTowers
+	@FindTowers ->nearbyTowers
+	<-nearbyTowers 0 do
+		true ->*sleeperemptyTowers{<-nearbyTowers[i]}
+		<-*sleeperLab "Lab.4rpl" "towers" GetScriptVar ->towers
+		if(<-towers <-nearbyTowers[i] ListContains)
+			<-towers <-nearbyTowers[i] dup2 GetListIndex RemoveListElement 
+		endif
+		<-towers dup GetListCount 3 sub <-nearbyTowers[i] InsertListElement
+	loop
+
+:AddConnection
+	<-_DATA ->centerUnit
+	<-connectedTowers <-centerUnit AppendToList
+	<-connections 1 add ->connections
+	
+	if(<-*sleeperConnections)
+		@UpdateConnections
+		@SetEmitAmt
+		return
+	endif
+	
+	#Create the beam to visualize connections
+	switch
+		case(<-connections <-MAX_CONNECTIONS lte)
+			"white"
+		endcase
+		case(<-connections <-connection_limit lt)
+			"orange"
+		endcase
+		"red"
+	endswitch
+	1 3 CreateBeam ->beam
+	<-beam <-centerUnit "" AttachBeam
+	SetBeamStart(<-beam <-height Self GetUnitPosition <-centerUnit GetUnitPosition add 0.5 mul <-centerUnit GetUnitPosition sub add)
+	SetBeamEnd(<-beam Self GetUnitPosition <-height add)
+	
+	#Second half (close to placed unit)
+	<-centerUnit "Tower.4rpl" "connections" GetScriptVar ->centerConnections
+	switch
+		case(<-centerConnections <-MAX_CONNECTIONS lte)
+			"white"
+		endcase
+		case(<-centerConnections <-connection_limit lt)
+			"orange"
+		endcase
+		"red"
+	endswitch
+	1 3 CreateBeam ->beam
+	<-beam <-centerUnit "" AttachBeam
+	SetBeamStart(<-beam <-height Self GetUnitPosition <-centerUnit GetUnitPosition add 0.5 mul <-centerUnit GetUnitPosition sub add)
+	SetBeamEnd(<-beam <-centerUnit GetUnitPosition <-height add)
+	
+	@SetEmitAmt
+	
+:RemoveConnection
+	<-_DATA ->centerUnit
+	<-connections 1 sub ->connections
+	<-connectedTowers dup <-centerUnit GetListIndex RemoveListElement
+	@SetEmitAmt
+	if(<-*sleeperConnections)
+		Self DestroyAllAttachedBeams
+		<-_DATA ->exclude
+		@UpdateConnections
+		-1 ->exclude
+	endif
+
+#Sets visual mode of connections
+:UpdateConnections
+	Self DestroyAllAttachedBeams
+	if(<-*sleeperConnections)
+		<-connectedTowers copy ->nearbyTowers
+		<-nearbyTowers 0 do
+			if(<-nearbyTowers[i] GetUnitDestroyed)
+				<-nearbyTowers i RemoveListElement
+			else if(<-nearbyTowers[i] <-exclude neq)
+				switch
+					case(<-connections <-MAX_CONNECTIONS lte)
+						"white"
+					endcase
+					case(<-connections <-connection_limit lt)
+						"orange"
+					endcase
+					"red"
+				endswitch
+				1 3 CreateBeam ->beam
+				<-beam Self "" AttachBeam
+				SetBeamStart(<-beam <-height Self GetUnitPosition <-nearbyTowers[i] GetUnitPosition add 0.5 mul Self GetUnitPosition sub add)
+				SetBeamEnd(<-beam Self GetUnitPosition <-height add)
+			endif endif
+		loop
+	endif
+	

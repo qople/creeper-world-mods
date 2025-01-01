@@ -1,0 +1,111 @@
+# --MissileLauncher-- 7/4/2023 12:01:05 PM
+#Weapon targeting and firing for the missile launcher unit.
+
+$FIRE_RATE:25
+$DAMAGE_AMT:0.75
+$RANGE:30.0
+$PROJ_SPEED:0.6
+$AMMO_USE:5.0
+$LONG_WAIT_TIME:45 #Wait time when no target is found
+
+#The cannon fires between this many shots at its target before retargeting to save on performance
+$MIN_RETARGET_SHOTS:6 #Inclusive
+$MAX_RETARGET_SHOTS:7 #Not inclusive
+
+$$SYNC_DELAY:5 #Time between network messages to sync rotation while following a target
+$$bulletGUID:"102c9458-cc71-4dcb-be04-4e488bc9a312"
+
+# Self <-trueGUID SetUnitDebugText
+if(<-*isMVerseHost !)
+	# Self "NotHost" SetUnitDebugText
+	if(GetTimer0)
+		# Self "Turning" SetUnitDebugText
+		RotateObjTowards(Self "Cannon" <-targetPos <-rotSpeed)
+	endif
+	return
+endif
+
+if(Self GetUnitConstructing GetTimer1 || Self GetUnitMoveCell pop gte0 ||)
+	return #Don't fire when building, moving, or long wait timer is on
+endif
+
+
+if(<-needTarget)
+	@FindTarget
+endif
+
+if(<-targetUnit @IsValidTarget)
+	if(GetObjFacingAngle(Self "Cannon" <-targetUnit GetUnitPosition) 3 lt)
+		@Fire
+	else
+		"Rotate" <-trueGUID concat <-targetUnit GetUnitPosition SendMVerseMsg
+		RotateObjTowards(Self "Cannon" <-targetUnit GetUnitPosition 3)
+	endif
+else
+	true ->needTarget
+endif
+
+:FindTarget
+	GetUnits("" Self GetUnitPosition V3(0 4 0) add <-RANGE true true true 2 0 1) ->units #Use GetUnits so bombers show up
+	<-units 0 do
+		if(<-units[i] dup @IsValidTarget)
+			->targetUnit
+			false ->needTarget
+			RandInt(<-MIN_RETARGET_SHOTS <-MAX_RETARGET_SHOTS) 1 max ->shotsToRetarget
+			return
+		endif
+	loop
+	
+	0 ->targetUnit
+	true ->needTarget
+	<-LONG_WAIT_TIME SetTimer1
+	
+#Moving units and bombers
+:IsValidTarget
+	dup dup ->unit GetUnitMoveCell pop gte0 swap GetUnitOfficialName ToLower "bomber" EndsWith ||
+	if(<-unit GetUnitOfficialName ToLower "bomber" EndsWith <-unit GetUnitAmmo eq0 &&)
+		pop false return
+	endif
+	<-*missilesOnRoute{<-unit} <-unit GetUnitHealth <-DAMAGE_AMT div lte &&
+
+:Fire
+	if(<-targetUnit @IsValidTarget !)
+		true ->neetTarget
+		return
+	endif
+	if(Self GetUnitAmmo <-AMMO_USE lt GetTimer0 ||)
+		return
+	endif
+	
+	#Create the bullet
+	"targetUnit" <-targetUnit "DAMAGE_AMT" <-DAMAGE_AMT "PROJ_SPEED" <-PROJ_SPEED "AMMO_USE" <-AMMO_USE Table ->initParams
+	<-bulletGUID Self "FirePos" <-fireLoc concat 1 GetObjPosition <-initParams CreateUnit
+	if(<-fireLoc)
+		0 ->fireLoc
+	else
+		1 ->fireLoc
+	endif
+	# "MVerseFire" <-targetUnit GetUnitPosition 
+	Self "Movement.4rpl" "lastActive" GetGameUpdateCount SetScriptVar
+	<-*missilesOnRoute{<-targetUnit} 1 add ->*missilesOnRoute{<-targetUnit}
+
+	<-FIRE_RATE SetTimer0
+	<-shotsToRetarget 1 sub dup ->shotsToRetarget
+	if(! <-targetUnit GetUnitDestroyed ||)
+		true ->needTarget
+	endif
+	Self dup GetUnitAmmo <-AMMO_USE sub SetUnitAmmo
+	
+:Once
+	0 ->fireLoc
+	true ->needTarget
+	if(<-*isMVerseHost !)
+		# Self <-trueGUID SetUnitDebugText
+		RegisterForMsg("Rotate" <-trueGUID concat "MVerseSetRotationTarget")
+		RegisterForMsg("Fire" <-trueGUID concat "MVerseFire")
+	endif
+
+:MVerseSetRotationTarget
+	<-_DATA	->targetPos
+	GetObjFacingAngle(Self "Cannon" <-targetPos) <-SYNC_DELAY div 3 min ->rotSpeed
+	<-SYNC_DELAY SetTimer0
