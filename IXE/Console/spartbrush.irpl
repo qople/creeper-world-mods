@@ -1,7 +1,7 @@
 # Sparticle brush
 # Meant to run in the console. Add the script to your console folder as "spartbrush.irpl",
 # Then run it with the command "run spartbrush"
-# This is version 1. A more updated version may be available at <github link here>
+# This is version 1. A more updated version may be available at https://github.com/qople/creeper-world-mods/blob/main/IXE/Console/spartbrush.irpl
 
 $speed:1.0
 $count:100
