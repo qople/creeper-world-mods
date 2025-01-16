@@ -1,0 +1,402 @@
+# Sparticle brush
+# Meant to run in the console. Add the script to your console folder as "spartbrush.irpl",
+# Then run it with the command "run spartbrush"
+# This is version 1. A more updated version may be available at <github link here>
+
+$speed:1.0
+$count:100
+$angle:"AUTO" # auto
+$spread:360
+$minLifetime:150
+$maxLifetime:180
+
+if(<inputField StringLength)
+	@AcceptInput
+endif
+
+if(<angle "AUTO" eq)
+	# Auto angle 
+	# This is needed to check if the mouse is moving, because for some reason 
+	# the mouse vibrates almost exactly one cell per frame while held down.
+	if(GetMousePos <lastPos Distance 1 sub abs 0.001 gte GetMousePos <lastPos neq &&)
+		<lastPos GetMousePos sub >mouseDelta
+		GetMousePos >lastPos
+	endif
+endif
+
+if(0 1 GetMouseButton)
+    <timer 1 add >timer
+    # Pick sand randomly to create cool layers
+    <times 0 do
+        if(<times[i] <timer gte)
+            i >index
+            
+            <times[i] >nextLayerTime
+            <times[i 1 sub] >lastLayerTime
+            break
+        endif
+    loop
+
+    # Weighted rand based on percentage through the layer
+	<nextLayerTime <lastLayerTime sub >layerDuration
+    <timer <lastLayerTime sub >timeThroughLayer
+    <timeThroughLayer AsFloat <layerDuration div >layerPortion
+    if(RandFloat <layerPortion lt)
+        <sands[<index] >sand
+    else
+        <sands[<index 1 sub] >sand
+    endif
+
+	GetMousePos >pos
+	if(<angle "AUTO" eq)
+		<mouseDelta Normalize >mouseDelta
+		<mouseDelta EV2 swap atan2 rad2deg mul >spartAngle
+	else
+		<angle >spartAngle
+	endif
+
+	
+	# Make the sparticle explosion.
+	<count 0 do
+		<spartAngle RandFloat 0.5 sub <spread mul add >tAngle
+		<tAngle deg2rad mul cos <tAngle deg2rad mul sin V2 Normalize <speed mul <pos add >lastPos
+		
+		#<lastPos >data{"lastPos"}
+		#RandInt(<minLifetime <maxLifetime) >data("maxage")
+		Table(
+			"sandDef"					<sand
+			"pos"						<pos
+			"lastPos"					<lastPos
+			"color" 					<sand GetSandDefData{"color"}
+			"maxAge"					RandInt(<minLifetime <maxLifetime)
+			"ignoreOccupied"			false
+			"createSandWhenOccupied"	true
+		) >data
+		
+
+
+		CreateSandParticle(<data)
+	loop
+
+	# Built-in sparticle explosion, less control over velocity and no angle control
+    #GetMouseCell EV2 <speed dup <count V4(1 0 1 1) V4(0 0 0 1) <minLifetime <maxLifetime <sand 0 false true CreateSandExplosion
+else
+    0 >timer
+endif
+
+# Concats the number you type to the input string and updates the UI text as necessary.
+:AcceptInput
+	if("Return" 0 GetKeyDown)
+		if(<currentInput StringLength eq0)
+			"0" >currentInput
+			@UpdateFieldText
+		endif
+		@ConfirmInput
+		#SendMsg("SPARTBRUSH_TOGGLEINPUT" TableN("name" <inputField 1))
+	else
+		10 0 do
+			if("Alpha" i concat 0 GetKeyDown)
+				<currentInput i concat AsFloat AsString >currentInput
+			endif
+		loop
+	
+		if("Period" 0 GetKeyDown <currentInput StringToList "." ListContains ! &&)
+			<currentInput "." concat >currentInput
+		endif
+	
+		# Special case for angle, let it be "AUTO" when A is pressed.
+		if("A" 0 GetKeyDown <inputField "angle" eq &&)
+			"AUTO" >currentInput
+		endif
+	
+		if("Backspace" 0 GetKeyDown)
+			<currentInput dup StringLength 1 sub 0 max 0 swap Substring AsFloat AsString >currentInput
+		endif
+		@UpdateFieldText
+	endif
+
+:UpdateFieldText
+	<inputField "_" Split 0 GetListElement >shortName 
+	<inputField @UiContainerForElement >container
+	<container <inputField <varNameToUiText{<shortName} "<br>" <currentInput concat3 SetUiText
+
+:Once
+	"" >currentInput
+	"" >inputField
+	0 >numLayers
+	-250 >layerUiYPos
+	0 >layerUiXPos
+
+	false TerpPaintingEnabled
+
+	# Lookup table for filling in UI text
+	Table(
+		"speed" "Speed"
+		"angle" "Angle"
+		"count" "Count"
+		"spread" "Spread"
+		"minLifetime" "LT Min"
+		"maxLifetime" "LT Max"
+		"sandId" "Type"
+		"layerDuration" "Duration"
+	) >varNameToUiText
+
+	ListN("sandId" "layerDuration" 2) >uiBlacklist
+
+	# We always need the last element with 9999999... at the end 
+	# so we never actually reach the end and try to index out of bounds or something.
+    List(9999999) >times
+	CreateList >lengths
+    List(0) >sands
+    CreateUI("spartbrush" @UI CreateTable) >result >resultString
+	RegisterForMsg("SPARTBRUSH_TOGGLEINPUT" "ToggleInput")
+	RegisterForMsg("SPARTBRUSH_ADDLAYER" "AddLayer")
+	RegisterForMsg("SPARTBRUSH_REMOVELAYER" "RemoveLayer")
+	@AddLayer
+
+	Trace(@Helptext)
+
+# Toggles accepting input from the player
+:ToggleInput
+	<_DATA >uiTable
+
+	if(<inputField StringLength)
+		# We're already typing, there are some options for what to do here.
+		if(<uiTable{"name"} <inputField neq)
+			# Selecting a new UI element, so we switch to the newly selected element.
+			@ConfirmInput
+			<uiTable{"name"} >inputField
+			<inputField @ValueFromField AsString >currentInput
+			"" >currentInput
+			<inputField dup @UiContainerForElement swap V4(0.2 1 0.2 1) SetUiBackgroundColor
+		else
+			# Deselecting the old UI element, just deselect the old one
+			@ConfirmInput
+		endif
+	else
+		# Starting typing
+		<uiTable{"name"} >inputField
+		<inputField @ValueFromField AsString >currentInput
+		"" >currentInput
+		<inputField dup @UiContainerForElement swap V4(0.2 1 0.2 1) SetUiBackgroundColor
+	endif
+
+# Saves the input to the proper place
+:ConfirmInput
+	<inputField dup @UiContainerForElement swap V4(0.572 0.337 0.196 1) SetUiBackgroundColor
+
+	if(<inputField "sandId" StartsWith)
+		<inputField 7 <inputField StringLength 7 sub Substring AsInt >index
+		<currentInput AsInt >sands[<index]
+	else if(<uiName "layerDuration" StartsWith)
+		<inputField 14 <inputField StringLength 14 sub Substring AsInt >index
+		<currentInput AsInt >lengths[<index]
+	else
+		# Just store to the matching var
+		<currentInput 
+		if(<inputField "A" neq)
+			asfloat
+		endif
+		<inputField ->!
+	endif endif
+	@BuildLayerLists
+	<varNameToUiText GetTableKeys >keys
+	<keys 0 do
+		if(<uiBlacklist <keys[i] ListContains !)
+			<keys
+		endif
+	loop
+	
+
+	"" >inputField
+
+
+# Gets the integer value stored in the field
+:ValueFromField
+	>uiName
+	if(<uiName "sandId" StartsWith)
+		<sands <uiName 7 <uiName StringLength 7 sub Substring AsInt GetListElement
+	else if(<uiName "layerDuration" StartsWith)
+		<lengths <uiName 14 <uiName StringLength 14 sub Substring AsInt GetListElement
+	else
+		<uiName <-!
+	endif endif
+
+# Gets the parent UI container based on the UI name and the naming convention of this script.
+:UiContainerForElement
+	>uiName
+	if(<uiName "sandId" StartsWith)
+		"spartbrush_layer" <uiName 7 <uiName StringLength 7 sub Substring concat
+	else if(<uiName "layerDuration" StartsWith)
+		"spartbrush_layer" <uiName 14 <uiName StringLength 14 sub Substring concat
+	else
+		"spartbrush"
+	endif endif
+
+# Clean up UI when the script is done.
+:Destroyed
+	true TerpPaintingEnabled
+    DestroyUI("spartbrush")
+	<numLayers 0 do
+		"spartbrush_layer" i concat DestroyUI
+	loop
+
+
+# Makes a new layer and matching UI element.
+# It would probably be easier to just copy-paste like 20 UI elements in and enable them as we need
+# But this is cooler, and lets us adjust to wrap around the screen in different resolutions. 
+:AddLayer
+	#Make the UI
+	"{
+		'anchor': [0, 1],
+		'pos': [0, -42],
+		'pivot': [0, 1],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#00000000',
+		'Components': 	[
+" 							@LayerJSON "
+						]
+	}" concat3 >layerJson
+	"spartbrush_layer" <numLayers concat <layerJson CreateTable CreateUI
+	
+	# Add the layer to the code
+	# The data structure is actually built from the UI text, so now that we have the UI it's pretty simple.
+	<numLayers 1 add >numLayers
+	<sands dup GetListCount 1 sub 0 InsertListElement
+	<lengths 100 AppendToList
+	@BuildLayerLists
+	
+	# Move where the next layer gets made
+	<layerUiYPos 50 sub >layerUiYPos
+
+	if(<layerUiYPos neg GetScreenSize[1] 200 sub gt)
+		-250 >layerUiYPos
+		<layerUiXPos 330 add >layerUiXPos
+	endif
+
+# Removes the last layer
+:RemoveLayer
+	if(<numLayers)
+		<numLayers 1 sub >numLayers
+		"spartbrush_layer" <numLayers concat DestroyUI
+		
+		# Update the lists
+		<sands dup GetListCount 2 sub RemoveListElement
+		<lengths PopList pop
+		@BuildLayerLists
+
+		<layerUiYPos 50 add >layerUiYPos
+		if(<layerUiYPos -250 gt <layerUiXPos gt0 &&)
+			GetScreenSize[1] >screenHeight
+			<screenHeight 200 sub 250 sub 50 div >layersPerColumn
+			-250 50 <layersPerColumn AsInt mul sub >layerUiYPos
+			<layerUiXPos 330 sub >layerUiXPos
+		endif
+	endif
+
+# Makes the layer lists
+:BuildLayerLists
+	0 1 ListN >times
+	0 >lastTime
+	<lengths 0 do
+		<times <lastTime <lengths[i] add dup >lastTime AppendToList
+	loop
+	<times 999999999 AppendToList
+	
+	<sands[<numLayers 1 sub] >sands[<numLayers] 
+
+# Speed
+# Angle
+# Spread
+# Lifetime
+# Lifetime spread
+# Add sand type
+# For each sand type:
+#   id
+#   duration
+:UI
+	"{
+		'anchor': [0, 1],
+		'pos': [0, -42],
+		'pivot': [0, 1],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#00000000',
+		'Components': 	[
+							{
+								'type':'button', 'name':'speed', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,0], 
+								'text': 'Speed\n1', 'tooltip': 'How fast sparticles are launched.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_TOGGLEINPUT'],
+							},	
+							{
+								'type':'button', 'name':'count', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [110,0], 
+								'text': 'Count\n100', 'tooltip': 'How many sparticles are launched each frame.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_TOGGLEINPUT'],
+							},	
+                            {
+								'type':'button', 'name':'angle', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-50], 
+								'text': 'Angle\nAUTO', 'tooltip': 'Angle sparticles are launched at. Entering `A` follows mouse movement automatically.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_TOGGLEINPUT'],
+							},	
+                            {
+								'type':'button', 'name':'spread', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [110,-50], 
+								'text': 'Spread\n360', 'tooltip': 'Spread of the sparticle spray in degrees.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_TOGGLEINPUT'],
+							},	
+                            {
+								'type':'button', 'name':'minLifetime', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-100], 
+								'text': 'LT Min\n150', 'tooltip': 'Minimum lifetime of a sparticle, in frames. 30 = 1 sec.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_TOGGLEINPUT'],
+							},	
+                            {
+								'type':'button', 'name':'maxLifetime', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [110,-100], 
+								'text': 'LT Max\n180', 'tooltip': 'Maximum lifetime of a sparticle, in frames. 30 = 1 sec.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_TOGGLEINPUT'],
+							},	
+
+
+
+
+
+                            {
+								'type':'button', 'name':'addLayer', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [0,-200], 
+								'text': 'ADD\nLAYER', 'tooltip': 'Adds a sand layer. Sand types for layers are blended between as the mouse is held down.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_ADDLAYER'],
+							},	
+                            {
+								'type':'button', 'name':'removeLayer', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [110,-200], 
+								'text': 'REMOVE LAYER', 'tooltip': 'Removes the bottom sand layer. Sand types for layers are blended between as the mouse is held down.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_REMOVELAYER'],
+							},	
+                        ]
+    }"
+
+:LayerJSON
+	"
+							{
+								'type':'button', 'name':'sandId_" <numLayers "', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [" <layerUiXPos "," <layerUiYPos "], 
+								'text': 'Type\n0', 'tooltip': 'The sand slot # for this sand layer', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_TOGGLEINPUT'],
+							},	
+							{
+								'type':'button', 'name':'layerDuration_" <numLayers "', 'anchor': [0, 1],'pivot': [0, 1], 'width': 110, 'height': 50, 
+								'pos': [" <layerUiXPos 110 add "," <layerUiYPos "], 
+								'text': 'Duration\n100', 'tooltip': 'How long to take to blend through this layer, in frames.', 'bgcolor': '#925632', 'color': '#FFFFFF', 'events': ['SPARTBRUSH_TOGGLEINPUT'],
+							}" concat4 concat4 concat4 concat4
+
+:Helptext
+"
+Sparticle Brush V1
+
+Throws sparticles out from the cursor to make intricate terrain patterns.
+
+Can blend through several terrain types over time.
+
+Tooltips on the buttons explain what they do.
+
+Here are some things you can try to affect how it looks:
+- Change sparticle gravity.
+- Place down a bunch of sparticles while paused, then unpause to shoot them all at once.
+- Change sand support min to 0 so nothing decays, or up to 2-4 to decay more terrain.
+- Change terrain slot 2 (sand)'s simulation type to 'none' while sand support is high so sand doesn't build up."
