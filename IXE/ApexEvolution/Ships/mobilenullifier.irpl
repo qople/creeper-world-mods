@@ -1,0 +1,129 @@
+# Mobile nullifier part made to be attached to The Ship in TUS mode
+
+$RANGE:45
+$PLATE_ROTATION_RATE:20.0
+$FIRE_TIME:150
+$FIREFINAL_TIME:105
+
+GetOnboardComplete(self 0 true) ->onboardComplete
+
+if (<-onboardComplete !)
+	0 ->fireCounter
+	@StopSound
+	return
+endif
+
+@Fire
+if (<-fired !)
+    #If there was nothing to fire at reset the fireCounter
+    0 ->fireCounter
+endif
+
+
+#Sound
+if (<-fireCounter <-FIREFINAL_TIME >=)
+	@PlayFireSound
+else if (<-fireCounter gt0)
+	@PlayChargeSound
+else
+	@StopSound
+endif endif
+
+:UpdateFireRange
+	SetShowRange(self <-RANGE)
+
+
+:StopSound
+	if (<-chargeLoopPlaying)
+		StopSoundLoop(self)
+		false ->chargeLoopPlaying
+	endif	
+	if (<-fireLoopPlaying)
+		StopSoundLoop(self)
+		false ->fireLoopPlaying
+	endif	
+
+
+:PlayFireSound
+	if (<-chargeLoopPlaying)
+		StopSoundLoop(self)
+		false ->chargeLoopPlaying
+	endif
+	if (<-fireLoopPlaying !)
+		PlaySoundLoop("SoundLoop_hum17" 1 self)
+		true ->fireLoopPlaying
+	endif
+
+:PlayChargeSound
+	if (<-fireLoopPlaying)
+		StopSoundLoop(self)
+		false ->fireLoopPlaying
+	endif
+	if (<-chargeLoopPlaying)
+		SetSoundLoopPitch(self 1 <-fireCounter <-FIREFINAL_TIME asfloat / 2 * +)	
+	else
+		#if (<-ammo gt0)
+			PlaySoundLoop("SoundLoop_hum9" 1 self)
+			true ->chargeLoopPlaying
+		#endif	
+	endif
+
+:Fire
+	false ->fired
+	GetPosition(self) ->pos
+	GetNullifiableUnitsInRange(<-pos.x <-pos.y <-RANGE) ->foundUnits
+	GetListCount(<-foundUnits) ->count
+	if (<-count 0 ==) return endif
+
+	#Make sure beams exist for every target and point at the targets
+	do (GetListCount(<-foundUnits) 0)
+		<-foundUnits[I] ->unit
+		GetPosition(<-unit) ->unitPos
+		
+		#Make sure we have LOS to the targetunit
+		if (GetLOS(self <-unitPos.x <-unitPos.y))
+			#We use a map to keep references to the beams.  The keys are the UIDs of the target units.
+			<-beamMap{<-unit} ->beam
+			#If we don't have a beam for this unit, then create it
+			if (isnull(<-beam))
+				CreateBeam(self "nullifier") ->beam
+				SetBeamAutoDisable(self <-beam true)
+				<-beam ->beamMap{<-unit}
+			endif
+			#SetBeamEnd enables the beam as well as setting the end position.
+			SetBeamEnd(self <-beam <-unitPos)
+			true ->fired
+		endif	
+	loop
+	if (<-fired)
+		<-fireCounter 1 + ->fireCounter
+		if (<-fireCounter <-FIRE_TIME >=)
+			false ->fired
+			@Kaboom
+		endif
+	endif
+	
+:Kaboom
+	0 >nCount
+	do (GetListCount(<-foundUnits) 0)
+		<-foundUnits[I] ->unit
+		GetPosition(<-unit) ->unitPos
+		#Make sure we have LOS to the targetunit
+		if (GetLOS(self <-unitPos.x <-unitPos.y))
+			Destroy(<-unit true)
+            SendMsg("ShowArtifact" true)
+			<nCount 1 + >nCount
+		endif	
+	loop
+	
+
+:Once
+	SetLOSRange(self <-RANGE)
+	EnableLOS(self true)
+	0 ->fireCounter
+	
+:Awake
+	SetLOSSandPassBits(self 3)
+	CreateTable ->beamMap #We don't want to keep the beams over a save/load because beams don't persist in a save. So we always start with a new beamMap table
+	SetShowRangeColor(self V4(0.9 0.9 0.9 0.8))
+	@UpdateFireRange

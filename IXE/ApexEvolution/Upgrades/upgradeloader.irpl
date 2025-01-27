@@ -1,0 +1,84 @@
+#Manages the addition of upgrades to the upgrade pool.
+
+GetCreeperInArea(V4(0 0 512 512) false false) ->*preUpdateCreeper
+
+:Once
+    # Upgrade pool has a list of upgrades for each rarity. When picking an upgrade, first the rarity is chosen, then the upgrade from that rarity. 
+    # This prevents upgrade chances from being additionally weighted by the number of upgrades in each type.
+    6 0 do
+        CreateList
+    loop
+    List ->*upgradePool
+
+    # Table where each key is an upgrade ID, and each item is a list of upgrades that are unlocked when that upgrade is picked.
+    CreateTable ->*upgradeUnlocks
+
+    # Same but for module unlocks
+    CreateTable ->*moduleUnlocks
+
+    # Connects upgrade ID to times collected.
+    CreateTable ->*upgradeCollected
+
+    Trace("Beginning listening for upgrades.")
+    RegisterForMsg("AddUpgradesToPool" dup)
+    # Rarities are: common, uncommon, rare, epic, legendary, artifact
+    # Numbers are:  0       1         2     3     4          5
+    
+    # Chances for each rarity
+    # These don't have to add up to 100, but they should be integers.
+    # Artifact rarity is 0, they only show up in specific rolls.
+    List(50 33 17 7 3 0) ->*upgradeRarityChances
+
+    "id title description effect rarity pickuplimit" " " Split >requiredData
+
+
+# Responds to the message of the same name, adding all upgrades in the list given in the data to the upgrade pool.
+:AddUpgradesToPool
+    <_DATA DeepCopy >upgrades
+    #"received" <upgrades trace2
+    <upgrades 0 do
+        <upgrades[i] @InterpretUpgradeTable >upgrade
+        <upgrade{"rarity"} >rarity
+        true >valid
+
+        if(<valid)
+            #Upgrade IDs are unique PER RARITY. Across rarities, upgrades having the same ID means they won't both show up in the same upgrade choice.
+            true >canAdd
+            <-*upgradePool[<rarity] 0 do
+                if(<-*upgradePool[<rarity][i]{"id"} <upgrade{"id"} eq)
+                    false >canAdd
+                endif
+            loop
+            if(<canAdd)
+                #Trace("Added upgrade " <upgrade{"id"} " to pool." concat3)
+                #0 ->*upgradeCollected{<upgrade{"id"}}
+                <-*upgradePool[<rarity] <upgrade AppendToList
+            endif
+        endif
+    loop
+
+
+# Refines the table given and brings it to compliance with the upgrade system. This allows for more tolerant syntax.
+# For now this is empty until I get around to making the tolerant syntax. 
+:InterpretUpgradeTable
+    DeepCopy >upgrade
+    <upgrade GetTableKeys >keys
+    <requiredData 0 do
+        if(<keys <requiredData[i] ListContains !)
+            Trace("WARNING: Upgrade table does not contain required field: '" <requiredData[i] "', upgrade may not function properly. Make sure capitalization matches.
+Full table: " <upgrade concat4)
+        endif
+    loop
+
+    # Pre-parse the upgrade effect string to a list
+    if(<upgrade{"effect"} GetType "STRING" eq)
+        <upgrade{"effect"} "/" Split >upgrade{"effect"}
+    endif
+    
+    # Parse the prerequisite list as well
+    if(<upgrade{"prerequisite"} GetType "STRING" eq)
+        <upgrade{"prerequisite"} "/" Split >upgrade{"prerequisite"}
+    endif
+
+    # Return the table
+    <upgrade

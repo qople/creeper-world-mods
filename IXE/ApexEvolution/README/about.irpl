@@ -1,0 +1,17 @@
+# APEX EVOLUTION (beta)
+# Version 0.1
+# A more updated version may be available at 
+# A custom gamemode based on the likes of vampire survivors,
+# blending it with objective-based creeper world gameplay.
+
+# To put this in your level, import the folder and place a swordfish in the starting location.
+# Later, the second step won't be necessary with the planned addition of a ship selector (and more ships).
+
+
+# IMPORTANT NOTES:
+# XP gain is based on creeper damage by units, as measured by the difference in creeper
+# before and after the unit update. Any creeper added during that phase by units
+# will count AGAINST xp gain!!!! 
+# Work around this by using sand-based emitters when possible. If creeper production isn't enough,
+# Increase C maker strength and decrease production to match on any emitters you want to keep the same.
+# I plan to fix this soonish, but this is a known issue in the beta version.

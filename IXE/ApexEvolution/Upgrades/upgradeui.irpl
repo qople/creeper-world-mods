@@ -1,0 +1,75 @@
+# Creates the upgrade UI
+
+:Once
+    CreateTable ->*uidata
+    CreateUI("upgradeui", @UIUpgrades, <-*uidata) ->result ->resultString
+	CreateUI("levelbar", @UILevelBar, CreateTable) >result >resultString
+
+:UIUpgrades
+    "{
+		'anchor': [0.5, 0.6],
+		'pos': [0, -140],
+		'pivot': [0.5, 0.5],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#00000000',
+		'Components': 	[
+							{
+								'type':  'button', 
+								'text': 'upgrade here',
+								'pos': [-100, 0], 
+								'width': 200, 
+								'height': 200,
+								'name':'1',
+								'color':'#FFFFFF',
+								'active':false,
+                                'events': ['UPGRADE_CHOSEN']
+							},	
+							{
+								'type':  'button', 
+								'text': 'upgrade here',
+								'pos': [-300, 0], 
+								'width': 200, 
+								'height': 200,
+								'name':'0',
+								'color':'#FFFFFF',
+								'active':false,
+                                'events': ['UPGRADE_CHOSEN']
+							},	
+							{
+								'type':  'button', 
+								'text': 'upgrade here',
+								'pos': [100, 0], 
+								'width': 200, 
+								'height': 200,
+								'name':'2',
+								'color':'#FFFFFF',
+								'active':false,
+                                'events': ['UPGRADE_CHOSEN']
+							}
+        ]
+    }"
+
+:UILevelBar
+    "{
+		'anchor': [0.5, 1.0],
+		'pos': [0, -20],
+		'pivot': [0.5, 0.5],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#000000FF',
+		'Components': 	[
+							{
+								'type':  'text', 
+								'text': '',
+								'pos': [0, 0], 
+								'pivot': [0.5, 0.5],
+								'width': 300, 
+								'height': 40,
+								'name':'background',
+								'color':'#FFFFFF',
+								'bgcolor': '#002344ff',
+								'active':true
+							}
+        ]
+    }"

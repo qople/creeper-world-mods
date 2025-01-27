@@ -1,0 +1,101 @@
+# Manages upgrade effects, specifically the "effects" attribute.
+# Effects are a slash separated string, like "addmodule/cannon/1"
+# This is split into a list and interpreted as arguments from left to right.
+# This is CASE SENSITIVE, so please use lowercase unless giving a string argument that should be capitalized.
+# Currently allowed options for effects are:
+
+# addmodule: adds a module to the ship
+# Arguments are the string name of the module, followed by an int for how many to give.
+# Example: "addmodule/cannon/1" means "add 1 cannon module".
+
+# incattr: Increments a script var on a type of module, or all modules.
+# Arguments are the module name, then the variable name, then the amount to add.
+# "all" is a valid module name and will increment the var on all modules on the ship, even those not yet unlocked.
+# Example: "incattr/all/fire_range/2" increases the fire_range variable on all modules.
+
+# sendmsg: Sends a message on a channel with the given data.
+# Arguments are the message channel name, then the data to send. Data will always be sent as a string, as written.
+# Example: "sendmsg/WinLevel/1" sends a message on the "WinLevel" channel with data "1" (string "1" not int 1).
+
+i
+
+:Once
+    RegisterForMsg("ApplyUpgrade" dup)
+
+:ApplyUpgrade
+    <_DATA >upgrade
+    <upgrade{"effect"} dup trace >effectList
+
+    <effectList[0] >topLevelEffect
+
+    switch
+        case(<topLevelEffect "addmodule" eq)
+            @AddModule
+        endcase
+        case(<topLevelEffect "incattr" eq)
+            @IncrementAttribute
+        endcase
+        case(<topLevelEffect "sendmsg" eq)
+            @SendMessage
+        endcase
+    endswitch
+
+# Activates N modules of the given type.
+:AddModule
+    <effectList[1] >moduleName
+    <effectList[2] >numToUnlock
+    <-*unlockedModules{<moduleName} >numModules
+    <numModules dup <numToUnlock add do
+        <-*mainShip <moduleName i 1 sub concat GetChild >module
+        <module true SetActive
+    loop
+
+    <numModules <numToUnlock add ->*unlockedModules{<moduleName}
+
+:IncrementAttribute
+    <effectList[1] >moduleName
+    <effectList[2] >varName
+    <effectList[3] >incrementAmount
+
+    if(<varName "all" eq)
+        <-*allModules GetTableKeys >modules
+    else
+        <moduleName List >modules
+    endif
+
+    <modules 0 do
+        <modules[i] >module
+        <-*moduleBehaviors{<module} >behavior
+        <behavior trace
+        <behavior ".irpl" EndsWith  <behavior StringLength eq0 || >useScript
+
+        <-*allModules{<module} >numModules
+        if(<useScript)
+            <numModules 0 do
+                <-*mainShip <moduleName i concat GetChild >moduleUnit
+                <moduleUnit <behavior <varName GetScriptVar <incrementAmount add >newValue
+                <moduleUnit <behavior <varName <newValue SetScriptVar
+                <moduleName i concat "'s " <varName " is now " <moduleUnit <varName GetScript1Var concat4 concat trace
+            loop
+        else
+            # Controller instead
+            # For now this is odd, so we'll do something weird
+            StackSize >size
+            <-*mainShip <behavior <varName GetControllerArg
+            StackSize <size sub >numArgs
+            <numArgs 1 sub 0 do
+                pop
+            loop
+            <incrementAmount add >newValue
+            <-*mainShip <behavior <varName <newValue SetControllerArg
+            <moduleName i concat "'s " concat <varName concat " is now " concat <-*mainShip <behavior <varName GetControllerArg concat traceAll
+
+        endif
+
+    loop
+
+:SendMessage
+    <effectList[1] >messageChannel
+    <effectList[2] >data
+    <messageChannel <data SendMsg
+

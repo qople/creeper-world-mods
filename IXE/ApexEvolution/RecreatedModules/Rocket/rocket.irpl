@@ -1,0 +1,55 @@
+# Heavily nerfed and rebalanced rocket module, to fit in with the balance of the mode. 
+
+$FIRE_COST:0.5
+$FIRE_DELAY:100
+$FIRE_RANGE:75
+$SHOT_DAMAGE_COUNT:200
+$SHOT_DAMAGE_DISTANCE:7
+$SHOT_DAMAGE:-7000000
+
+# Change RA range when the variable is updated mid-level
+if(<FIRE_RANGE <lastRange neq)
+    Self <FIRE_RANGE SetRaRange
+    Self <FIRE_RANGE SetShowRange
+    <FIRE_RANGE >lastRange
+endif
+
+# Everything below only happens while the part is active and healthy
+Sys_Operable
+
+if(GetTimer0 eq0)
+    if(Self GetAmmo <FIRE_COST gte)
+        @Fire >fireSuccess
+        if(<fireSuccess)
+            <FIRE_DELAY SetTimer0
+        else
+            #Short timer if we don't find creeper, but not 0 to help avoid lag when no creeper is near.
+            10 <FIRE_DELAY min SetTimer0
+        endif
+    endif
+endif
+
+
+:Fire
+    GetDeepestCreeper(Self false true) dup >position trace
+    if(<position.x gte0)
+        # Create the unit
+        "/ApexEvolution/RecreatedModules/Rocket/rocketshot" Self GetPosition true CreateUnit >shot
+        Self <position GetRaPath >pathlist
+        # Set variables on the shot
+        <shotVars 0 do
+            <shotVars[i] >varName
+            <shot <varName dup <-! dup trace SetScript1Var
+        loop
+        true return
+    else
+        false return
+    endif
+:Once
+    #Vars in this list get copied to the bullet when we make it
+    List("pathList" "SHOT_DAMAGE_COUNT" "SHOT_DAMAGE_DISTANCE" "SHOT_DAMAGE") >shotVars
+    Self true EnableRa
+    Self <FIRE_RANGE SetShowRange
+    Self V4(1 0 0 1) SetShowRangeColor
+    Self <FIRE_RANGE SetRaRange
+    <FIRE_RANGE >lastRange

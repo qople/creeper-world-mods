@@ -1,0 +1,24 @@
+# Controls what game logic doesn't make sense to attach to the ship.
+$creeperDoubleTime:18000 # Base creeper production scales by +100% every this many frames
+$creeperMultExponent:1 # Base multiplier is raised to this power.
+
+if(GetGameUpdateCount dup 300 mod eq0 &&)
+    once
+        @GetBaseProduction
+    endonce
+    @ScaleEmitters
+endif
+
+:GetBaseProduction
+    GetUnitsByName("$/emitter/emitter") >emitters
+    <emitters 0 do
+        <emitters[i] "emitter" "makerParticleEmitCount" GetControllerArg
+    loop
+    List >emitterBaseProduction
+
+#Scales production of sand emitters over time
+:ScaleEmitters
+    GetGameUpdateCount <creeperDoubleTime AsFloat div 1 add <creeperMultExponent pow >productionMult
+    <emitters 0 do
+        <emitters[i] "emitter" "makerParticleEmitCount" <emitterBaseProduction[i] <productionMult mul AsInt SetControllerArg
+    loop

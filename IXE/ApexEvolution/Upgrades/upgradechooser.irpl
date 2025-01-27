@@ -1,0 +1,255 @@
+# Governs showing the upgrade UI, and choosing which upgrades to show.
+$baseUpgradeCost:9
+$upgradePower:2.5
+
+
+GetCreeperInArea(V4(0 0 512 512) false false) ->postUpdateCreeper
+<-*preUpdateCreeper <postUpdateCreeper sub dup gt0 if
+    <-*xpMult mul <creeperDestroyed add >creeperDestroyed
+    <creeperDestroyed <upgradeCost AsFloat div 100 mul 2 round "%" concat trace
+    DestroyUI("UILevelBar")
+    CreateUI("UILevelBar" @UILevelBar CreateTable) >result >resultString
+    while <creeperDestroyed <upgradeCost gt repeat
+        <creeperDestroyed <upgradeCost sub >creeperDestroyed
+        @LevelUp
+    endwhile
+else
+    pop
+endif
+
+if(<upgradeOnScreen)
+    true SetPause
+else if(<upgradeQueue)
+    @ChooseUpgrades
+endif endif
+
+
+if(GetKeyDown("U" 1) GetEditMode &&)
+    @ShowUpgrade
+endif
+
+
+:Once
+    1.0 ->*xpMult
+    4 ->level
+    0 >upgradeQueue
+    CreateList >artifactsInQueue
+    <baseUpgradeCost <level <upgradePower pow mul >upgradeCost
+    0 >creeperDestroyed
+    V4(0.8 0.8 0.8 1) V4(0 1 0 1) V4(0 0.5 1 1) V4(0.7 0 1 1) V4(1 0.2 0.2 1) V4(0.8 0.3 0 1) List >rarityColors
+    "COMMON" "UNCOMMON" "RARE" "EPIC" "LEGENDARY" "ARTIFACT" List >rarityNames
+
+    RegisterForMsg("ShowArtifact" "ShowArtifact")
+
+:LevelUp
+    <level 1 add >level
+    <baseUpgradeCost <level <upgradePower pow mul >upgradeCost
+    @ShowUpgrade
+
+:UpgradeChosen
+    <-_DATA{"name"} asint >choice
+    false >upgradeOnScreen
+    <chosenUpgrades[<choice] >upgrade
+    <-*upgradeCollected{<upgrade{"id"}} 1 add ->*upgradeCollected{<upgrade{"id"}}
+    3 0 do
+        SetUIActive("upgradeui" i false)
+    loop
+    #SetUIActive("upgradeui" <choice true)
+
+    SendMsg("ApplyUpgrade" <upgrade)
+
+    @ManageUnlocks
+    DeregisterForMsg("UPGRADE_CHOSEN")
+    false SetPause
+
+:ShowUpgrade
+    <upgradeQueue 1 add >upgradeQueue
+    #@ChooseUpgrades
+
+    
+
+:ShowArtifact
+    @ShowUpgrade
+    <artifactsInQueue <upgradeQueue AppendToList
+
+# Shows the UI buttons
+:ChooseUpgrades
+    true SetPause
+    RegisterForMsg("UPGRADE_CHOSEN" "UpgradeChosen")
+    <upgradeQueue 1 sub 0 max >upgradeQueue
+    <artifactsInQueue 0 do
+        <artifactsInQueue[i] 1 sub >artifactsInQueue[i]
+    loop
+    CreateList >chosenUpgrades
+    true >upgradeOnScreen
+
+    # Check if this is an artifact choice
+    if(<artifactsInQueue dup [0] eq0 &&)
+        true >selectingArtifact
+        <-*upgradeRarityChances >baseRarity
+        List(-1 0 0 0 1 4) ->*upgradeRarityChances
+        <artifactsInQueue 0 RemoveListElement
+    endif
+
+
+    3 0 do
+        i >uiName
+        SetUIActive("upgradeui" <uiName true)
+        @RandomUpgrade >thisUpgrade
+        <chosenUpgrades <thisUpgrade AppendToList
+        SetUIBackgroundColor("upgradeui" <uiName <rarityColors[<thisUpgrade{"rarity"}])
+         
+        SetUiText("upgradeui" <uiName <thisUpgrade @ConstructText)
+    loop
+
+    if(<selectingArtifact)
+        <baseRarity ->*upgradeRarityChances
+    endif
+
+:RandomUpgrade
+    false >isValid
+    while <isValid ! repeat
+        #Set up weighted random
+
+        0
+        <-*upgradeRarityChances 0 do
+            dup <-*upgradeRarityChances[i] add
+        loop
+        dup 1 add >maxRandNum
+        <-*upgradeRarityChances ListN >weightList pop
+
+        60 86 96 99 100
+        #Pick a number, then search for that in the list to find the correct rarity
+        0 <maxRandNum RandInt >rand
+        -1
+        <weightList 0 do
+            if(<weightList[i] <rand gte)
+                pop i break
+            endif
+        loop
+        >rarity
+
+        # Now that we have the rarity, pick an unweighted random upgrade from that rarity.
+        <-*upgradePool[<rarity] >upgrades
+        CreateList >filteredUpgrades
+        <upgrades 0 do
+            <upgrades[i] >upgrade
+
+            #Check if the upgrade is valid
+            true >isValid
+
+            #Module must be unlocked
+
+            if(<upgrade{"module"} IsNull !)
+                <upgrade{"module"} >module
+                if(<-*unlockedModules{<module} eq0)
+                    false >isValid
+                endif
+            endif
+
+            # No duplicate IDs.
+            <chosenUpgrades 0 do
+                if(<chosenUpgrades[i]{"id"} <upgrade{"id"} eq)
+                    false >isValid
+                endif
+            loop
+
+            # Prerequisite must have been bought
+            if(<upgrade{"prerequisite"} IsNull !)
+                <upgrade{"prerequisite"} >requirementList
+                <requirementList[0] >id
+                <requirementList[1] >num
+                if(<-*upgradeCollected{<id} dup IsNull swap <num lt ||)
+                    false >isValid
+                endif
+            endif
+
+            # Can't have been picked up more than the max collect num
+            if(<upgrade{"pickuplimit"} dup IsNull ! swap gt0 &&)
+                if(<-*upgradeCollected{<upgrade{"id"}} dup IsNull ! swap <upgrade{"pickuplimit"} gte &&)
+                    false >isValid
+                endif
+            endif
+
+            if(<isValid)
+                <filteredUpgrades <upgrade AppendToList
+            endif
+        loop
+        <filteredUpgrades GetListCount >isValid
+        <filteredUpgrades[0 <filteredUpgrades GetListCount RandInt] >upgrade
+    endwhile
+
+    <upgrade return
+
+:ManageUnlocks
+    return
+    #Upgrade unlocks
+    if(<-*upgradeUnlocks <upgrade{"id"} TableContainsKey)
+        # Check if any new upgrades were unlocked this time we picked the upgrade up
+        <-*upgradeUnlocks{<upgrade{"id"}} >unlockList
+        <unlockList 0 do
+            <unlockList[i] >possibleUnlock
+            <possibleUnlock{"prerequisite"}[1] >timesNeeded
+            if(<timesNeeded <upgradeCollected{<upgrade{"id"}} eq)
+                NULL >possibleUnlock{"prerequisite"}
+                SendMsg("AddUpgradesToPool" ListN(<possibleUnlock 1))
+            endif
+        loop
+    endif
+
+    # Module unlocks
+    # Check if we unlocked a new module
+    if(<upgrade{"effect"}[0] "addmodule" eq)
+        if(<-*unlockedModules{<upgrade{"effect"}[1]} <upgrade{"effect"}[2] eq)
+            # This module was just unlocked! Add its upgrades to the pool.
+            <-*moduleUnlocks{<upgrade{"effect"}[1]} dup trace >upgrades
+            <upgrades 0 do
+                NULL >upgrades[i]{"module"}
+                #<upgrades[i] "module" RemoveTableElement
+            loop
+            SendMsg("AddUpgradesToPool" <-*moduleUnlocks{<upgrade{"effect"}[1]}) 
+        endif
+    endif
+
+
+:ConstructText
+    >thisUpgrade
+    <rarityNames[<thisUpgrade{"rarity"}] >rarityName
+    <rarityName "<br><br>" <thisUpgrade{"title"} "<br><br>" <thisUpgrade{"description"} concat4 concat
+
+:UILevelBar
+    "{
+		'anchor': [0.5, 1.0],
+		'pos': [0, -20],
+		'pivot': [0.5, 0.5],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#000000FF',
+		'Components': 	[
+							{
+								'type':  'text', 
+								'text': '',
+								'pos': [0, 0], 
+								'pivot': [0.5, 0.5],
+								'width': 300, 
+								'height': 40,
+								'name':'background',
+								'color':'#FFFFFF',
+								'bgcolor': '#002344ff',
+								'active':true
+							},
+							{
+								'type':  'text', 
+								'text': '',
+								'pos': [-148, 0], 
+								'pivot': [0, 0.5],
+								'width': " <creeperDestroyed <upgradeCost AsFloat div 1 min 296 mul AsInt
+                                ", 
+								'height': 36,
+								'name':'bar',
+								'color':'#FFFFFF',
+								'bgcolor': '#00ff00ff',
+								'active':true
+							}
+        ]
+    }" concat3

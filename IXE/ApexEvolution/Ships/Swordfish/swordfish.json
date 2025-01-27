@@ -1,0 +1,133 @@
+{
+	"type": "unit",
+	"enemy": false,
+	"displayname":"The Swordfish",
+	"image": "swordfish.png",
+	"sortingorder": 0,
+	"position": [0, 0],
+	"pivot": [0.5, 0.5],
+	"hasphysics": true,
+	"gravityscale": 0,
+	"fowrange": 150,
+	"creeperdamages": true,
+	"digitalissource": false,
+	"nullifiable": false,
+	"playercandestroy": false,
+	"playercontrolbuildsupply": false,
+	"playercontrolammosupply": false,
+	"isapex": true,
+	"isbuilt": true,
+	"powerdispatchstoremax": 5,
+	"maxammo": 50,
+	"controllers": 	[
+						{
+							"name": "ondestroy_sandexplosion",
+							"amt": 256,
+							"minvelocity": 1.5,
+							"maxvelocity": 3,
+							"color0":[0.2, 0.4, 2],
+							"color1":[0.2, 0.6, 2],
+							"sandtype": 2
+						}
+					],
+	"scripts": [
+		{"name": "/ApexEvolution/Ships/ship.irpl"} ,
+		{"name": "/ApexEvolution/Ships/mobilenullifier.irpl"},
+		{"name": "swordfish.irpl"}
+		],
+	"parts":
+		[
+			{
+				"part": "$/weapon_cannon/weapon_cannon.json",
+				"name": "cannon0",
+				"sortingorder": 10,
+				"position": [ 27, 1 ]
+			},
+			{
+				"part": "$/weapon_cannon/weapon_cannon.json",
+				"name": "cannon1",
+				"sortingorder": 10,
+				"position": [ 20, 1 ]
+			},
+			{
+				"part": "/ApexEvolution/RecreatedModules/Sentrygun/sentrygun.json",
+				"name": "sentrygun0",
+				"sortingorder": 10,
+				"position": [ -5, -8 ]
+			},
+			{
+				"part": "/ApexEvolution/RecreatedModules/Sentrygun/sentrygun.json",
+				"name": "sentrygun1",
+				"sortingorder": 10,
+				"position": [ 5, -8 ]
+			},
+			{
+				"part": "$/weapon_cannon/weapon_cannon.json",
+				"name": "cannon2",
+				"sortingorder": 10,
+				"position": [ -28, 3 ]
+			},
+			{
+				"part": "$/weapon_cannon/weapon_cannon.json",
+				"name": "cannon3",
+				"sortingorder": 10,
+				"position": [ -28, -3 ]
+			},
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe0",
+				"sortingorder": 10,
+				"position": [ 15, 1.5 ]
+			},
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe1",
+				"sortingorder": 10,
+				"position": [ 5, -2 ]
+			},
+
+			{
+				"part": "$/weapon_rocket/weapon_rocket.json",
+				"name": "rocket0",
+				"sortingorder": 10,
+				"position": [ -20, 4 ]
+			},
+			{
+				"part": "$/weapon_rocket/weapon_rocket.json",
+				"name": "rocket1",
+				"sortingorder": 10,
+				"position": [ -20, -1 ]
+			},
+			{
+				"part": "$/weapon_rocket/weapon_rocket.json",
+				"name": "rocket2",
+				"sortingorder": 10,
+				"position": [ -15, 4 ]
+			},
+			{
+				"part": "$/weapon_rocket/weapon_rocket.json",
+				"name": "rocket3",
+				"sortingorder": 10,
+				"position": [ -15, -1 ]
+			},
+			{
+				"part": "$/weapon_rocket/weapon_rocket.json",
+				"name": "rocket4",
+				"sortingorder": 10,
+				"position": [ -10, 4 ]
+			},
+			{
+				"part": "$/weapon_rocket/weapon_rocket.json",
+				"name": "rocket5",
+				"sortingorder": 10,
+				"position": [ -10, -1 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Bertha/bertha.json",
+				"name": "bertha0",
+				"sortingorder": 10,
+				"position": [ -3, 0 ]
+			}
+			
+		]
+}

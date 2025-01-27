@@ -1,0 +1,12 @@
+{
+    "type": "global",
+    "scripts": [
+        { "name": "/ApexEvolution/Upgrades/upgradeloader.irpl", "run_when_paused": false, "execute_post": false },
+        { "name": "/ApexEvolution/Upgrades/globalupgrades.irpl", "run_when_paused": false },
+        { "name": "/ApexEvolution/Upgrades/upgradeui.irpl", "run_when_paused": false },
+        { "name": "/ApexEvolution/Upgrades/upgradechooser.irpl", "run_when_paused": false, "execute_post": true },
+        { "name": "/ApexEvolution/Upgrades/upgradeeffects.irpl", "run_when_paused": false },
+        { "name": "/ApexEvolution/Ships/shiploader.irpl", "run_when_paused": false },
+        { "name": "/ApexEvolution/Managers/gamemanager.irpl", "run_when_paused": false }
+    ]
+}

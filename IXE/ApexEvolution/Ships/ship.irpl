@@ -1,0 +1,127 @@
+$moveSpeed:3.0
+$friction:2.0
+$camZoom:64
+$allowWarp:1
+$allowFlip:0 # CURRENTLY BROKEN, DO NOT USE.
+
+# ==========================
+if(<checkMove)
+
+    if(Self true GetOverSand)
+        # Move back
+        Self <pos SetPosition
+        Self <dir SetUnitDirection
+    else
+        if(<checkMove 2 neq)
+            Self GetPosition
+            Self <pos SetPosition
+            >pos
+            <pos SetCameraPosition
+            if(<checkMove 1 eq)
+                Self <pos MoveUnit
+                PlaySound("GalaxyShipMove" 1)
+                <pos dup >pos >lastPos
+            endif
+        endif
+    endif
+    false >checkMove
+endif
+
+
+@Move
+
+:Move
+    Self GetPosition >pos
+
+    
+    # Push the ship based on what keys are pressed
+    Vector0
+    if(GetMappedKey("MoveMapUp" 1))
+        V2(0 <moveSpeed) add
+    endif
+    if(GetMappedKey("MoveMapDown" 1))
+        V2(0 <moveSpeed neg) add
+    endif
+    if(GetMappedKey("MoveMapLeft" 1))
+        V2(<moveSpeed neg 0) add
+    endif
+    if(GetMappedKey("MoveMapRight" 1))
+        V2(<moveSpeed 0) add
+    endif
+    >moveForce
+    Self <moveForce false AddPhysicsForce
+
+    # Apply a force backwards, much stronger if control is held.
+    if(-?lastPos)
+        <pos <lastPos sub >velocity
+        AddPhysicsForce(Self <velocity if(GetKey("LeftControl" 1)) 5.0 else <friction endif mul neg false)
+    endif
+
+    # Handle rotation back to center, scaled stronger the farther we are from aligned
+    Self GetRotation >rot
+    180 180 <rot sub abs sub >dist  
+    #MoveRotation(Self Self GetRotation 0 <dist 0.1 mul 1.0 add) 
+    Self MoveTowardsAngle(Self GetRotation 0 <dist 0.01 mul 0.01 add) MoveRotation
+    #SetRotation(Self dup GetRotation dup trace dup sign0 1 mul add)
+
+
+    if(GetMappedKeyDown("Custom1" 1) <allowWarp &&)
+        Sys_Operable
+        Self GetPosition >pos
+        Self GetUnitDirection >dir
+        GetAllPixelCount(self) ->pixelCounts #A vector of: NONE, ONBOARD, INROUTE, DEAD
+        if(<pixelCounts.1 neq0)
+            Self GetMouseCell SetPosition
+            true >checkMove
+            #Self GetMouseCell EV2 1 1 V4 MoveUnit
+
+        endif
+    endif
+
+    if(GetSelectedUnits Self 1 sub ListContains GetMappedKeyDown("FlipShip" 1) && <allowFlip &&)
+        Sys_Operable
+        Self GetPosition >pos
+        Self GetUnitDirection >dir
+        GetAllPixelCount(self) ->pixelCounts #A vector of: NONE, ONBOARD, INROUTE, DEAD
+        if(<pixelCounts.1 neq0)
+            Self dup GetUnitDirection ! SetUnitDirection
+            #Self GetMouseCell SetPosition
+            2 >checkMove
+            #Self GetMouseCell EV2 1 1 V4 MoveUnit
+
+        endif
+    endif
+
+
+
+
+
+
+    #Move the camera
+    SetMoveMapManualMode(true)
+    
+    # Zoom the camera
+    if(GetMappedKeyDown("ZoomMapIn" 1))
+        SetCameraZoom(GetCameraZoom 4 sub)
+    endif
+    if(GetMappedKeyDown("ZoomMapOut" 1))
+        SetCameraZoom(GetCameraZoom 4 add)
+    endif
+
+    SetCameraPosition(<pos)
+    <pos >lastPos
+
+
+:Once
+    SetCameraZoom(<camZoom)
+    ShowResourceArea(False)
+    ShowInventory(false)
+
+
+
+
+:Destroyed
+    false SetMoveMapManualMode
+    if(GetEditMode !)
+        MissionLoss
+    endif

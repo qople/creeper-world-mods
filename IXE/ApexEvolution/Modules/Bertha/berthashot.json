@@ -1,0 +1,22 @@
+{
+	"type": "unit",
+	"enemy": false,
+	"image": "berthashot.png",
+	"sortingorder": 0,
+	"position": [0, 0],
+	"pivot": [0.5, 0.5],
+	"hasphysics": false,
+    "collider": {"type":"none"},
+	"creeperdamages": false,
+	"digitalissource": false,
+    "enemyignores": true,
+	"nullifiable": false,
+	"playercandestroy": false,
+	"playercontrolbuildsupply": false,
+	"playercontrolammosupply": false,
+	"isapex": false,
+	"isbuilt": true,
+	"scripts": [
+		{"name": "berthashot.irpl"}
+		]
+}

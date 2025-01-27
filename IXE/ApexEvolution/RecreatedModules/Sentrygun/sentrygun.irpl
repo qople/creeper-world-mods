@@ -1,0 +1,27 @@
+# Recreation of the sentry gun for the purpose of Apex Evolution mode, as close as I can
+# It follows the mouse though.
+
+$manual_mode:1
+$fire_delay:15
+$shot_speed:1.5
+$shot_damage_count:50
+$shot_damage_distance:12
+$shot_damage:-3000000
+$shot_digitalis_damage:15000
+$rotate_speed:3.0
+
+$$shot_image:"/ApexEvolution/RecreatedModules/Sentrygun/sentrygunshot.png"
+
+
+
+Sys_Operable
+
+RotateUnitTowards(Self GetMousePos <rotate_speed)
+Self GetPosition Self GetDirRight 100 mul add >target
+if(GetTimer0 eq0)
+    CreateShot(<shot_image Self GetPosition <target <shot_speed 0 <shot_damage_count <shot_damage_distance <shot_damage <shot_digitalis_damage false false 1 "fire")
+    <fire_delay -1 2 RandInt add SetTimer0
+endif
+
+:Once
+    <fire_delay SetTimer0

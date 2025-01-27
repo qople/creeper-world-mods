@@ -1,0 +1,15 @@
+{
+	"type": "part",
+	"image": "$/weapon_sentrygun/barrel.png",
+	"position": [0, 0],
+	"pivot": [0.5, 0.5],
+	"collider": {"type":"none"},
+	"isbuilt": false,
+	"creeperdamages": true,
+	"sanddamages": true,
+    "scripts": [
+        {
+            "name": "/ApexEvolution/RecreatedModules/Sentrygun/sentrygun.irpl"
+        }
+    ]
+}

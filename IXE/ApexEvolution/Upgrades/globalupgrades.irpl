@@ -1,0 +1,78 @@
+
+if(<shipAC GetTimer0 eq0 &&)
+    50 SetTimer0
+    <-*mainShip GetPosition EV2 >y >x
+    <y 4 add <y 3 sub do 
+        <x 4 add <x 3 sub do 
+            i j <shipAC abs neg AddCreeper
+        loop
+    loop
+endif
+
+:Once
+    0 >growth
+    RegisterForMsg("addshipac" dup)
+    RegisterForMsg("multiplyluck" dup)
+    RegisterForMsg("setcreepermin" dup)
+    RegisterForMsg("addcreeperglobalgrowth" dup)
+    RegisterForMsg("addxpmult" dup)
+
+    # List of upgrade data. Each is a table.
+    CreateList >_upgrades
+
+    # Artifacts
+        Table(
+            "id"            "luckup"
+            "title"         "Blessing of Platius"
+            "description"   "Rare and above upgrades are much more common"
+            "effect"        "sendmsg/multiplyluck/1.5"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "globaldecay"
+            "title"         "Damage Aura"
+            "description"   "Deals a tiny amount of damage to all creeper, constantly"
+            "effect"        "sendmsg/addcreeperglobalgrowth/-1000"
+            "rarity"        5
+            "pickuplimit"   3
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "xpmult"
+            "title"         "Lessons Learned"
+            "description"   "+10% XP gain"
+            "effect"        "sendmsg/addxpmult/0.1"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "shipac"
+            "title"         "AC Generator"
+            "description"   "Your ship emits some anticreeper"
+            "effect"        "sendmsg/addshipac/10"
+            "rarity"        5
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+    
+    @ApplyUpgrades
+
+:ApplyUpgrades
+    SendMsg("AddUpgradesToPool" <_upgrades)
+
+# Artifact upgrade messages
+
+# One-off for the luck upgrade, might make this a variable luck stat at some point.
+:MultiplyLuck
+    List(83 56 51 21 9 1) ->*upgradeRarityChances
+
+:AddCreeperGlobalGrowth
+    <growth <_DATA add dup >growth SetCreeperGlobalGrowth
+
+:AddXPMult
+    <-*xpMult <-_DATA add ->*xpMult
+
+:AddShipAc
+    <shipAC <_DATA add >shipAC

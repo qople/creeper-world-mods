@@ -1,0 +1,231 @@
+# This is a template that can be used to make your own ship work in Apex Evolution!
+# I have attempted to make this as easy as possible, and explain things where I can.
+
+# IMPORTANT:
+# If the module you want to add (e.g. rocket) can be found in the "recreated modules" folder in this mod,
+# USE THAT PART PATH INSTEAD OF THE VANILLA ONE OR IT WILL NOT WORK!!!!!!!!!!
+
+# ------------------------
+
+# Describe which modules are on your ship.
+# Variable name should be "num_[modulename]".
+# Custom modules can be added in the "customModules" field, described below.
+# Names supported by default are cannon, sentrygun, rocket, lathe, cryon, particlegun, and maker.
+# There should be modules on the ship for each module matching the name given.
+# For instance, if "num_cannon" is 4, there should be 4 modules named "cannon0" to "cannon3".
+# If a variable is not defined, it is assumed to be 0.
+
+$num_cannon:4
+$num_sentrygun:2
+$num_rocket:6
+$num_lathe:2
+$num_bertha:1
+
+
+# -------------------------
+
+# Describe which modules are enabled by default.
+# Variable name should be "start_unlocked_[modulename]".
+# The first N modules of the matching name will be made active on game start, the rest will not.
+# For instance, if "start_unlocked_cannon" is 2, modules "cannon0" and "cannon1" will start enabled.
+# Any other cannon modules defined above will start inactive and can be picked up by upgrades at game time.
+# If a variable is not defined, it is assumed to be 0.
+
+$start_unlocked_cannon:1
+$start_unlocked_lathe:1
+$start_unlocked_bertha:0
+
+
+# -------------------------
+
+# Describe any custom ship modules your ship has on it. This is any module that is not one of:
+# cannon, sentrygun, rocket, lathe, cryon, particlegun, and maker.
+# This is a comma separated list. Whitespace is removed, and it is converted to lowercase.
+# "Bertha,T H O R ,           spirit" becomes a list of ["bertha", "thor", "spirit"].
+# The names of variables above should match this.
+
+$custom_modules:"bertha"
+
+
+# ---------------------------
+
+# Define upgrade setup modes for modules.
+# Variable name should be "setup_mode_[modulename]"
+# Built-in modules will automatically add their modules to the upgrade pool when on the ship if applicable. This is setup mode 0, and only works on built-in modules.
+# Custom modules by default have to have their upgrades manually defined below. This is setup mode 1.
+
+# Currently the only use of this option is to disable the automatic upgrade setup for built in modules and define your own instead. More is planned for this in a future time.
+
+
+# ---------------------------
+
+# Define the primary script or controller for each custom module.
+# If you are using a setup mode other than 0 (automatic), you should define this for the module.
+# Variable name should be "primary_behavior_[modulename]"
+# If using a controller, give the controller name. If using an IRPL script, the full script path should be given, INCLUDING THE .IRPL AT THE END
+
+# ===============================
+
+# Define upgrades associated with this ship. These will be added to the pool if the ship is picked for the level.
+:DefineUpgrades
+    #This area is unused in the swordfish as of yet, but this is what you'd want to do here:
+
+    CreateList >_upgrades
+    # sentrygun
+
+    # Num
+        Table(
+            "id"            "numbertha"
+            "title"         "Weapon: bertha"
+            "description"   "The biggest gun we could build."
+            "effect"        "addmodule/bertha/1"
+            "rarity"        3
+            "pickuplimit"   <num_bertha <start_unlocked_bertha sub 0 max
+        ) <_upgrades swap AppendToList
+    # Damage
+        Table(
+            "id"            "damagebertha"
+            "title"         "Antimatter Propellant"
+            "description"   "bertha damage +2"
+            "effect"        "incattr/bertha/shot_damage/-2000000"
+            "rarity"        0
+            "module"        "bertha"
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "damagebertha"
+            "title"         "Antimatter Propellant"
+            "description"   "bertha damage +3"
+            "effect"        "incattr/bertha/shot_damage/-3000000"
+            "rarity"        1
+            "module"        "bertha"
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "damagebertha"
+            "title"         "Antimatter Propellant"
+            "description"   "bertha damage +5"
+            "effect"        "incattr/bertha/shot_damage/-5000000"
+            "rarity"        2
+            "module"        "bertha"
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "damagebertha"
+            "title"         "Antimatter Propellant"
+            "description"   "bertha damage +8"
+            "effect"        "incattr/bertha/shot_damage/-8000000"
+            "rarity"        3
+            "module"        "bertha"
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "damagebertha"
+            "title"         "Antimatter Propellant"
+            "description"   "bertha damage +12"
+            "effect"        "incattr/bertha/shot_damage/-12000000"
+            "rarity"        4
+            "module"        "bertha"
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+
+    #Damage Area (epic and legendary only)
+        Table(
+            "id"            "damagecellsbertha"
+            "title"         "Super Charges"
+            "description"   "Bertha Damage Radius +1"
+            "effect"        "incattr/bertha/shot_damage_distance/1"
+            "rarity"        2
+            "module"        "bertha"
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+        Table(
+            "id"            "damagecellsbertha"
+            "title"         "Super Charges"
+            "description"   "Bertha Damage Radius +2"
+            "effect"        "incattr/bertha/shot_damage_distance/2"
+            "rarity"        3
+            "module"        "bertha"
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+        Table(
+            "id"            "damagecellsbertha"
+            "title"         "Super Charges"
+            "description"   "Bertha Damage Radius +4"
+            "effect"        "incattr/bertha/shot_damage_distance/4"
+            "rarity"        4
+            "module"        "bertha"
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+    #Rate
+        Table(
+            "id"            "ratebertha0"
+            "title"         "Efficient Chambering"
+            "description"   "Bertha fire delay -30"
+            "effect"        "incattr/bertha/fire_delay/-30"
+            "rarity"        0
+            "module"        "bertha"
+            "pickuplimit"   2
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "ratebertha1"
+            "title"         "Efficient Chambering"
+            "description"   "Bertha fire delay -30"
+            "effect"        "incattr/bertha/fire_delay/-30"
+            "rarity"        1
+            "pickuplimit"   2
+            "module"        "bertha"
+            "prerequisite"  "ratebertha0/2"
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "ratebertha2"
+            "title"         "Efficient Chambering"
+            "description"   "Bertha fire delay -30"
+            "effect"        "incattr/bertha/fire_delay/-30"
+            "rarity"        2
+            "pickuplimit"   2
+            "module"        "bertha"
+            "prerequisite"  "ratebertha1/2"
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "ratebertha3"
+            "title"         "Efficient Chambering"
+            "description"   "Bertha fire delay -30"
+            "effect"        "incattr/bertha/fire_delay/-30"
+            "rarity"        3
+            "pickuplimit"   1
+            "module"        "bertha"
+            "prerequisite"  "ratebertha2/2"
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "ratebertha4"
+            "title"         "Efficient Chambering"
+            "description"   "Bertha fire delay -30"
+            "effect"        "incattr/bertha/fire_delay/-30"
+            "rarity"        4
+            "pickuplimit"   1
+            "module"        "bertha"
+            "prerequisite"  "ratebertha3/1"
+        ) <_upgrades swap AppendToList
+
+:Once
+    # Defines the "_upgrades" variable containing all this ship's upgrades
+    @DefineUpgrades
+
+    Self >mainShip #So the loader script knows who we are
+    @LoadShip
+
+
+# Sends a message telling the ship loader to initialize the ship and its upgrades, and scrape this script for information about it.
+# THIS MUST BE CALLED FOR THIS TO WORK PROPERLY! 
+:LoadShip
+    RegisterScript("ship")
+    SendMsg("LoadShip" 0)
