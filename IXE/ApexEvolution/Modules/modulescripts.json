@@ -1,0 +1,13 @@
+{
+    "type": "global",
+    "scripts": [
+        { "name": "/ApexEvolution/Modules/Cannon/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/Sentrygun/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/Rocket/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/Lathe/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/Bertha/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/Maker/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/Cryon/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/Darkling/upgrades.irpl", "execute_post": true, "run_when_paused": true }
+    ]
+}

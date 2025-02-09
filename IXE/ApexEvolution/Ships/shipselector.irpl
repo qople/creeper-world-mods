@@ -1,0 +1,251 @@
+# Ship selector
+# The most overengineered script in the mod, maybe
+
+# Inventory cells are 74 pixels wide
+
+# Measured position of the "show more inventory" button:
+# 244 - 280 x
+# 149 - 180 y when closed
+# 297 - 328 y when opened
+
+# Measured position of the apex slot:
+# -514 - -315 x
+# 0 - 116 y
+# pixeltoinventory gives "-1, 0" when used on the center of the slot
+
+if(<selectingShip !)
+    return
+endif
+
+if(GetTimer0 1 eq)
+    if(<placedShipId GetPosition [0] gte0)
+        ClearInventory
+        false ShowInventory
+        false >selectingShip
+        true ->*loseOnShipDeath
+        DestroyUI("ShipSelection")
+    endif
+endif
+
+if(GetTimer1 1 eq)
+    if(<ship IsNull !)
+        #<ship V2(-1000 -1000) false CreateUnit >tempUnit
+        "ship" "ship_description" GetRegisteredScriptVar >description
+        "ship" "ship_name" GetRegisteredScriptVar >shipName
+        #<tempUnit false Destroy
+        @BeginConcatAll
+            <shipName ToUpper "<br>" <description
+        @ConcatAll
+        >descriptionText
+        SetUIActive("ShipSelection" "description" true)
+        SetUIText("ShipSelection" "description" <descriptionText)
+    else
+        SetUIActive("ShipSelection" "description" false)
+    endif
+endif
+
+if("Cancel" 0 GetMappedKeyDown <ship IsNull ! &&)
+    SetUIActive("ShipSelection" "description" false)
+endif
+
+# Handle clicking
+if(GetMouseButtonUp(0) GetKey("LeftControl" 0) ! &&)
+    #PlaySound("Achievement" 1)
+    
+    # Figure out where the mouse is relative to the inventory, both in pixels and inventory boxes.
+    # This does not account for the apex slot, only the grid.
+    @GetMousePixelCoords >pixelCoords
+    GetScreenSize >size
+    <pixelCoords @PixelToInventory >mouseInventorySlot
+
+
+    # Check if we're over the expand button
+    if(<inventoryExpanded)
+        <relativePos <closeButtonArea @VectorInArea >toggleExpanded
+    else
+        <relativePos <openButtonArea @VectorInArea >toggleExpanded
+    endif
+
+    if(<toggleExpanded)
+        <inventoryExpanded ! >inventoryExpanded
+        if(<inventoryExpanded)
+            SetUiPosition("ShipSelection" "centertip" V2(-40 148))
+            SetUiPosition("ShipSelection" "description" V2(-140 198))
+        else
+            SetUiPosition("ShipSelection" "centertip" V2(-40 0))
+            SetUiPosition("ShipSelection" "description" V2(-140 50))
+        endif
+        return
+    endif
+
+    # Check if we're over the apex button
+    <relativePos <apexSlotArea @VectorInArea >apexSlotSelected
+    
+    V2(-1 -1) >selectedInventorySlot
+    if(<apexSlotSelected)
+        V2(-1 0) >selectedInventorySlot
+    else
+        <mouseInventorySlot.x gte0 <mouseInventorySlot 8 lt &&
+
+        if(<inventoryExpanded)
+            <mouseInventorySlot.y 4 lt
+        else
+            <mouseInventorySlot.y 2 lt
+        endif
+        && if
+            # We're over the inventory, use the mouse slot instead
+            <mouseInventorySlot >selectedInventorySlot
+        else
+            V2(-1 -1) >selectedInventorySlot
+        endif
+    endif
+
+    if(<selectedInventorySlot.y gte0)
+        <selectedInventorySlot @GetShipFromSlot >ship
+        false SetTimerObeyPause1
+        2 SetTimer1
+
+        return
+    endif
+
+    SendMsg("ConfirmShipPlaced" 1)
+endif
+
+
+:GetMousePixelCoords
+    GetCameraZoom
+
+    # From GetZoomForWidth:
+    # zoom = camwidth * screenheight / (screenwidth * 2)
+    # So it follows that:
+    # camWidth = (zoom * 2 * screenheight) / screenwidth
+
+    # Or, in code:
+    GetScreenSize >size
+    GetCameraZoom 2 mul <size.x mul <size.y div >screenWidth
+    
+    # So now we can find our position based on screen size.
+    GetMousePos GetCameraPosition sub <screenWidth div V2(1 <size.x <size.y div) mul V2(0.5 0.5) add <size mul
+    >pixelCoords
+    <pixelCoords.x 0 round >pixelCoords.x
+    <pixelCoords.y 0 round >pixelCoords.y
+    <pixelCoords
+
+:GetShipFromSlot
+    >slot
+    GetInventory >allships
+    <allships 0 do
+        <allships[i]{"plan"} >plan
+        <plan GetPositionInventoryButton @PixelToInventory <slot eq if
+            <plan return
+        endif
+    loop
+    NULL return
+
+:GameLoaded
+    if(GetEditMode !)
+        False ShowInventory
+    endif
+    
+    once
+        True ShowInventory
+        DestroyUI("ShipSelection")
+        CreateUI("ShipSelection" @UIShipSelection CreateTable)
+        false >inventoryExpanded
+        false >confirming
+
+        RegisterForMsg("selectship" dup)
+
+        V4(-514 0 -315 116) >apexSlotArea
+        V4(244 149 280 180) >openButtonArea
+        V4(244 297 280 328) >closeButtonArea
+        RegisterForMsg("PingBack" dup)
+        true >selectingShip
+        false ->*loseOnShipDeath
+    endonce
+
+:PingBack
+    <_DATA >placedShipId
+    false SetTimerObeyPause0
+    3 SetTimer0
+
+# Get the inventory cell based on a pixel coordinate given
+:PixelToInventory
+    <size.x 0.5 mul 0 V2 >halfwayPoint
+    <halfwayPoint sub @GetUiScale div >relativePos
+    <relativePos 74 div >inventoryCells 
+    <inventoryCells.x 4.243243 add AsInt >inventoryCells.x
+    <inventoryCells.y AsInt >inventoryCells.y
+    <inventoryCells
+
+# Calculates the current UI scale
+:GetUiScale
+    GetScreenSize GetPositionHelpButton sub V2(52 16) div [0]
+
+# Returns if the vector is in the area given
+:VectorInArea
+    >area >vector
+    <vector.x <area.0 gte <vector.x <area.2 lte &&
+    <vector.y <area.1 gte  && <vector.y <area.3 lte &&
+
+# Marks this point in the stack as the start of the section for concatall to operate on.
+:BeginConcatAll
+	StackSize >startSize
+
+# Concats everything on the stack since when @BeginConcatAll was called.
+:ConcatAll
+	StackSize <startSize sub 1 sub 0 do
+		concat
+	loop
+	--startSize
+
+:UIShipSelection
+    "{
+        'anchor': [0.5, 0],
+        'pos': [0, 148],
+        'pivot': [0.5, 0.5],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':  'button', 
+                                'text': 'CLICK ON A SHIP TO SELECT IT, PLACE TO START',
+                                'pivot': [0.5, 0],
+                                'pos': [-40, 0], 
+                                'width': 546, 
+                                'height': 50,
+                                'name':'centertip',
+                                'color':'#FFFFFF',
+                                'bgcolor': '#919eabFF',
+                                'active':true,
+                                'events': []
+                            },
+                            {
+                                'type':  'button', 
+                                'text': 'CTRL-CLICK AND DRAG A SHIP HERE FOR A WIDER VIEW',
+                                'pivot': [0.5, 0],
+                                'pos': [-413, -32], 
+                                'width': 200, 
+                                'height': 82,
+                                'name':'movetip',
+                                'color':'#FFFFFF',
+                                'bgcolor': '#919eabFF',
+                                'active':true,
+                                'events': []
+                            },
+                            {
+                                'type':  'button', 
+                                'text': 'Ship description',
+                                'pivot': [0.5, 0],
+                                'pos': [-140, 50], 
+                                'width': 744, 
+                                'height': 125,
+                                'name':'description',
+                                'color':'#FFFFFF',
+                                'bgcolor': '#919eabFF',
+                                'active':false,
+                                'events': []
+                            },
+        ]
+    }"

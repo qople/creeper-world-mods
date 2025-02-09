@@ -38,37 +38,38 @@
 	"parts":
 		[
 			{
-				"part": "$/weapon_cannon/weapon_cannon.json",
+				"part": "/ApexEvolution/Modules/Cannon/cannon.json",
 				"name": "cannon0",
 				"sortingorder": 10,
 				"position": [ 27, 1 ]
 			},
 			{
-				"part": "$/weapon_cannon/weapon_cannon.json",
+				"part": "/ApexEvolution/Modules/Cannon/cannon.json",
 				"name": "cannon1",
 				"sortingorder": 10,
 				"position": [ 20, 1 ]
 			},
 			{
-				"part": "/ApexEvolution/RecreatedModules/Sentrygun/sentrygun.json",
+				"part": "/ApexEvolution/Modules/Sentrygun/sentrygun.json",
 				"name": "sentrygun0",
 				"sortingorder": 10,
 				"position": [ -5, -8 ]
 			},
 			{
-				"part": "/ApexEvolution/RecreatedModules/Sentrygun/sentrygun.json",
+				"part": "/ApexEvolution/Modules/Sentrygun/sentrygun.json",
 				"name": "sentrygun1",
 				"sortingorder": 10,
 				"position": [ 5, -8 ]
 			},
+
 			{
-				"part": "$/weapon_cannon/weapon_cannon.json",
+				"part": "/ApexEvolution/Modules/Cannon/cannon.json",
 				"name": "cannon2",
 				"sortingorder": 10,
 				"position": [ -28, 3 ]
 			},
 			{
-				"part": "$/weapon_cannon/weapon_cannon.json",
+				"part": "/ApexEvolution/Modules/Cannon/cannon.json",
 				"name": "cannon3",
 				"sortingorder": 10,
 				"position": [ -28, -3 ]
@@ -87,41 +88,43 @@
 			},
 
 			{
-				"part": "$/weapon_rocket/weapon_rocket.json",
+				"part": "/ApexEvolution/Modules/Rocket/rocket.json",
 				"name": "rocket0",
 				"sortingorder": 10,
 				"position": [ -20, 4 ]
 			},
 			{
-				"part": "$/weapon_rocket/weapon_rocket.json",
+				"part": "/ApexEvolution/Modules/Rocket/rocket.json",
 				"name": "rocket1",
 				"sortingorder": 10,
 				"position": [ -20, -1 ]
 			},
 			{
-				"part": "$/weapon_rocket/weapon_rocket.json",
+				"part": "/ApexEvolution/Modules/Rocket/rocket.json",
 				"name": "rocket2",
 				"sortingorder": 10,
 				"position": [ -15, 4 ]
 			},
 			{
-				"part": "$/weapon_rocket/weapon_rocket.json",
+				"part": "/ApexEvolution/Modules/Rocket/rocket.json",
 				"name": "rocket3",
 				"sortingorder": 10,
 				"position": [ -15, -1 ]
 			},
 			{
-				"part": "$/weapon_rocket/weapon_rocket.json",
+				"part": "/ApexEvolution/Modules/Rocket/rocket.json",
 				"name": "rocket4",
 				"sortingorder": 10,
 				"position": [ -10, 4 ]
 			},
 			{
-				"part": "$/weapon_rocket/weapon_rocket.json",
+				"part": "/ApexEvolution/Modules/Rocket/rocket.json",
 				"name": "rocket5",
 				"sortingorder": 10,
 				"position": [ -10, -1 ]
 			},
+
+
 			{
 				"part": "/ApexEvolution/Modules/Bertha/bertha.json",
 				"name": "bertha0",

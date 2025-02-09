@@ -1,16 +1,17 @@
 #Manages the addition of upgrades to the upgrade pool.
 
-GetCreeperInArea(V4(0 0 512 512) false false) ->*preUpdateCreeper
-
 :Once
-    # Upgrade pool has a list of upgrades for each rarity. When picking an upgrade, first the rarity is chosen, then the upgrade from that rarity. 
-    # This prevents upgrade chances from being additionally weighted by the number of upgrades in each type.
+    # Upgrade pool has a list of upgrades for each rarity. When picking an upgrade,
+    # first the rarity is chosen, then the upgrade from that rarity. 
+    # This prevents upgrade chances from being additionally weighted by the 
+    # number of upgrades in each type.
     6 0 do
         CreateList
     loop
     List ->*upgradePool
 
-    # Table where each key is an upgrade ID, and each item is a list of upgrades that are unlocked when that upgrade is picked.
+    # Table where each key is an upgrade ID, and each item is 
+    # a list of upgrades that are unlocked when that upgrade is picked.
     CreateTable ->*upgradeUnlocks
 
     # Same but for module unlocks
@@ -18,6 +19,18 @@ GetCreeperInArea(V4(0 0 512 512) false false) ->*preUpdateCreeper
 
     # Connects upgrade ID to times collected.
     CreateTable ->*upgradeCollected
+
+    CreateTable ->*bannedUpgrades
+
+    CreateTable ->*bannedModules
+
+    # Holds all stats for each module
+    CreateTable ->*moduleStats
+
+    # Keeps track of variable aliases for the stat screen
+    CreateTable ->*statAliases
+
+    CreateTable ->*allModules
 
     Trace("Beginning listening for upgrades.")
     RegisterForMsg("AddUpgradesToPool" dup)
@@ -31,35 +44,221 @@ GetCreeperInArea(V4(0 0 512 512) false false) ->*preUpdateCreeper
 
     "id title description effect rarity pickuplimit" " " Split >requiredData
 
+    # All stat effects that can modify attributes.
+    # This is used to determine which upgrades affect which stats
+    # So that the proper stats (and no others) can be kept track of.
+    List("incattr" "mulattr" "incmult") >statModifyingEffects
+
 
 # Responds to the message of the same name, adding all upgrades in the list given in the data to the upgrade pool.
 :AddUpgradesToPool
     <_DATA DeepCopy >upgrades
-    #"received" <upgrades trace2
     <upgrades 0 do
-        <upgrades[i] @InterpretUpgradeTable >upgrade
-        <upgrade{"rarity"} >rarity
-        true >valid
-
-        if(<valid)
-            #Upgrade IDs are unique PER RARITY. Across rarities, upgrades having the same ID means they won't both show up in the same upgrade choice.
-            true >canAdd
-            <-*upgradePool[<rarity] 0 do
-                if(<-*upgradePool[<rarity][i]{"id"} <upgrade{"id"} eq)
-                    false >canAdd
-                endif
+        if(<upgrades[i] "attribute" TableContainsKey)
+            # This table is a template, so we interpret it as such
+            <upgrades[i] >template
+            <template @InterpretTemplate >templateUpgrades
+            <templateUpgrades 0 do
+                <templateUpgrades[i] @InterpretUpgradeTable @AddUpgrade
             loop
-            if(<canAdd)
-                #Trace("Added upgrade " <upgrade{"id"} " to pool." concat3)
-                #0 ->*upgradeCollected{<upgrade{"id"}}
-                <-*upgradePool[<rarity] <upgrade AppendToList
-            endif
+        else
+            <upgrades[i] @InterpretUpgradeTable @AddUpgrade
         endif
     loop
 
+:AddUpgrade
+    <upgrade{"rarity"} >rarity
+    true >valid
+
+    #Upgrade IDs are unique PER RARITY. Across rarities, upgrades having the same ID means they won't both show up in the same upgrade choice.
+    true >canAdd
+    <-*upgradePool[<rarity] 0 do
+        if(<-*upgradePool[<rarity][i]{"id"} <upgrade{"id"} eq)
+            false >canAdd
+        endif
+    loop
+    if(<canAdd)
+        # Generate stats for modules for all stats with upgrades
+        "" ->attribute
+        if(<upgrade "module" TableContainsKey)
+            # Parse what module and attribute is getting affected by the upgrade
+            <upgrade{"module"} >modules
+            <upgrade{"effect"} >effects
+            
+            <effects 0 do
+                <effects[i] >effect
+                <effect[0] >effectType
+                
+                if(<statModifyingEffects <effectType ListContains)
+                    <effect[2] >attribute
+                endif
+                
+                # Make the table for the module if it doesn't exist
+                if(<-*moduleStats <module TableContainsKey !)
+                    CreateTable ->*moduleStats{<module}
+                endif
+
+                # Make the list for the stat if it doesn't exist
+                if(<-*moduleStats{<module} <attribute TableContainsKey !)
+                    <-*moduleStats{<module} <attribute @GetStat(<module <attribute) 0.0 1.0 1.0 4 ListN SetTableElement
+                endif
+            loop
+        endif
+
+        if(<upgrade{"pickuplimit"} neq0)
+            <-*upgradePool[<rarity] <upgrade AppendToList
+        endif
+    else
+        # This is going off all the time, not sure why.
+        #Trace("WARNING: duplicate upgrades of the same rarity (" <rarity ") defined for id '" <upgrade{"id"} ", duplicate not added to pool." concat4 concat)
+    endif
+
+# Gets the value of the given stat for a module
+:GetStat
+    >attribute >module
+
+    <-*moduleBehaviors{<module} >behavior
+    <behavior ".irpl" EndsWith  <behavior StringLength eq0 || >useScript
+
+    if(<useScript)
+        <-*mainShip <module "0" concat GetChild >moduleUnit
+        <moduleUnit <behavior <attribute GetScriptVar return
+    else
+        # Controller instead
+        # GetControllerArg is odd, so we'll do something weird
+        #StackSize >size
+        #<-*mainShip <behavior <attribute GetControllerArg TraceStack
+        #StackSize <size sub >numArgs
+        #<numArgs 1 sub 0 do
+        #    pop
+        #loop
+
+        <-*mainShip <module "0" concat GetChild 0 <attribute GetControllerArg2
+        return
+    endif
+
+# Templates, special upgrade tables that are parsed to a set of related upgrades.
+:InterpretTemplate
+    >template
+
+    # Pull values from the table
+    <template{"attribute"} >attribute
+    <template{"attribute_name"} >attributeName
+    <template{"module"} >module
+    <template{"sequential"} >sequentialMode
+
+
+    # Save the attribute name for the stat table
+    if(<-*statAliases <module TableContainsKey !)
+        CreateTable dup >aliasTable ->*statAliases{<module}
+    else
+        <-*statAliases{<module} >aliasTable
+    endif
+
+    # Try to generate a readable name if none is given
+    if(<attributeName StringLength !)
+        <attributeName @GenerateAlias >attributeName
+    endif
+    <attributeName >aliasTable{<attribute}
+
+    # Effect strengths list, length determines how many upgrades are generated.
+    <template{"effect_strengths"} >effectStrengths
+    <effectStrengths RemoveWhiteSpace "," Split >effectStrengths
+    <effectStrengths 0 do
+        <effectStrengths[i] AsFloat >effectStrengths[i]
+    loop
+
+    # Many values are optional, with default values
+    <template{"effect_type"} @OrDefault("incmult") >effectType
+
+    if(<sequentialMode) 
+        <template{"pickup_limit"} @OrDefault("1") >pickupLimit
+    else
+        <template{"pickup_limit"} @OrDefault("-1") >pickupLimit
+    endif
+
+    <pickupLimit RemoveWhiteSpace "," Split >pickupLimit
+    <pickupLimit 0 do
+        <pickupLimit[i] AsInt >pickupLimit[i]
+    loop
+    
+    # Rarities defaults to "all rarities"
+    <template{"rarities"} @OrDefault("0, 1, 2, 3, 4") >effectRarities
+    <effectRarities RemoveWhiteSpace "," Split >effectRarities
+    <effectRarities 0 do
+        <effectRarities[i] AsInt >effectRarities[i]
+    loop
+    
+    CreateList >templateUpgrades
+    <attributeName RemoveWhiteSpace <module concat >baseId
+
+    <effectStrengths 0 do
+        CreateTable >upgrade
+        
+        # ID
+        <baseId
+        if(<sequentialMode)
+            i concat
+        endif
+        >upgrade{"id"}
+
+        # Title
+        <template{"title"} >upgrade{"title"}
+
+        # Module
+        <module >upgrade{"module"}
+
+        # Description
+        @BeginConcatAll
+
+            # "Cannon damage " Or whatever
+            <module 0 1 Substring ToUpper <module 1 <module StringLength 1 sub Substring " " <attributeName " "
+            
+            # Describe effect
+            <effectStrengths[i] >strength
+            if(<effectType "mulattr" eq)
+                "x" <strength
+            else
+                if(<strength gte0)
+                    "+" <strength
+                else
+                    "-" <strength abs
+                endif
+                if(<effectType "incmult" eq)
+                    100 mul AsInt "%"
+                endif
+            endif
+        @ConcatAll >upgrade{"description"}
+        
+        # Pickup limit
+        <pickupLimit[i <pickupLimit GetListCount 1 sub min] >upgrade{"pickuplimit"}
+        
+        # Rarity
+        <effectRarities[i <effectRarities GetListCount 1 sub min] >upgrade{"rarity"}
+
+        # Effect
+        @BeginConcatAll
+        <effectType "/" <module "/" <attribute "/" <effectStrengths[i] 
+        @ConcatAll
+        >upgrade{"effect"}
+
+        # Prerequisite in sequential mode
+        if(<sequentialMode i &&)
+            <pickupLimit[i 1 sub <pickupLimit GetListCount 1 sub min] >prerequisiteNum
+            <baseId i 1 sub concat >prerequisiteId
+            <prerequisiteId "/" <prerequisiteNum concat3 >upgrade{"prerequisite"}
+        endif
+
+        <templateUpgrades <upgrade AppendToList
+    loop
+
+    <templateUpgrades return
+
+:GenerateAlias
+    >original
+    <original "shot_" "" StringReplace "_" " " StringReplace ToLower
 
 # Refines the table given and brings it to compliance with the upgrade system. This allows for more tolerant syntax.
-# For now this is empty until I get around to making the tolerant syntax. 
 :InterpretUpgradeTable
     DeepCopy >upgrade
     <upgrade GetTableKeys >keys
@@ -72,7 +271,11 @@ Full table: " <upgrade concat4)
 
     # Pre-parse the upgrade effect string to a list
     if(<upgrade{"effect"} GetType "STRING" eq)
-        <upgrade{"effect"} "/" Split >upgrade{"effect"}
+        <upgrade{"effect"} ", " "," StringReplace "," Split >effects
+        <effects 0 do
+            <effects[i] "/" Split >effects[i]
+        loop
+        <effects >upgrade{"effect"}
     endif
     
     # Parse the prerequisite list as well
@@ -82,3 +285,23 @@ Full table: " <upgrade concat4)
 
     # Return the table
     <upgrade
+
+# Returns the first value, or the second one (the default) if the first value is null.
+:OrDefault
+    >default >val
+    if(<val IsNull)
+        <default
+    else
+        <val
+    endif
+
+# Marks this point in the stack as the start of the section for concatall to operate on.
+:BeginConcatAll
+	StackSize >startSize
+
+# Concats everything on the stack since when @BeginConcatAll was called.
+:ConcatAll
+	StackSize <startSize sub 1 sub 0 do
+		concat
+	loop
+	--startSize

@@ -1,0 +1,45 @@
+# Beta Version 0.2 changes
+# These are the major changes, almost everything has had some sort of touch up
+
+# UI
+# Moved UI into one script to clean things up.
+# Made UI bar thinner, and it stretches to fit the screen across resolutions on 1x ui scale.
+# Added a level counter on the level bar.
+# Increased the size of the upgrade boxes.
+
+# Ships
+# Removed two rockets from the swordfish.
+# Added the Guardian ship.
+# Added a ship selector.
+
+# Modules
+# Buffed bertha damage from 20 to 25.
+# Rewrote rocket and cannon entirely in RPL, and converted all shots as well, to remove manual creeper counting.
+# Made a sprite-based global shot system to help performance when using RPL-based shots, that makes them roughly 50x faster than using units.
+
+# Upgrade system rework
+# Added upgrade templates to bulk define related upgrades or sequential upgrade chains.
+# Upgrades can now have several effects, separated by commas.
+# Added a stat system for keeping track of weapon stats, generated automatically to <-*moduleStats
+# Added support for additive and multiplicative percentage-based upgrades, in addition to flat bonuses.
+# Moved most upgrades over to using percentage-based upgrades.
+# Fixed "all" keyword for upgrades being broken.
+# upgrades now use two fixed seeds (one for normal choices, one for artifacts)
+
+# Artifacts
+# Added one special artifact for each weapon that gives it a unique bonus.
+# Added an artifact for each weapon to give it a large buff and remove it from the upgrade pool.
+# Tweaked artifacts to be one-time pickups, with the exception of the XP artifact, which has been buffed to +25% from +10%, and has a max of 3 instead of 5.
+# Added one artifact unique to each ship: a shield for the guardian, and an all stats up for the swordfish.
+
+# Module system rework
+# Modules are now more modular, with each having a separate "upgrades" script
+# That sets it up properly when added to global, operating while paused and in the pre update.
+# This reduces duplicate code when adding modules across ships.
+
+# Menu
+# Added a help and stat menu
+# The stat menu is generated automatically from the modules on your ship and the upgrades in the pool.
+
+# Endless
+# Added endless mode, which can be started once all creeper is removed from the map.

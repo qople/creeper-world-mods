@@ -1,0 +1,95 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"bertha"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+
+    # Num
+    Table(
+        "id"            "numbertha"
+        "title"         "Weapon: bertha"
+        "description"   "The biggest gun we could build."
+        "effect"        "addmodule/bertha/1"
+        "rarity"        3
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "bertha"
+        "title"             "Antimatter propellant"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "shot_damage_distance"
+        "attribute_name"    "damage radius"
+        "module"            "bertha"
+        "title"             "Powerful Powder"
+        "effect_type"       "incattr"
+        "effect_strengths"  "1, 2, 4"
+        "rarities"          "2, 3, 4"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "fire_delay"
+        "attribute_name"    "fire delay"
+        "module"            "bertha"
+        "title"             "Efficient Chambering"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "2,    2,    2,    1,    1"
+    ) <upgrades swap AppendToList
+
+    # Artifacts
+    Table(
+        "id"            "biggerbertha"
+        "title"         "Bigger Bertha"
+        "module"        "bertha"
+        "description"   "Bertha radius and damage X1.5, but double its fire delay."
+        "effect"        "mulattr/bertha/shot_damage/1.5, mulattr/bertha/shot_damage_distance/1.5, mulattr/bertha/fire_delay/2"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "berthamastery"
+        "title"         "Bertha Mastery"
+        "module"        "bertha"
+        "description"   "Bertha damage X1.5. Removes all future bertha upgrades."
+        "effect"        "mulattr/bertha/shot_damage/1.5, banmodule/bertha, banupgrade/numbertha"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    RegisterForMsg("add" <module concat "AddUpgrades")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return
+

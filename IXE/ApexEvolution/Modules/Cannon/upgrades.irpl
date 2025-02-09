@@ -1,0 +1,102 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"cannon"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+
+    Table(
+        "id"            "numcannon"
+        "title"         "Weapon: Cannon"
+        "description"   "Weak, fast, targets closest"
+        "effect"        "addmodule/cannon/1"
+        "rarity"        0
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "fire_range"
+        "attribute_name"    "range"
+        "module"            "cannon"
+        "title"             "Aerodynamic Shells"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "cannon"
+        "title"             "Antimatter propellant"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "shot_damage_count"
+        "attribute_name"    "damage area"
+        "module"            "cannon"
+        "title"             "Powerful Powder"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "fire_delay"
+        "attribute_name"    "fire delay"
+        "module"            "cannon"
+        "title"             "Efficient Chambering"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "2,    2,    2,    1,    1"
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannonmultishot"
+        "title"         "Triple Shot"
+        "module"        "cannon"
+        "description"   "Cannon has triple shot, but each shot is weaker"
+        "effect"        "incattr/cannon/num_shots/2, mulattr/cannon/shot_damage_count/0.75, mulattr/cannon/shot_damage/0.75"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannonmastery"
+        "title"         "Cannon Mastery"
+        "module"        "cannon"
+        "description"   "Cannon damage X1.5. Removes all future cannon upgrades."
+        "effect"        "mulattr/cannon/shot_damage/1.5, banupgrade/numcannon, banmodule/cannon"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    <-*moduleBehaviors trace
+    RegisterForMsg("add" <module concat "AddUpgrades")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return
+

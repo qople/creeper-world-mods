@@ -1,0 +1,93 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"sentrygun"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+    
+    Table(
+        "id"            "numsentrygun"
+        "title"         "Weapon: Sentrygun"
+        "description"   "Stronger, slower cannon, targets mouse"
+        "effect"        "addmodule/sentrygun/1"
+        "rarity"        1
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+    
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "sentrygun"
+        "title"             "Antimatter propellant"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "shot_damage_count"
+        "attribute_name"    "damage area"
+        "module"            "sentrygun"
+        "title"             "Powerful Powder"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "fire_delay"
+        "attribute_name"    "fire delay"
+        "module"            "sentrygun"
+        "title"             "Efficient Chambering"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "2,    2,    2,    1,    1"
+    ) <upgrades swap AppendToList
+
+    # Artifacts
+    Table(
+        "id"            "sentrygungravity"
+        "title"         "Heavy Shells"
+        "module"        "sentrygun"
+        "description"   "Sentrygun damage X1.25, but its bullets have gravity and knock you back slightly."
+        "effect"        "mulattr/sentrygun/shot_damage/1.25, incattr/sentrygun/shot_gravity/0.05, incattr/sentrygun/knockback/1"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "sentrygunmastery"
+        "title"         "Sentrygun Mastery"
+        "module"        "sentrygun"
+        "description"   "Sentrygun damage X1.5. Removes all future sentrygun upgrades."
+        "effect"        "mulattr/sentrygun/shot_damage/1.5, banmodule/sentrygun, banupgrade/sentrygun"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    RegisterForMsg("add" <module concat "AddUpgrades")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return

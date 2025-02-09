@@ -1,0 +1,68 @@
+$shot_damage:2.0
+$shot_damage_distance:8
+$shot_damage_count:18
+$fire_range:54
+$fire_delay:10
+$ROTATE_SPEED:12.0
+$FIRE_COST:0.1
+
+$num_shots:1
+$spread:20
+
+
+if(<fire_range <lastRange neq)
+    SetLosRange(Self <fire_range)
+    SetShowRange(Self <fire_range)
+    <fire_range >lastRange
+endif
+
+SYS_Operable
+
+GetNearestCreeper(self false) ->nearestCreeper
+if (<-nearestCreeper.x gte0)
+	<-nearestCreeper ->rotateTarget
+	SignedAngle(GetDirRight(self) <-rotateTarget GetPosition(self) -) ->rotationRemaining
+	if (abs(<-rotationRemaining) 0.001 <)
+		<-nearestCreeper ->hardTarget
+	else
+		Rotate(self clamp(<-rotationRemaining neg(<-ROTATE_SPEED) <-ROTATE_SPEED))
+		V2(-1 -1) ->hardTarget
+	endif
+	if (GetTimer0 eq0) 
+		if (GetAmmo(self) <-FIRE_COST >=)
+			@TryFire
+		endif	
+	endif	
+endif
+
+#---
+:TryFire
+	GetCreeperOnLine(self dup GetRotation 100 <-hardTarget false) ->col
+	if (<-col.x gte0)
+        PlaySound("fire" 1.0)
+        "CreateShot" "cannon" Self 2 ListN SendMsg
+        #Self GetRotation <num_shots 1 sub <spread 0.5 mul mul sub >rot
+        #<num_shots 0 do
+        #    CreateUnit("/ApexEvolution/Modules/Cannon/cannonshot" Self GetPosition true) >shot
+        #    <shotVars 0 do
+        #        <shotVars[i] >varName
+        #        <shot <varName dup <-! SetScript1Var
+        #    loop
+        #    <shot <rot SetRotation
+        #    <rot <spread add >rot
+        #loop
+        <fire_delay SetTimer0
+        ConsumeAmmo(Self 0.5)
+	endif
+#---
+
+:Once
+    List("shot_damage_distance" "shot_damage", "shot_damage_count") >shotVars
+    <fire_delay SetTimer0
+
+:Awake
+    0 ->lastRange
+	EnableLOS(self true)
+    SetLosRange(Self <fire_range)
+    SetShowRange(Self <fire_range)
+    SetShowRangeColor(Self 0.8 0.427 0 0.8 V4)

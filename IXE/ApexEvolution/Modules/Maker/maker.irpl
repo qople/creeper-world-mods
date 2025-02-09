@@ -1,0 +1,60 @@
+$shot_damage:1.25
+$shot_damage_distance:2
+$fire_range:45
+$fire_delay:10
+$ROTATE_SPEED:4.0
+$FIRE_COST:0.5
+$actrail:0
+
+if(<fire_range <lastRange neq)
+    SetLosRange(Self <fire_range)
+    SetShowRange(Self <fire_range)
+    <fire_range >lastRange
+endif
+
+SYS_Operable
+
+GetNearestCreeper(self false) ->nearestCreeper
+if (<-nearestCreeper.x gte0)
+	<-nearestCreeper ->rotateTarget
+	SignedAngle(GetDirRight(self) <-rotateTarget GetPosition(self) -) ->rotationRemaining
+	if (abs(<-rotationRemaining) 0.001 <)
+		<-nearestCreeper ->hardTarget
+	else
+		Rotate(self clamp(<-rotationRemaining neg(<-ROTATE_SPEED) <-ROTATE_SPEED))
+		V2(-1 -1) ->hardTarget
+	endif
+	if (GetTimer0 eq0) 
+		if (GetAmmo(self) <-FIRE_COST >=)
+			@TryFire
+		endif	
+	endif	
+endif
+
+#---
+:TryFire
+	GetCreeperOnLine(self GetRotation(self) 100 <-hardTarget false) ->col
+	if (<-col.x gte0)
+        PlaySound("fire" 1.0)
+        SendMsg("CreateShot" "maker" Self 2 ListN)
+        #CreateUnit("/ApexEvolution/Modules/Maker/makershot" Self GetPosition true) >shot
+        #<shotVars 0 do
+        #    <shotVars[i] >varName
+        #    <shot <varName dup <-! SetScript1Var
+        #loop
+        #<shot Self GetRotation SetRotation
+        <fire_delay SetTimer0
+        ConsumeAmmo(Self 0.5)
+	endif
+#---
+
+:Once
+    List("shot_damage_distance" "shot_damage" "actrail") >shotVars
+    <fire_delay SetTimer0
+
+:Awake
+    0 ->lastRange
+	EnableLOS(self true)
+    SetLosRange(Self <fire_range)
+    SetShowRange(Self <fire_range)
+    SetShowRangeColor(Self 0 0.8 0.8 0.8 V4)

@@ -2,6 +2,13 @@
 $creeperDoubleTime:18000 # Base creeper production scales by +100% every this many frames
 $creeperMultExponent:1 # Base multiplier is raised to this power.
 
+if(GetCreeperTotal eq0 GetGameUpdateCount 30 gte &&)
+    once
+        SendMsg("ShowEndlessButton" 0)
+        RegisterForMsg("StartEndless" dup)
+    endonce
+endif
+
 if(GetGameUpdateCount dup 300 mod eq0 &&)
     once
         @GetBaseProduction
@@ -9,12 +16,50 @@ if(GetGameUpdateCount dup 300 mod eq0 &&)
     @ScaleEmitters
 endif
 
+if(<endlessStart gte0)
+    if(<-*mainShip GetDestroyed)
+        once
+            @ShowEndText
+        endonce
+    else
+        @UpdateEndlessText
+    endif
+    # Spawn large pockets of creeper randomly on the map, ignoring sand presence, increasing with time.
+    
+    GetGameUpdateCount <endlessStart sub >timePassed
+    if(<timePassed dup 5400 mod eq0 &&)
+        SendMsg("ShowArtifact" 0)
+    endif
+    <timePassed 18000.0 div 1 add <timePassed 18000.0 div 4 add pow >productionMult
+    
+    <endlessTimer <productionMult add dup trace >endlessTimer
+    while <endlessTimer 300 gte repeat
+        <endlessTimer 300 sub >endlessTimer
+        @SpawnCreeper
+    endwhile
+endif
+
+:SpawnCreeper
+    <-*mainShip GetPosition >pos
+    
+    # Generate a position nearby the ship, but still in the map
+    RandInt(<pos.x 150 sub 3 max <pos.x 151 add 508 min) >creeperX
+    RandInt(<pos.y 150 sub 3 max <pos.y 151 add 508 min) >creeperY
+
+    <creeperX 3 sub <creeperY 3 sub <creeperX 3 add <creeperY 3 add V4 >creeperArea
+    <creeperArea 1800 1000000 mul 1 true SetCreeperInArea
+
 :GetBaseProduction
     GetUnitsByName("$/emitter/emitter") >emitters
     <emitters 0 do
         <emitters[i] "emitter" "makerParticleEmitCount" GetControllerArg
     loop
     List >emitterBaseProduction
+    GetUnitsByName("$/cemitter/cemitter") >cemitters
+    <cemitters 0 do
+        <cemitters[i] "cemitter" "productionAmt" GetControllerArg
+    loop
+    List >cemitterBaseProduction
 
 #Scales production of sand emitters over time
 :ScaleEmitters
@@ -22,3 +67,48 @@ endif
     <emitters 0 do
         <emitters[i] "emitter" "makerParticleEmitCount" <emitterBaseProduction[i] <productionMult mul AsInt SetControllerArg
     loop
+    <cemitters 0 do
+        <cemitters[i] "cemitter" "productionAmt" <cemitterBaseProduction[i] <productionMult mul AsInt SetControllerArg
+    loop
+
+:StartEndless
+    <-*shipLevel >startLevel
+    "ship" "ship_name" GetRegisteredScriptVar >shipName
+    GetGameUpdateCount >endlessStart
+    #DestroyUi("AevEndless")
+    @SpawnCreeper
+    SetUiSize("AevEndless" "main" V2(400 50))
+    @UpdateEndlessText
+    DeregisterForMsg("StartEndless")
+
+:Once
+    RegisterScript("game")
+    -1 >endlessStart
+
+# Marks this point in the stack as the start of the section for concatall to operate on.
+:BeginConcatAll
+	StackSize >startSize
+
+# Concats everything on the stack since when @BeginConcatAll was called.
+:ConcatAll
+	StackSize <startSize sub 1 sub 0 do
+		concat
+	loop
+	--startSize
+
+:UpdateEndlessText
+    "AevEndless" "main"
+    "ENDLESS ACTIVE
+Time passed: " GetTimeString(<timePassed) concat
+    SetUIText
+
+:ShowEndText
+    SetUiSize("AevEndless" "main" V2(500 100))
+    "AevEndless" "main"
+    @BeginConcatAll
+    "ENDLESS RESULTS: " <shipName "
+Endless start: " <endlessStart GetTimeString "
+Survived " <timePassed GetTimeString " (until " GetGameUpdateCount GetTimeString ")
+Level at endless start/end: " <startLevel "/" <-*shipLevel
+    @ConcatAll
+    SetUiText

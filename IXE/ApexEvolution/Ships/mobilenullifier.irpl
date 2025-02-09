@@ -1,6 +1,6 @@
-# Mobile nullifier part made to be attached to The Ship in TUS mode
+# Mobile nullifier part made to be attached to The Ship in AEV mode
 
-$RANGE:45
+$RANGE:50
 $PLATE_ROTATION_RATE:20.0
 $FIRE_TIME:150
 $FIREFINAL_TIME:105

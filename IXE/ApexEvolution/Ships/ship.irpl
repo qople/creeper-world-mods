@@ -31,6 +31,9 @@ endif
 @Move
 
 :Move
+    if(Self GetAllPixelCount [2] Self GetAllPixelCount [1] eq0 &&)
+        Self GetPosition >lastPos
+    endif
     Self GetPosition >pos
 
     
@@ -59,14 +62,23 @@ endif
 
     # Handle rotation back to center, scaled stronger the farther we are from aligned
     Self GetRotation >rot
-    180 180 <rot sub abs sub >dist  
-    #MoveRotation(Self Self GetRotation 0 <dist 0.1 mul 1.0 add) 
-    Self MoveTowardsAngle(Self GetRotation 0 <dist 0.01 mul 0.01 add) MoveRotation
-    #SetRotation(Self dup GetRotation dup trace dup sign0 1 mul add)
+    
+    180 180 <rot sub abs sub
+    #if(Self GetUnitDirection)
+    #    90 add neg 90 sub
+    #endif
+    >dist
+    
+        
+ 
+    Self MoveTowardsAngle(<rot
+    if(Self GetUnitDirection)
+        neg
+    endif
+     0 <dist 0.01 mul 0.01 add) MoveRotation
 
 
     if(GetMappedKeyDown("Custom1" 1) <allowWarp &&)
-        Sys_Operable
         Self GetPosition >pos
         Self GetUnitDirection >dir
         GetAllPixelCount(self) ->pixelCounts #A vector of: NONE, ONBOARD, INROUTE, DEAD
@@ -79,11 +91,11 @@ endif
     endif
 
     if(GetSelectedUnits Self 1 sub ListContains GetMappedKeyDown("FlipShip" 1) && <allowFlip &&)
-        Sys_Operable
         Self GetPosition >pos
         Self GetUnitDirection >dir
         GetAllPixelCount(self) ->pixelCounts #A vector of: NONE, ONBOARD, INROUTE, DEAD
         if(<pixelCounts.1 neq0)
+            #Self 0 SetRotation
             Self dup GetUnitDirection ! SetUnitDirection
             #Self GetMouseCell SetPosition
             2 >checkMove
@@ -114,14 +126,24 @@ endif
 
 :Once
     SetCameraZoom(<camZoom)
-    ShowResourceArea(False)
-    ShowInventory(false)
 
 
+:Awake
+    RegisterForMsg("ConfirmShipPlaced" dup)
 
+:GameLoaded
+    SetCameraZoom(<camZoom)
+    SetMoveMapManualMode(true)
+    SetCameraPosition(Self GetPosition)
+
+
+:ConfirmShipPlaced
+    SendMsg("PingBack" Self)
+    #ClearInventory
+    #false ShowInventory
 
 :Destroyed
     false SetMoveMapManualMode
-    if(GetEditMode !)
+    if(GetEditMode ! <-*loseOnShipDeath &&)
         MissionLoss
     endif

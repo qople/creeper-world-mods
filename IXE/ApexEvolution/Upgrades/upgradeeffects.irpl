@@ -8,37 +8,80 @@
 # Arguments are the string name of the module, followed by an int for how many to give.
 # Example: "addmodule/cannon/1" means "add 1 cannon module".
 
-# incattr: Increments a script var on a type of module, or all modules.
+# incattr: Increments the base value for a script var on a type of module, or all modules.
 # Arguments are the module name, then the variable name, then the amount to add.
 # "all" is a valid module name and will increment the var on all modules on the ship, even those not yet unlocked.
 # Example: "incattr/all/fire_range/2" increases the fire_range variable on all modules.
+
+# setattr: Same as incattr, but sets the base value instead of adding to it
+# Arguments are the module name, then the variable name, then the amount to add.
+# "all" is a valid module name and will set the var on all modules on the ship, even those not yet unlocked.
+# Example: "setattr/cannon/shot_damage/-5000000" sets the cannon's base damage per shot to 5.
+
+# incmult: Same as incattr, but increments the primary (additive) multiplier instead.
+# Arguments are the module name, then the variable name, then the amount to add to the multipler.
+# "all" is a valid module name and will increment the multiplier on all modules on the ship, even those not yet unlocked.
+# Example: "incmult/all/fire_range/0.25" increases fire range of all modules by an additional 25% of the base value.
+
+# mulattr: Same as incattr, but multiplies the secondary (exponential) multiplier instead.
+# Arguments are the module name, then the variable name, then the amount to multiply by.
+# "all" is a valid module name and will multiply the stat on all modules on the ship, even those not yet unlocked.
+# Example: "mulattr/all/fire_range/0.25" multiplies the fire range of all modules by 1.25x, 
+# no matter how many upgrades have already been collected.
+# Use this sparingly, it is very powerful if stacked.
 
 # sendmsg: Sends a message on a channel with the given data.
 # Arguments are the message channel name, then the data to send. Data will always be sent as a string, as written.
 # Example: "sendmsg/WinLevel/1" sends a message on the "WinLevel" channel with data "1" (string "1" not int 1).
 
-i
+
+# banmodule: Removes all upgrades attached to a module from the pool.
+# This is all modules that get added when the module is unlocked, 
+# not upgrades like module count that exist regardless.
+# Arguments is the module name, for example "banmodule/cannon"
+
+# banupgrade: Removes a specific upgrade ID from the pool.
+# Argument is the upgrade id, for instance "banupgrade/numcannon"
 
 :Once
     RegisterForMsg("ApplyUpgrade" dup)
 
 :ApplyUpgrade
     <_DATA >upgrade
-    <upgrade{"effect"} dup trace >effectList
+    <upgrade{"effect"} >allEffects
 
-    <effectList[0] >topLevelEffect
+    <allEffects 0 do
+        <allEffects[i] >effectList
 
-    switch
-        case(<topLevelEffect "addmodule" eq)
-            @AddModule
-        endcase
-        case(<topLevelEffect "incattr" eq)
-            @IncrementAttribute
-        endcase
-        case(<topLevelEffect "sendmsg" eq)
-            @SendMessage
-        endcase
-    endswitch
+        <effectList[0] >topLevelEffect
+
+        switch
+            case(<topLevelEffect "addmodule" eq)
+                @AddModule
+            endcase
+            case(<topLevelEffect "incattr" eq)
+                @IncrementAttribute
+            endcase
+            case(<topLevelEffect "incmult" eq)
+                @IncrementMultiplier
+            endcase
+            case(<topLevelEffect "setattr" eq)
+                @SetAttribute
+            endcase
+            case(<topLevelEffect "mulattr" eq)
+                @MultiplyAttribute
+            endcase
+            case(<topLevelEffect "sendmsg" eq)
+                @SendMessage
+            endcase
+            case(<topLevelEffect "banupgrade" eq)
+                @BanUpgrade
+            endcase
+            case(<topLevelEffect "banmodule" eq)
+                @BanModule
+            endcase
+        endswitch
+    loop
 
 # Activates N modules of the given type.
 :AddModule
@@ -57,7 +100,30 @@ i
     <effectList[2] >varName
     <effectList[3] >incrementAmount
 
-    if(<varName "all" eq)
+    if(<moduleName "all" eq)
+        <-*allModules GetTableKeys >modules
+    else
+        <moduleName List >modules
+    endif
+
+    <modules 0 do
+        <modules[i] >module
+        <-*moduleStats{<module}{<varName} >attributeStats
+        if(<attributeStats)
+            <attributeStats[1] <incrementAmount add >attributeStats[1]
+        endif
+    loop
+
+    @UpdateStat
+
+# Sets the base value for a stat, ignoring the stat system.
+:SetAttribute
+    <effectList[1] >moduleName
+    <effectList[2] >varName
+    <effectList[3] >newValue
+
+    # Support "all" keyword, or maybe future groups like "weapon" or "tool" or something.
+    if(<moduleName "all" eq)
         <-*allModules GetTableKeys >modules
     else
         <moduleName List >modules
@@ -66,33 +132,103 @@ i
     <modules 0 do
         <modules[i] >module
         <-*moduleBehaviors{<module} >behavior
-        <behavior trace
         <behavior ".irpl" EndsWith  <behavior StringLength eq0 || >useScript
-
         <-*allModules{<module} >numModules
+
         if(<useScript)
             <numModules 0 do
                 <-*mainShip <moduleName i concat GetChild >moduleUnit
-                <moduleUnit <behavior <varName GetScriptVar <incrementAmount add >newValue
                 <moduleUnit <behavior <varName <newValue SetScriptVar
-                <moduleName i concat "'s " <varName " is now " <moduleUnit <varName GetScript1Var concat4 concat trace
             loop
         else
-            # Controller instead
-            # For now this is odd, so we'll do something weird
-            StackSize >size
-            <-*mainShip <behavior <varName GetControllerArg
-            StackSize <size sub >numArgs
-            <numArgs 1 sub 0 do
-                pop
-            loop
-            <incrementAmount add >newValue
             <-*mainShip <behavior <varName <newValue SetControllerArg
-            <moduleName i concat "'s " concat <varName concat " is now " concat <-*mainShip <behavior <varName GetControllerArg concat traceAll
-
         endif
-
     loop
+
+    @UpdateStat
+
+:IncrementMultiplier
+    <effectList[1] >moduleName
+    <effectList[2] >varName
+    <effectList[3] >incrementAmount
+
+    if(<moduleName "all" eq)
+        <-*allModules GetTableKeys >modules
+    else
+        <moduleName List >modules
+    endif
+
+    <modules 0 do
+        <modules[i] >module
+        <-*moduleStats{<module}{<varName} >attributeStats
+        if(<attributeStats)
+            <attributeStats[2] <incrementAmount add >attributeStats[2]
+        endif
+    loop
+
+    @UpdateStat
+
+:MultiplyAttribute
+    <effectList[1] >moduleName
+    <effectList[2] >varName
+    <effectList[3] >incrementAmount
+
+    if(<moduleName "all" eq)
+        <-*allModules GetTableKeys >modules
+    else
+        <moduleName List >modules
+    endif
+
+    <modules 0 do
+        <modules[i] >module
+        <-*moduleStats{<module}{<varName} >attributeStats
+        if(<attributeStats)
+            <attributeStats[3] <incrementAmount mul >attributeStats[3]
+        endif
+    loop
+
+    @UpdateStat
+
+# Updates the vars on the script or controller assigned as the module behavior 
+# To match the value in the stat.
+:UpdateStat
+    >varName >moduleName
+
+    if(<moduleName "all" eq)
+        <-*allModules GetTableKeys >modules
+    else
+        <moduleName List >modules
+    endif
+
+    <modules 0 do
+        <modules[i] >module
+        <-*moduleBehaviors{<module} >behavior
+        <behavior ".irpl" EndsWith  <behavior StringLength eq0 || >useScript
+        <-*allModules{<module} >numModules
+
+        # Calculate the current value of the stat
+        <-*moduleStats{<module}{<varName} >statList
+        <statList[0] <statList[1] add <statList[2] mul <statList[3] mul 4 round >attributeValue
+
+        if(<useScript)
+            <numModules 0 do
+                <-*mainShip <moduleName i concat GetChild >moduleUnit
+                <moduleUnit <behavior <varName <attributeValue SetScriptVar
+            loop
+        else
+            <-*mainShip <behavior <varName <attributeValue SetControllerArg
+        endif
+    loop
+
+    "StatsUpdated" <moduleName <varName <attributeValue 3 ListN SendMsg
+
+:BanUpgrade
+    <effectList[1] >upgradeId
+    true ->*bannedUpgrades{<upgradeId}
+
+:BanModule
+    <effectList[1] >moduleName
+    true ->*bannedModules{<moduleName}
 
 :SendMessage
     <effectList[1] >messageChannel

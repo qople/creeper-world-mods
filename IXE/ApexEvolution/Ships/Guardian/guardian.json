@@ -1,0 +1,105 @@
+{
+	"type": "unit",
+	"enemy": false,
+	"displayname":"The Guardian",
+	"image": "guardian.png",
+	"sortingorder": 0,
+	"position": [0, 0],
+	"pivot": [0.5, 0.5],
+	"hasphysics": true,
+	"gravityscale": 0,
+	"fowrange": 150,
+	"creeperdamages": true,
+	"digitalissource": false,
+	"nullifiable": false,
+	"playercandestroy": false,
+	"playercontrolbuildsupply": false,
+	"playercontrolammosupply": false,
+	"isapex": true,
+	"isbuilt": true,
+	"powerdispatchstoremax": 5,
+	"maxammo": 50,
+	"controllers": 	[
+						{
+							"name": "ondestroy_sandexplosion",
+							"amt": 256,
+							"minvelocity": 1.5,
+							"maxvelocity": 3,
+							"color0":[0.2, 0.4, 2],
+							"color1":[0.2, 0.6, 2],
+							"sandtype": 2
+						}
+					],
+	"scripts": [
+		{"name": "/ApexEvolution/Ships/ship.irpl"
+		},
+		{"name": "/ApexEvolution/Ships/mobilenullifier.irpl"},
+		{"name": "guardian.irpl"}
+		],
+	"parts":
+		[
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe0",
+				"sortingorder": 10,
+				"position": [ 6, 2 ]
+			},
+			 
+			{
+				"part": "$/weapon_freeze/weapon_freeze.json",
+				"name": "cryon0",
+				"sortingorder": 10,
+				"position": [ 4, -11.5 ]
+			},
+			{
+				"part": "$/weapon_freeze/weapon_freeze.json",
+				"name": "cryon1",
+				"sortingorder": 10,
+				"position": [ -5, 11 ]
+			},
+
+			{
+				"part": "/ApexEvolution/Modules/Maker/maker.json",
+				"name": "maker0",
+				"sortingorder": 10,
+				"position": [ 14, -8 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Maker/maker.json",
+				"name": "maker1",
+				"sortingorder": 10,
+				"position": [ -16, -1.5 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Maker/maker.json",
+				"name": "maker2",
+				"sortingorder": 10,
+				"position": [ -11, 9 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Maker/maker.json",
+				"name": "maker3",
+				"sortingorder": 10,
+				"position": [ 6, 10 ]
+			},
+
+			{
+				"part": "/ApexEvolution/Modules/Rocket/rocket.json",
+				"name": "rocket0",
+				"sortingorder": 10,
+				"position": [ 2, 8 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Rocket/rocket.json",
+				"name": "rocket1",
+				"sortingorder": 10,
+				"position": [ -5, -8 ]
+			},	
+			{
+				"part": "/ApexEvolution/Modules/Darkling/darkling.json",
+				"name": "darkling0",
+				"sortingorder": 10,
+				"position": [ -5, 3 ]
+			},	
+		]
+}

@@ -1,0 +1,106 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"darkling"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+
+    Table(
+        "id"            "numdarkling"
+        "title"         "Weapon: Darkling"
+        "description"   "A plasma beam that circles around your ship, damaging creeper it touches."
+        "effect"        "addmodule/darkling/1"
+        "rarity"        3
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "beam_radius"
+        "attribute_name"    "beam width"
+        "module"            "darkling"
+        "title"             "Bigger Beams"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "beam_damage"
+        "attribute_name"    "damage"
+        "module"            "darkling"
+        "title"             "Hotter plasma"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "spin_time"
+        "attribute_name"    "spin time"
+        "module"            "darkling"
+        "title"             "Overvolted Servos"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "1,    1,    1,    1,    1"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "num_beams"
+        "attribute_name"    "beams"
+        "module"            "darkling"
+        "title"             "Beam Splitter"
+        "effect_type"       "incattr"
+        "effect_strengths"  "1"
+        "rarities"          "3"
+        "pickup_limit"      "2"
+    ) <upgrades swap AppendToList
+
+
+    # Artifacts
+    Table(
+        "id"            "darklingswarm"
+        "title"         "Laser Saw"
+        "module"        "darkling"
+        "description"   "Double your darkling beams, but reduce their damage and range."
+        "effect"        "mulattr/darkling/num_beams/2.0, mulattr/darkling/beam_damage/0.8, mulattr/darkling/fire_range/0.75"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingmastery"
+        "title"         "Darkling Mastery"
+        "module"        "darkling"
+        "description"   "Darkling damage X1.5. Removes all future darkling upgrades."
+        "effect"        "mulattr/darkling/beam_damage/1.5, banmodule/darkling, banupgrade/numdarkling"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    <-*moduleBehaviors trace
+    RegisterForMsg("add" <module concat "AddUpgrades")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return
+

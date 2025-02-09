@@ -1,0 +1,484 @@
+# Global script/framework to manage potentially thousands of  IRPL shots in a more performant manner than making each one a unit.
+# Because of how critical this script is for performance, it tends toward "fast" rather than "readable". 
+# I kind of loathe having to make this because it makes things more complicated and harder to change, but performance was unusable with every shot being an IRPL unit.
+
+# To make a shot, Send message "CreateShot" with the following data, in a list:
+
+# First element: shot type:
+# "cannon", "sentrygun", "maker"
+
+# Rocket and bertha still have their own shots since they fire much less often. This might change later.
+
+# Second element: part ID of the unit making the shot
+
+
+# Cannon shot Needs:
+    # position
+    # shotvel
+
+    # On fire we need:
+    #num_shots
+    #spread
+    
+    # On hit we need:
+    #shot_damage
+    #shot_damage_distance
+    #shot_damage_count
+
+# Sentrygun shot is the same as cannon shot, but also needs gravity
+
+# Maker shot needs:
+    # position
+    # shotvel
+    # actrail
+    # shot_damage:1
+    # shot_damage_distance
+
+# Rocket and bertha are the same, with different speeds and images
+# They need:
+    # pathlist (dup, don't copy, to save memory and time)
+    # position
+
+    # On hit, they need:
+    #shot_damage
+    #shot_damage_distance
+
+if(<-*shipLoaded)
+    once
+        @SetUpStats
+    endonce
+endif
+
+# Run a tick for each shot type
+0 >count
+<shotTypes 0 do
+    <shotTypes[i] >type
+    # Iterate in reverse order, since we may remove shots from the list as we go
+    -1 <type "Shots_" concat <-! dup >list 1 sub do
+        <list[i] <type refcall
+        if # Result of true means the shot hit
+            <list i RemoveListElement
+        endif
+    loop
+    <list GetListCount <count add >count
+
+    # Destroy sprites over time if we don't need them
+    if(GetGameUpdateCount <type "LastMade_" concat <-! sub 300 gt)
+        <type "Sprites_" concat <-! >sprites
+        if(<sprites)
+            <sprites[0] >sprite
+            <sprites PopList DestroySprite
+            GetGameUpdateCount 290 sub <type "LastMade_" concat ->!
+        endif
+    endif
+loop
+
+#<count Trace
+:Once
+    RegisterScript("shots")
+    RegisterForMsg("CreateShot" dup)
+    RegisterForMsg("StatsUpdated" dup)
+    List("cannon" "sentrygun" "rocket" "bertha" "maker") >shotTypes
+    Table(
+        "cannon" "/ApexEvolution/Sprites/Shots/cannon.png"
+        "sentrygun" "/ApexEvolution/Sprites/Shots/sentrygun.png"
+        "maker" "/ApexEvolution/Sprites/Shots/maker.png"
+        "bertha" "/ApexEvolution/Sprites/Shots/bertha.png"
+        "rocket" "/ApexEvolution/Sprites/Shots/rocket.png"
+    ) >spriteNames
+
+    List("num_shots" "spread" "shot_damage" "shot_damage_distance" "shot_damage_count") >cannonStats_
+    List("shot_gravity" "shot_damage" "shot_damage_distance" "shot_damage_count") >sentrygunStats_
+    List("actrail" "shot_damage" "shot_damage_distance") >makerStats_
+    List("shot_damage" "shot_damage_distance" "shot_damage_count") >rocketStats_
+    List("shot_damage" "shot_damage_distance" "shot_damage_count") >berthaStats_
+
+    # Initialize vars for each
+    <shotTypes 0 do
+        <shotTypes[i] >type
+        CreateList <type "Sprites_" concat ->!
+        0 <type "LastMade_" concat ->!
+        CreateList <type "Shots_" concat ->!
+    loop
+
+    3 >cannonSpeed
+    4 >makerSpeed
+    2 >sentrygunSpeed
+    1.5 >rocketSpeed
+
+:CreateShot
+    <_DATA[0] >shotType
+    <_DATA[1] >unit
+    "create" <shotType concat refcall
+
+# Creates a cannon shot (or several, based on num_shots)
+:CreateCannon
+    <unit "spread" GetScript1Var >spread
+    <unit GetPosition >pos
+    <unit GetRotation <cannonnum_shots 1 sub <cannonspread 0.5 mul mul sub >rot
+
+    # Make the shots
+    # Until the shot hits, we only need position and velocity for the shot, and a sprite ID.
+    <cannonnum_shots 0 do
+        ListN(<pos <rot Deg2Rad mul cos <rot Deg2Rad mul sin V2 <cannonSpeed mul @GetSprite("cannon") dup <rot false SetSpriteRotation GetGameUpdateCount 4)
+        <rot <cannonspread add >rot
+    loop
+    <cannonShots_ AppendStackToList
+
+# Creates a maker shot (or several, based on num_shots)
+:CreateMaker
+    <unit GetPosition >pos
+    <unit GetRotation >rot
+
+    # Make the shots
+    # Until the shot hits, we only need position and velocity for the shot, and a sprite ID.
+    ListN(<pos <rot Deg2Rad mul cos <rot Deg2Rad mul sin V2 Normalize @GetSprite("maker") dup <rot false SetSpriteRotation GetGameUpdateCount 4)
+    <makerShots_ AppendStackToList
+
+# Creates a sentrygun shot (or several, based on num_shots)
+:CreateSentrygun
+    <unit GetPosition >pos
+    <unit GetRotation >rot
+
+    # Make the shots
+    # Until the shot hits, we only need position and velocity for the shot, and a sprite ID.
+    ListN(<pos <rot Deg2Rad mul cos <rot Deg2Rad mul sin V2 <sentrygunSpeed mul @GetSprite("sentrygun") dup <rot false SetSpriteRotation GetGameUpdateCount 4)
+    <sentrygunShots_ AppendStackToList
+
+# Creates a rocket shot
+:CreateRocket
+    <unit "pathList" GetScript1Var >pathList
+    <rocketShots_ ListN(0 <pathList "rocket" @GetSprite  <unit GetPosition 4) AppendToList 
+
+# Runs one tick for one cannon shot. Performance critical.
+:Cannon
+    >shot
+    <shot[0] >pos
+    <shot[1] >vel
+    <shot[2] >sprite
+    <shot[3] >time
+
+    if(GetGameUpdateCount <time sub 60 gt)
+        <pos @DetCannon
+        true return
+    endif
+
+    <pos <vel add >pos
+    if(<pos EV2 GetCreeper gt0 <pos EV2 IsSandEmpty ! ||)
+        if(<pos EV2 GetCreeper lte0 <pos EV2 GetSand GetSandDefData {"blocksUnits"} ! &&)
+        else
+            # Hit! Walk us back to the cell we hit
+            <vel Normalize >oneVel
+            false >det
+            <pos
+            <vel Magnitude 0 do
+                <oneVel sub
+                if(dup EV2 GetCreeper lte0)
+                    # Do detonation effect here
+                    true >det
+                    <oneVel add @DetCannon
+                    break
+                endif
+            loop
+
+            if(<det !)
+                @DetCannon
+            endif
+
+            true return
+        endif
+    endif
+    # Keep going, move the sprite
+    <pos >shot[0]
+    <sprite <pos false SetSpritePosition
+    false return
+
+# Runs one tick for one rocket shot
+:Rocket
+    >shot
+    <shot[0] >index
+    <shot[1] >path
+    <shot[2] >sprite
+    <shot[3] >oldPos
+    
+    # New index based on speed
+    <index <rocketSpeed add dup >index >shot[0]
+
+    <index AsInt >intIndex
+
+    # Check if we've reached the end of the path
+    if(<intIndex <path GetListCount 1 sub gte)
+        <path dup GetListCount 1 sub GetListElement @DetRocket
+        true return
+    endif
+
+    # Move sprite based on index
+    <sprite GetPosition
+    <path[<intIndex] <path[<intIndex] <index <intIndex sub @Lerp >pos
+    
+    <sprite <pos <oldPos sub EV2 swap Atan2 Rad2Deg mul false SetSpriteRotation
+    <sprite <pos false SetSpritePosition
+    <pos >shot[3]
+    false return
+
+# Lerps between two numbers with the weight given
+# At 0, it will return the first input.
+# At 1, it will return the second input.
+# At 0.5, it will return the average.
+# And so on.
+:Lerp
+    >blend >secondNum >firstNum
+    <secondNum <firstNum sub <blend mul <firstNum add return
+
+# Runs one tick for one cannon shot. Performance critical.
+:Maker
+    >shot
+    <shot[0] >pos
+    <shot[1] >vel
+    <shot[2] >sprite
+    <shot[3] >time
+
+    if(GetGameUpdateCount <time sub 60 gt)
+        <pos @DetMaker
+        true return
+    endif
+
+    if(<makeractrail)
+        # A little more complicated when trail is on
+        false >det
+        <makerSpeed 0 do
+            <pos <vel add >pos
+            if(<pos EV2 GetCreeper gt0 <pos EV2 IsSandEmpty ! ||)
+                if(<pos EV2 GetCreeper lte0 <pos EV2 GetSand GetSandDefData {"blocksUnits"} ! &&)
+                else
+                    true >det
+                    <pos @DetMaker
+                    true return
+                    break
+                endif
+            endif
+            if(<det !)
+                0
+                # This works with a decimal radius, on average
+                <pos.y <makershot_damage_distance 0.25 mul ceil sub <pos.y <makershot_damage_distance 0.25 mul ceil add 1 add do
+                    <pos.x <makershot_damage_distance 0.25  mul ceil sub <pos.x <makershot_damage_distance 0.25 mul ceil add 1 add do
+                        if(<pos i j V2 Distance <makershot_damage_distance 0.25 mul lte)
+                            i j <makershot_damage 0.5 mul neg AddCreeper
+                            <makershot_damage 0.5 mul add
+                        endif
+                    loop
+                loop
+                "GiveXp" swap SendMsg
+                <pos >shot[0]
+                <sprite <pos false SetSpritePosition
+            endif
+        loop
+        false return
+    else
+        <pos <vel <makerSpeed mul add >pos
+        if(<pos EV2 GetCreeper gt0 <pos EV2 IsSandEmpty ! ||)
+            if(<pos EV2 GetCreeper lte0 <pos EV2 GetSand GetSandDefData {"blocksUnits"} ! &&)
+                #shield or similar, move on
+            else
+                # Hit! Walk us back to the cell we hit
+                <vel Normalize >oneVel
+                false >det
+                <pos
+                <vel Magnitude 0 do
+                    <oneVel sub
+                    if(dup EV2 GetCreeper lte0)
+                        # Do detonation effect here
+                        true >det
+                        <oneVel add @DetMaker
+                        true return
+                    endif
+                loop
+
+                if(<det !)
+                    @DetMaker
+                    true return
+                endif
+            endif
+        endif
+        # Keep going, move the sprite
+        <pos >shot[0]
+        <sprite <pos false SetSpritePosition
+        false return
+    endif
+
+# Runs one tick for one cannon shot. Performance critical.
+:Sentrygun
+    >shot
+    <shot[0] >pos
+    <shot[1] >vel
+    <shot[2] >sprite
+    <shot[3] >time
+
+    if(GetGameUpdateCount <time sub 60 gt)
+        <pos @DetSentrygun
+        true return
+    endif
+
+    <pos <vel add >pos
+
+    if(<pos EV2 GetCreeper gt0 <pos EV2 IsSandEmpty ! ||)
+        if(<pos EV2 GetCreeper lte0 <pos EV2 GetSand GetSandDefData {"blocksUnits"} ! &&)
+            #shield or similar, move on
+        else
+            # Hit! Walk us back to the cell we hit
+            <vel Normalize >oneVel
+            false >det
+            <pos
+            <vel Magnitude 0 do
+                <oneVel sub
+                if(dup EV2 GetCreeper lte0)
+                    # Do detonation effect here
+                    true >det
+                    <oneVel add @DetSentrygun
+                    break
+                endif
+            loop
+
+            if(<det !)
+                @DetSentrygun
+            endif
+
+            true return
+        endif
+    endif
+    # Keep going, move the sprite
+    <pos >shot[0]
+    <sprite <pos false SetSpritePosition
+
+    # apply gravity
+    if(<sentrygunshot_gravity gt0)
+        <vel.y <sentrygunshot_gravity sub >vel.y
+        <sprite <vel EV2 swap Atan2 Rad2Deg mul false SetSpriteRotation
+        <vel >shot[1] 
+    endif
+    false return
+    
+
+# Detonates a cannon shot at the coords given
+:DetCannon
+    # Clean up this shot
+    "cannon" <sprite @FreeSprite
+    dup >pos
+
+    <pos.x 0 round <cannonshot_damage_distance sub 
+    <pos.y 0 round <cannonshot_damage_distance sub 
+    <pos.x 0 round <cannonshot_damage_distance add 1 add 
+    <pos.y 0 round <cannonshot_damage_distance add 1 add 
+    V4 dup false false GetCreeperInArea >preCreeper
+    swap EV2 <cannonshot_damage_count <cannonshot_damage_distance <cannonshot_damage -1000000 mul DamageCreeper
+    false false GetCreeperInArea <preCreeper swap sub >xp
+    "GiveXp" <xp SendMsg
+
+# Detonates a cannon shot at the coords given
+:DetSentrygun
+    # Clean up this shot
+    "sentrygun" <sprite @FreeSprite
+    dup >pos
+
+    <pos.x 0 round <sentrygunshot_damage_distance sub 
+    <pos.y 0 round <sentrygunshot_damage_distance sub 
+    <pos.x 0 round <sentrygunshot_damage_distance add 1 add 
+    <pos.y 0 round <sentrygunshot_damage_distance add 1 add 
+    V4 dup false false GetCreeperInArea >preCreeper
+    swap EV2 <sentrygunshot_damage_count <sentrygunshot_damage_distance <sentrygunshot_damage -1000000 mul DamageCreeper
+    false false GetCreeperInArea <preCreeper swap sub >xp
+    "GiveXp" <xp SendMsg
+
+:DetMaker
+    "maker" <sprite @FreeSprite
+    >pos
+    0
+    # This works with a decimal radius, on average
+    <pos.y <makershot_damage_distance ceil sub <pos.y <makershot_damage_distance ceil add 1 add do
+        <pos.x <makershot_damage_distance ceil sub <pos.x <makershot_damage_distance ceil add 1 add do
+            if(<pos i j V2 Distance <makershot_damage_distance lte)
+                i j <makershot_damage neg AddCreeper
+                <makershot_damage add
+            endif
+        loop
+    loop
+    "GiveXp" swap SendMsg
+
+:DetRocket
+    "rocket" <sprite @FreeSprite
+    dup >pos
+    
+    <pos.x 0 round <rocketshot_damage_distance sub 
+    <pos.y 0 round <rocketshot_damage_distance sub 
+    <pos.x 0 round <rocketshot_damage_distance add 1 add 
+    <pos.y 0 round <rocketshot_damage_distance add 1 add 
+    V4 dup false false GetCreeperInArea >preCreeper
+    swap EV2 <rocketshot_damage_count <rocketshot_damage_distance <rocketshot_damage -1000000 mul DamageCreeper
+    false false GetCreeperInArea <preCreeper swap sub >xp
+    "GiveXp" <xp SendMsg
+
+# Pulls a sprite from the pool of existing unused sprites for shots, or makes one if none are free.
+:GetSprite
+    dup >type "Sprites_" concat <-! dup >sprites
+    if
+        # We have a sprite already made, just give that one!
+        <sprites PopList
+        dup true SetSpriteActive
+        return
+    else
+        GetGameUpdateCount <type "LastMade_" concat ->!
+        # Make a new sprite and give that instead.
+        # Don't add it to the list because it's not free, it will be added when freed by the shot hitting.
+        <spriteNames{<type} V2(0.5 0.5) CreateSprite
+        dup 5 SetSpriteOrder
+    endif
+
+# Hides a sprite and adds it to the pool of sprites to be reused later
+:FreeSprite
+    >sprite >type
+    <sprite false SetSpriteActive
+    <type "Sprites_" concat <-! <sprite AppendToList
+
+# Updates the cached value for the variable.
+:StatsUpdated
+    <_DATA[0] >module
+    <_DATA[1] >var
+    <_DATA[2] >value
+    <value <module <var concat ->!
+
+# Manually updates a stat at the start of the level
+:UpdateStat
+    >var >module
+    <-*mainShip <module "0" concat GetChild <var GetScript1var
+    <module <var concat ->!
+
+:SetUpStats
+    <shotTypes 0 do
+        <shotTypes[i] >type
+        <type "Stats_" concat <-! dup GetTableKeys >stats
+        0 do
+            <type <stats[i] @UpdateStat
+        loop
+    loop
+
+:GameLoaded
+    <shotTypes 0 do
+        <shotType[i] >type
+        
+        # Remove all sprites
+        <type "Sprites_" concat <-! >sprites
+        <sprites 0 do
+            <sprites[i] DestroySprite
+        loop
+        CreateList <type "Sprites_" concat ->!
+
+        # Replace sprites in shots with new ones
+        <type "Shots_" concat <-! >shots
+        <shots 0 do
+            <shots[i] >shot
+            <shot[2] >sprite
+            <sprite DestroySprite
+            <type @GetSprite >shot[2]
+        loop
+    loop
+            

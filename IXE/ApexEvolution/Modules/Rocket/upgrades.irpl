@@ -1,0 +1,97 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"rocket"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+
+    Table(
+        "id"            "numrocket"
+        "title"         "Weapon: Rocket"
+        "description"   "Strong, slow, targets deepest"
+        "effect"        "addmodule/rocket/1"
+        "rarity"        2
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "fire_range"
+        "attribute_name"    "range"
+        "module"            "rocket"
+        "title"             "Larger Propellant Tanks"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "fire_delay"
+        "attribute_name"    "fire delay"
+        "module"            "rocket"
+        "title"             "Faster Targeting Algorithm"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "2,    2,    2,    1,    1"
+    ) <upgrades swap AppendToList
+
+    # Add the following attributes to be kept track of by the stat screen:
+    Table(
+        "attribute"         "shot_damage_distance"
+        "attribute_name"    "damage radius"
+        "module"            "rocket"
+    ) <upgrades swap AppendToList
+
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "rocket"
+    ) <upgrades swap AppendToList
+
+
+    # Artifacts 
+    Table(
+        "id"            "rocketswarm"
+        "title"         "Swarm Rockets"
+        "module"        "rocket"
+        "description"   "Rocket fire delay is halved, but rockets are weaker."
+        "effect"        "mulattr/rocket/fire_delay/0.5, incattr/rocket/shot_damage_distance/-1, mulattr/rocket/shot_damage/0.8"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "id"            "rocketmastery"
+        "title"         "Rocket Mastery"
+        "module"        "rocket"
+        "description"   "Rocket damage X1.5. Removes all future rocket upgrades."
+        "effect"        "mulattr/rocket/shot_damage/1.5, banmodule/rocket, banupgrade/numrocket"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    RegisterForMsg("add" <module concat "AddUpgrades")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return

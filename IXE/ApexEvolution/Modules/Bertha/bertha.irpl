@@ -1,6 +1,6 @@
 # Big ol' gun.
 
-$shot_damage:-20000000 # 20
+$shot_damage:25.0 # 25
 $shot_damage_count:9999
 $shot_damage_distance:14
 $fire_delay:300  # 10 seconds
@@ -51,6 +51,8 @@ endif
 :Once
     #Vars in this list get copied to the bullet when we make it
     List("pathList" "shot_damage_count" "shot_damage_distance" "shot_damage") >shotVars
+    
+:Awake
     Self true EnableRa
     Self <FIRE_RANGE SetShowRange
     Self V4(0.8 0 0.4 0.8) SetShowRangeColor

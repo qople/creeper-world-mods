@@ -1,0 +1,120 @@
+# Controls mid-game menu interaction
+
+if(<showIndicator GetEditMode ! && GetGameUpdateCount eq0 &&)
+    ShowUiIndicator("AevHelp" @GetIndicatorPosition)
+endif
+
+if(<updateUi)
+    DestroyUI("StatsMenu")
+    SendMsg("ShowStatsMenu" 0)
+    if(<openModule StringLength)
+        SetUIBackgroundColor("StatsMenu" <module V4(0 0.8 0 1))
+        DestroyUI("AevModule")
+        SendMsg("ShowModuleUi" <openModule)
+    endif
+    false >updateUi
+endif
+
+:ToggleHelpMenu
+    false >showIndicator
+    "" >openModule
+    if(<openMenu "stats" eq)
+        DestroyUi("StatsMenu")
+        DestroyUI("AevModule")
+        SetUiBackgroundColor("AevMenu" "stats" V4(0 0.204 0.267 1))
+    endif
+    if(<openMenu "help" eq)
+        DestroyUI("HelpMenu")
+        "" >openMenu
+        SetUiBackgroundColor("AevMenu" "help" V4(0 0.204 0.267 1))
+    else
+        "help" >openMenu
+        SendMsg("ShowHelpMenu" 0)
+        SetUiBackgroundColor("AevMenu" "help" V4(0 0.8 0 1))
+    endif
+    
+:ToggleStatsMenu
+    false >showIndicator
+    "" >openModule
+    if(<openMenu "help" eq)
+        DestroyUi("HelpMenu")
+        SetUiBackgroundColor("AevMenu" "help" V4(0 0.204 0.267 1))
+    endif
+    if(<openMenu "stats" eq)
+        DestroyUI("StatsMenu")
+        DestroyUI("AevModule")
+        "" >openMenu
+        SetUiBackgroundColor("AevMenu" "stats" V4(0 0.204 0.267 1))
+    else
+        "stats" >openMenu
+        SendMsg("ShowStatsMenu" 0)
+        SetUiBackgroundColor("AevMenu" "stats" V4(0 0.8 0 1))
+    endif
+
+:SHOW_MODULE_STATS
+    <_DATA{"name"} >module
+    if(<openModule StringLength)
+        DestroyUI("AevModule")
+        SetUIBackgroundColor("StatsMenu" <openModule V4(0 0.204 0.267 1))
+
+    endif
+    if(<module <openModule neq)
+        <module >openModule
+        if(<module StringLength)
+            SetUIBackgroundColor("StatsMenu" <module V4(0 0.8 0 1))
+            SendMsg("ShowModuleUi" <openModule)
+        endif
+    else
+        "" >openModule
+    endif
+
+:UpdateStatMenu
+    if(<openMenu "stats" eq)
+        1 >updateUi
+    endif
+
+:ShowOverview
+    CloseGameMessage(true)
+    ShowGameMessage("Apex Evolution, or AEV for short, is a gamemode inspired by the likes of Vampire Survivors. Control a ship and collect upgrades that add or improve weapons, until you become unstoppable!" "Close" "" true "CloseGameMessage")
+
+:ShowControls
+    CloseGameMessage(true)
+    ShowGameMessage("Start by picking and placing a ship. You can move it with your map movement hotkeys. Pressing Custom1, which can be bound in the controls menu, will move your ship to where your mouse is. You can also use the map zoom hotkeys (Q and Z by default) to zoom in and out." "Close" "" true "CloseGameMessage")
+
+:ShowUpgradeHelp
+    CloseGameMessage(true)
+    ShowGameMessage("You gain XP based on how much creeper you destroy. You can pick an upgrade when the bar at the top fills up. Getting and staying close to an enemy unit will nullify it, and give you a special upgrade choice." "Close" "" true "CloseGameMessage")
+
+:ShowStatsHelp
+    CloseGameMessage(true)
+    ShowGameMessage("Upgrades can affect stats in several ways: <br>1) add a flat bonus, '+1'. This increases the base of the stat.<br>2) Increment an additive multiplier, '+20%'. Two '+20%'s will increase a stat by 40%.<br>3) Multiply a stat, 'X2'. This stacks exponentially." "Close" "" true "CloseGameMessage")
+
+:ShowEndlessHelp
+    CloseGameMessage(true)
+    ShowGameMessage("Destroy all creeper on the map to unlock endless mode. Endless mode will constantly spawn creeper on the map in increasing quantities until you die. You receive a brief summary of your performance after you die in endless." "Close" "" true "CloseGameMessage")
+
+:GetIndicatorPosition
+    0 GetScreenSize [1] V2 >topLeftCorner
+    <topLeftCorner V2(46 -57) @GetUiScale mul add
+
+:Once
+    "" >openMenu
+    "" >openModule
+    true >showIndicator
+    RegisterForMsg("SHOW_AEV_HELP" "ToggleHelpMenu")
+    RegisterForMsg("SHOW_AEV_STATS" "ToggleStatsMenu")
+    RegisterForMsg("SHOW_AEV_OVERVIEW" "ShowOverview")
+    RegisterForMsg("SHOW_AEV_CONTROLS" "ShowControls")
+    RegisterForMsg("SHOW_AEV_UPGRADE_HELP" "ShowUpgradeHelp")
+    RegisterForMsg("SHOW_AEV_STAT_HELP" "ShowStatsHelp")
+    RegisterForMsg("SHOW_AEV_ENDLESS_HELP" "ShowEndlessHelp")
+    RegisterForMsg("CloseGameMessage" dup)
+    RegisterForMsg("SHOW_MODULE_STATS" dup)
+    RegisterForMsg("ApplyUpgrade" "UpdateStatMenu")
+
+:CloseGameMessage
+    CloseGameMessage(true)
+
+# Calculates the current UI scale
+:GetUiScale
+    GetScreenSize GetPositionHelpButton sub V2(52 16) div [0]

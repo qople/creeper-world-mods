@@ -4,10 +4,15 @@ if(<shipAC GetTimer0 eq0 &&)
     <-*mainShip GetPosition EV2 >y >x
     <y 4 add <y 3 sub do 
         <x 4 add <x 3 sub do 
-            i j <shipAC abs neg AddCreeper
+            i j <shipAC <-*shipLevel mul abs neg AddCreeper
         loop
     loop
 endif
+
+:LevelUp
+    if(<growth)
+        <growth <_DATA mul SetCreeperGlobalGrowth
+    endif
 
 :Once
     0 >growth
@@ -16,6 +21,7 @@ endif
     RegisterForMsg("setcreepermin" dup)
     RegisterForMsg("addcreeperglobalgrowth" dup)
     RegisterForMsg("addxpmult" dup)
+    RegisterForMsg("LevelUp" dup)
 
     # List of upgrade data. Each is a table.
     CreateList >_upgrades
@@ -33,28 +39,28 @@ endif
         Table(
             "id"            "globaldecay"
             "title"         "Damage Aura"
-            "description"   "Deals a tiny amount of damage to all creeper, constantly"
-            "effect"        "sendmsg/addcreeperglobalgrowth/-1000"
-            "rarity"        5
-            "pickuplimit"   3
-        ) <_upgrades swap AppendToList
-
-        Table(
-            "id"            "xpmult"
-            "title"         "Lessons Learned"
-            "description"   "+10% XP gain"
-            "effect"        "sendmsg/addxpmult/0.1"
+            "description"   "Deals a tiny amount of damage to all creeper, constantly. Scales with your level."
+            "effect"        "sendmsg/addcreeperglobalgrowth/-100"
             "rarity"        5
             "pickuplimit"   1
         ) <_upgrades swap AppendToList
 
         Table(
+            "id"            "xpmult"
+            "title"         "Lessons Learned"
+            "description"   "+25% XP gain"
+            "effect"        "sendmsg/addxpmult/0.25"
+            "rarity"        5
+            "pickuplimit"   3
+        ) <_upgrades swap AppendToList
+
+        Table(
             "id"            "shipac"
             "title"         "AC Generator"
-            "description"   "Your ship emits some anticreeper"
-            "effect"        "sendmsg/addshipac/10"
+            "description"   "Your ship emits some anticreeper, scaling with your level."
+            "effect"        "sendmsg/addshipac/1"
             "rarity"        5
-            "pickuplimit"   -1
+            "pickuplimit"   1
         ) <_upgrades swap AppendToList
     
     @ApplyUpgrades
@@ -65,11 +71,11 @@ endif
 # Artifact upgrade messages
 
 # One-off for the luck upgrade, might make this a variable luck stat at some point.
-:MultiplyLuck
-    List(83 56 51 21 9 1) ->*upgradeRarityChances
+:multiplyluck
+    List(83 56 51 21 9 0) ->*upgradeRarityChances
 
 :AddCreeperGlobalGrowth
-    <growth <_DATA add dup >growth SetCreeperGlobalGrowth
+    <growth <_DATA add dup >growth <-*shipLevel mul SetCreeperGlobalGrowth
 
 :AddXPMult
     <-*xpMult <-_DATA add ->*xpMult

@@ -2,14 +2,10 @@
 # Makes the template cleaner, and removes all this code that shouldn't be modified when adding in a ship.
 
 :Once
-    "cannon sentrygun cryon lathe maker particlegun rocket" " " split >baseModules
     RegisterForMsg("LoadShip" dup)
     false >loaded
-    Table(
-        "cannon" "cannon"
-        "rocket" ""
-        "sentrygun" ""
-    ) >defaultWeaponBehaviors
+    CreateTable ->*moduleBehaviors
+    CreateTable ->*unlockedModules
 
 :LoadShip
     # Workaround for bug in version 39 that causes messages to be received more than once in certain situations.
@@ -18,23 +14,24 @@
     endif
     once
         true >loaded
+        true ->*shipLoaded
     endonce
 
-    CreateTable ->*moduleBehaviors
-    CreateTable ->*unlockedModules
-    CreateTable ->*allModules
+
+    #CreateTable ->*allModules
 
     "mainShip" @Get dup >mainShip ->*mainShip
 
     # First get the custom modules on the ship
     "custom_modules" @Get RemoveWhiteSpace ToLower "," Split >customModules
-    <baseModules Copy >shipModules
+    <-*allModules GetTableKeys Copy >shipModules
     <customModules 0 do
         if(<customModules[i] StringLength)
             <shipModules <customModules[i] AppendToList
         endif
     loop
 
+    #<shipModules ->*testModules
     <shipModules 0 do
         <shipModules[i] @LoadModule
     loop
@@ -46,75 +43,55 @@
     >moduleName
 
     # Get data on total and active modules and set it up
-    "num_" <moduleName concat @Get >numModules
+    <moduleName @DetectModuleNum >numModules
     if(<numModules IsNull)
         0 >numModules
     endif
 
-    <numModules ->*allModules{<moduleName}
-    <mainShip "ship.irpl" "num_" <moduleName concat <numModules SetScriptVar 
+    if(<numModules)
+        <numModules ->*allModules{<moduleName}
+        <mainShip "ship.irpl" "num_" <moduleName concat <numModules SetScriptVar 
 
-    "start_unlocked_" <moduleName concat @Get >startingModules
-    if(<startingModules IsNull)
-        0 >startingModules
-    endif
-    <moduleName <startingModules trace2
-
-    <startingModules ->*unlockedModules{<moduleName} 
-    <numModules 0 do
-        <mainShip <moduleName i concat GetChild i <startingModules lt SetActive
-    loop
-
-
-    # Figure out the setup mode
-    <baseModules <moduleName ListContains >isBaseModule
-
-    if("setup_mode_" <moduleName concat @Get IsNull !)
-        # They defined a setup mode, let's use that.
-        "setup_mode_" <moduleName concat @Get 
-        if(<isBaseModule !)
-            # Only base modules use setup mode 0
-            1 max
+        "start_unlocked_" <moduleName concat @Get >startingModules
+        if(<startingModules IsNull)
+            0 >startingModules
         endif
-        >setupMode
+
+        <startingModules ->*unlockedModules{<moduleName} 
+        <numModules 0 do
+            <mainShip <moduleName i concat GetChild i <startingModules lt SetActive
+        loop
+
+
+        # Figure out the setup mode
+        #<baseModules <moduleName ListContains >isBaseModule
+
+        if("setup_mode_" <moduleName concat @Get IsNull !)
+            # They defined a setup mode, let's use that.
+            "setup_mode_" <moduleName concat @Get >setupMode
+        else
+            #Default to automatic setup.
+            0 >setupMode
+        endif
+
+
+
+        if(<setupMode eq0)
+            <moduleName @AutomaticSetup
+        else if(<setupMode 1 eq)
+            <moduleName @ManualSetup
+        endif endif
     else
-        #Default to 0 (auto) for base modules, 1 (manual) for custom modules.
-        <isBaseModule ! >setupMode
+        <-*allModules <moduleName RemoveTableElement
     endif
 
-
-
-    if(<setupMode eq0)
-        <moduleName @AutomaticSetup
-    else if(<setupMode 1 eq)
-        <moduleName @ManualSetup
-    endif endif
-
-    # Unlock upgrades for starting modules (Not necessary anymore)
-    #if(<startingModules)
-    #    <-*moduleUnlocks{<moduleName} >upgrades
-    #    <upgrades 0 do
-    #        NULL >upgrades[i]{"module"}
-    #        #<upgrades[i] "module" RemoveTableElement
-    #    loop
-    #    SendMsg("AddUpgradesToPool" <upgrades)
-    #endif
-
-
-
-# Fully automatic module setup for built-in modules, with the premade upgrades. 
+# Loads the default upgrades for the module 
 :AutomaticSetup
     >moduleName
-
-    <defaultWeaponBehaviors{<moduleName} >behavior
-    <behavior ->*moduleBehaviors{<moduleName}
-    <moduleName "Upgrades" concat refcall >moduleUpgrades
-    "AddUpgradesToPool" <moduleUpgrades SendMsg 
-
-
+    SendMsg("add" <moduleName concat <startingModules)
+    
 :ManualSetup
-
-
+    # Nothing right now, this is here in case something needs to be done here later.
 
 # Shorthand function
 :Get
@@ -124,522 +101,11 @@
 :Set
     "ship" swap SetRegisteredScriptVar
 
-#Defines all the default upgrades for each included module. 
-:cannonUpgrades
-    List >stack
-    # Cannon
-        CreateList >cannonUpgrades
-        # Num
-            Table(
-                "id"            "numcannon"
-                "title"         "Weapon: Cannon"
-                "description"   "Weak, fast, targets closest"
-                "effect"        "addmodule/cannon/1"
-                "rarity"        0
-                "pickuplimit"   <numModules <startingModules sub 0 max
-            ) <cannonUpgrades swap AppendToList
-        # Range
-            Table(
-                "id"            "rangecannon"
-                "title"         "Aerodynamic Shells"
-                "description"   "Cannon range +4"
-                "effect"        "incattr/cannon/fire_range/4"
-                "rarity"        0
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "rangecannon"
-                "title"         "Aerodynamic Shells"
-                "description"   "Cannon range +6"
-                "effect"        "incattr/cannon/fire_range/6"
-                "rarity"        1
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "rangecannon"
-                "title"         "Aerodynamic Shells"
-                "description"   "Cannon range +10"
-                "effect"        "incattr/cannon/fire_range/10"
-                "rarity"        2
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "rangecannon"
-                "title"         "Aerodynamic Shells"
-                "description"   "Cannon range +16"
-                "effect"        "incattr/cannon/fire_range/16"
-                "rarity"        3
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "rangecannon"
-                "title"         "Aerodynamic Shells"
-                "description"   "Cannon range +24"
-                "effect"        "incattr/cannon/fire_range/24"
-                "rarity"        4
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-        # Damage
-            Table(
-                "id"            "damagecannon"
-                "title"         "Antimatter Propellant"
-                "description"   "Cannon damage +0.2"
-                "effect"        "incattr/cannon/shot_damage/-200000"
-                "rarity"        0
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "damagecannon"
-                "title"         "Antimatter Propellant"
-                "description"   "Cannon damage +0.3"
-                "effect"        "incattr/cannon/shot_damage/-300000"
-                "rarity"        1
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "damagecannon"
-                "title"         "Antimatter Propellant"
-                "description"   "Cannon damage +0.5"
-                "effect"        "incattr/cannon/shot_damage/-500000"
-                "rarity"        2
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "damagecannon"
-                "title"         "Antimatter Propellant"
-                "description"   "Cannon damage +0.8"
-                "effect"        "incattr/cannon/shot_damage/-800000"
-                "rarity"        3
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "damagecannon"
-                "title"         "Antimatter Propellant"
-                "description"   "Cannon damage +1.2"
-                "effect"        "incattr/cannon/shot_damage/-1200000"
-                "rarity"        4
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-        #Damage Area (combo of max cells and width)
-            Table(
-                "id"            "damagecellscannon"
-                "title"         "Powerful Powder"
-                "description"   "Cannon Damage Area +2"
-                "effect"        "incattr/cannon/shot_damage_count/2"
-                "rarity"        0
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-            Table(
-                "id"            "damagecellscannon"
-                "title"         "Powerful Powder"
-                "description"   "Cannon Damage Area +3"
-                "effect"        "incattr/cannon/shot_damage_count/3"
-                "rarity"        1
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-            Table(
-                "id"            "damagecellscannon"
-                "title"         "Powerful Powder"
-                "description"   "Cannon Damage Area +5"
-                "effect"        "incattr/cannon/shot_damage_count/5"
-                "rarity"        2
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-            Table(
-                "id"            "damagecellscannon"
-                "title"         "Powerful Powder"
-                "description"   "Cannon Damage Area +8"
-                "effect"        "incattr/cannon/shot_damage_count/8"
-                "rarity"        3
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-            Table(
-                "id"            "damagecellscannon"
-                "title"         "Powerful Powder"
-                "description"   "Cannon Damage Area +12"
-                "effect"        "incattr/cannon/shot_damage_count/12"
-                "rarity"        4
-                "module"        "cannon"
-                "pickuplimit"   -1
-            ) <cannonUpgrades swap AppendToList
-
-        #Rate
-            Table(
-                "id"            "ratecannon0"
-                "title"         "Efficient Chambering"
-                "description"   "Cannon fire delay -1"
-                "effect"        "incattr/cannon/fire_delay/-1"
-                "rarity"        0
-                "module"        "cannon"
-                "pickuplimit"   2
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "ratecannon1"
-                "title"         "Efficient Chambering"
-                "description"   "Cannon fire delay -1"
-                "effect"        "incattr/cannon/fire_delay/-1"
-                "rarity"        1
-                "pickuplimit"   2
-                "module"        "cannon"
-                "prerequisite"  "ratecannon0/2"
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "ratecannon2"
-                "title"         "Efficient Chambering"
-                "description"   "Cannon fire delay -1"
-                "effect"        "incattr/cannon/fire_delay/-1"
-                "rarity"        2
-                "pickuplimit"   2
-                "module"        "cannon"
-                "prerequisite"  "ratecannon1/2"
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "ratecannon3"
-                "title"         "Efficient Chambering"
-                "description"   "Cannon fire delay -1"
-                "effect"        "incattr/cannon/fire_delay/-1"
-                "rarity"        3
-                "pickuplimit"   1
-                "module"        "cannon"
-                "prerequisite"  "ratecannon2/2"
-            ) <cannonUpgrades swap AppendToList
-
-            Table(
-                "id"            "ratecannon4"
-                "title"         "Efficient Chambering"
-                "description"   "Cannon fire delay -1"
-                "effect"        "incattr/cannon/fire_delay/-1"
-                "rarity"        4
-                "pickuplimit"   1
-                "module"        "cannon"
-                "prerequisite"  "ratecannon3/1"
-            ) <cannonUpgrades swap AppendToList
-    <stack ListToStack
-    <cannonUpgrades return
-
-:rocketUpgrades
-    List >stack
-    # Rocket
-        CreateList >rocketUpgrades
-        # Num
-            Table(
-                "id"            "numrocket"
-                "title"         "Weapon: Rocket"
-                "description"   "Strong, slow, targets deepest"
-                "effect"        "addmodule/rocket/1"
-                "rarity"        2
-                "pickuplimit"   <numModules <startingModules sub 0 max
-            ) <rocketUpgrades swap AppendToList
-        # Range
-            Table(
-                "id"            "rangerocket"
-                "title"         "Larger Propellant Tanks"
-                "description"   "Rocket range +4"
-                "effect"        "incattr/rocket/fire_range/4"
-                "rarity"        0
-                "module"        "rocket"
-                "pickuplimit"   5
-            ) <rocketUpgrades swap AppendToList
-
-            Table(
-                "id"            "rangerocket"
-                "title"         "Larger Propellant Tanks"
-                "description"   "Rocket range +6"
-                "effect"        "incattr/rocket/fire_range/6"
-                "rarity"        1
-                "module"        "rocket"
-                "pickuplimit"   5
-            ) <rocketUpgrades swap AppendToList
-
-            Table(
-                "id"            "rangerocket"
-                "title"         "Larger Propellant Tanks"
-                "description"   "Rocket range +10"
-                "effect"        "incattr/rocket/fire_range/10"
-                "rarity"        2
-                "module"        "rocket"
-                "pickuplimit"   5
-            ) <rocketUpgrades swap AppendToList
-
-            Table(
-                "id"            "rangerocket"
-                "title"         "Larger Propellant Tanks"
-                "description"   "Rocket range +16"
-                "effect"        "incattr/rocket/fire_range/16"
-                "rarity"        3
-                "module"        "rocket"
-                "pickuplimit"   5
-            ) <rocketUpgrades swap AppendToList
-
-            Table(
-                "id"            "rangerocket"
-                "title"         "Larger Propellant Tanks"
-                "description"   "Rocket range +24"
-                "effect"        "incattr/rocket/fire_range/24"
-                "rarity"        4
-                "module"        "rocket"
-                "pickuplimit"   5
-            ) <rocketUpgrades swap AppendToList
-
-        # Rate
-            Table(
-                "id"            "raterocket0"
-                "title"         "Efficient Chambering"
-                "description"   "rocket fire delay -10"
-                "effect"        "incattr/rocket/fire_delay/-10"
-                "rarity"        0
-                "module"        "rocket"
-                "pickuplimit"   2
-            ) <rocketUpgrades swap AppendToList
-
-            Table(
-                "id"            "raterocket1"
-                "title"         "Efficient Chambering"
-                "description"   "rocket fire delay -10"
-                "effect"        "incattr/rocket/fire_delay/-10"
-                "rarity"        1
-                "pickuplimit"   2
-                "module"        "rocket"
-                "prerequisite"  "raterocket0/2"
-            ) <rocketUpgrades swap AppendToList
-
-            Table(
-                "id"            "raterocket2"
-                "title"         "Efficient Chambering"
-                "description"   "rocket fire delay -10"
-                "effect"        "incattr/rocket/fire_delay/-10"
-                "rarity"        2
-                "pickuplimit"   2
-                "module"        "rocket"
-                "prerequisite"  "raterocket1/2"
-            ) <rocketUpgrades swap AppendToList
-
-            Table(
-                "id"            "raterocket3"
-                "title"         "Efficient Chambering"
-                "description"   "rocket fire delay -10"
-                "effect"        "incattr/rocket/fire_delay/-10"
-                "rarity"        3
-                "pickuplimit"   1
-                "module"        "rocket"
-                "prerequisite"  "raterocket2/2"
-            ) <rocketUpgrades swap AppendToList
-
-            Table(
-                "id"            "raterocket4"
-                "title"         "Efficient Chambering"
-                "description"   "rocket fire delay -10"
-                "effect"        "incattr/rocket/fire_delay/-10"
-                "rarity"        4
-                "pickuplimit"   1
-                "module"        "rocket"
-                "prerequisite"  "raterocket3/1"
-            ) <rocketUpgrades swap AppendToList
-
-    <stack ListToStack
-    <rocketUpgrades return
-
-:latheUpgrades
-    List >stack
-    CreateList >latheUpgrades
-    # Num
-        Table(
-            "id"            "numlathe"
-            "title"         "Tool: Lathe"
-            "description"   "Digs land and places shields."
-            "effect"        "addmodule/lathe/1"
-            "rarity"        1
-            "pickuplimit"   <numModules <startingModules sub 0 max
-        ) <sentrygunUpgrades swap AppendToList
-
-:sentrygunUpgrades
-    List >stack
-    # sentrygun
-        CreateList >sentrygunUpgrades
-        # Num
-            Table(
-                "id"            "numsentrygun"
-                "title"         "Weapon: Sentrygun"
-                "description"   "Strong, slow cannon; targets mouse"
-                "effect"        "addmodule/sentrygun/1"
-                "rarity"        1
-                "pickuplimit"   <numModules <startingModules sub 0 max
-            ) <sentrygunUpgrades swap AppendToList
-        # Damage
-            Table(
-                "id"            "damagesentrygun"
-                "title"         "Antimatter Propellant"
-                "description"   "sentrygun damage +0.3"
-                "effect"        "incattr/sentrygun/shot_damage/-300000"
-                "rarity"        0
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-
-            Table(
-                "id"            "damagesentrygun"
-                "title"         "Antimatter Propellant"
-                "description"   "sentrygun damage +0.5"
-                "effect"        "incattr/sentrygun/shot_damage/-500000"
-                "rarity"        1
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-
-            Table(
-                "id"            "damagesentrygun"
-                "title"         "Antimatter Propellant"
-                "description"   "sentrygun damage +0.8"
-                "effect"        "incattr/sentrygun/shot_damage/-800000"
-                "rarity"        2
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-
-            Table(
-                "id"            "damagesentrygun"
-                "title"         "Antimatter Propellant"
-                "description"   "sentrygun damage +1.2"
-                "effect"        "incattr/sentrygun/shot_damage/-1200000"
-                "rarity"        3
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-
-            Table(
-                "id"            "damagesentrygun"
-                "title"         "Antimatter Propellant"
-                "description"   "sentrygun damage +1.8"
-                "effect"        "incattr/sentrygun/shot_damage/-200000"
-                "rarity"        4
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-
-        #Damage Area (combo of max cells and width)
-            Table(
-                "id"            "damagecellssentrygun"
-                "title"         "Powerful Powder"
-                "description"   "sentrygun Damage Area +5"
-                "effect"        "incattr/sentrygun/shot_damage_count/5"
-                "rarity"        0
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-            Table(
-                "id"            "damagecellssentrygun"
-                "title"         "Powerful Powder"
-                "description"   "sentrygun Damage Area +8"
-                "effect"        "incattr/sentrygun/shot_damage_count/8"
-                "rarity"        1
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-            Table(
-                "id"            "damagecellssentrygun"
-                "title"         "Powerful Powder"
-                "description"   "sentrygun Damage Area +12"
-                "effect"        "incattr/sentrygun/shot_damage_count/12"
-                "rarity"        2
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-            Table(
-                "id"            "damagecellssentrygun"
-                "title"         "Powerful Powder"
-                "description"   "sentrygun Damage Area +18"
-                "effect"        "incattr/sentrygun/shot_damage_count/18"
-                "rarity"        3
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-            Table(
-                "id"            "damagecellssentrygun"
-                "title"         "Powerful Powder"
-                "description"   "sentrygun Damage Area +25"
-                "effect"        "incattr/sentrygun/shot_damage_count/25"
-                "rarity"        4
-                "module"        "sentrygun"
-                "pickuplimit"   -1
-            ) <sentrygunUpgrades swap AppendToList
-        #Rate
-            Table(
-                "id"            "ratesentrygun0"
-                "title"         "Efficient Chambering"
-                "description"   "sentrygun fire delay -2"
-                "effect"        "incattr/sentrygun/fire_delay/-2"
-                "rarity"        0
-                "module"        "sentrygun"
-                "pickuplimit"   2
-            ) <sentrygunUpgrades swap AppendToList
-
-            Table(
-                "id"            "ratesentrygun1"
-                "title"         "Efficient Chambering"
-                "description"   "sentrygun fire delay -2"
-                "effect"        "incattr/sentrygun/fire_delay/-2"
-                "rarity"        1
-                "pickuplimit"   2
-                "module"        "sentrygun"
-                "prerequisite"  "ratesentrygun0/2"
-            ) <sentrygunUpgrades swap AppendToList
-
-            Table(
-                "id"            "ratesentrygun2"
-                "title"         "Efficient Chambering"
-                "description"   "sentrygun fire delay -1"
-                "effect"        "incattr/sentrygun/fire_delay/-1"
-                "rarity"        2
-                "pickuplimit"   2
-                "module"        "sentrygun"
-                "prerequisite"  "ratesentrygun1/2"
-            ) <sentrygunUpgrades swap AppendToList
-
-            Table(
-                "id"            "ratesentrygun3"
-                "title"         "Efficient Chambering"
-                "description"   "sentrygun fire delay -1"
-                "effect"        "incattr/sentrygun/fire_delay/-1"
-                "rarity"        3
-                "pickuplimit"   1
-                "module"        "sentrygun"
-                "prerequisite"  "ratesentrygun2/2"
-            ) <sentrygunUpgrades swap AppendToList
-
-            Table(
-                "id"            "ratesentrygun4"
-                "title"         "Efficient Chambering"
-                "description"   "sentrygun fire delay -1"
-                "effect"        "incattr/sentrygun/fire_delay/-1"
-                "rarity"        4
-                "pickuplimit"   1
-                "module"        "sentrygun"
-                "prerequisite"  "ratesentrygun3/1"
-            ) <sentrygunUpgrades swap AppendToList
-    <stack ListToStack
-    <sentrygunUpgrades return
+:DetectModuleNum
+    >moduleName
+    999 0 do
+        if(<mainShip <moduleName i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return

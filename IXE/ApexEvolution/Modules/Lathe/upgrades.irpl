@@ -1,0 +1,53 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"lathe"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:"lathe"
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+
+    # Num
+        Table(
+            "id"            "numlathe"
+            "title"         "Tool: Lathe"
+            "description"   "Digs land and places shields."
+            "effect"        "addmodule/lathe/1"
+            "rarity"        1
+            "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+        ) <upgrades swap AppendToList
+
+    # Add the following attributes to be kept track of by the stat screen:
+    Table(
+        "attribute"         "fire_range"
+        "attribute_name"    "range"
+        "module"            "lathe"
+        "title"             "Longer Lathes"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+        "pickup_limit"      "0"
+    ) <upgrades swap AppendToList
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    RegisterForMsg("add" <module concat "AddUpgrades")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return
+

@@ -1,0 +1,120 @@
+# Dark ray for AEV
+# Spins in a circle and destroys things. What's not to love?
+
+$FIRE_RANGE:40
+$SPIN_TIME:600 # Frames for one rotation
+$BEAM_RADIUS:1.0
+$BEAM_DAMAGE:1.8 # Depth PER FRAME
+$NUM_BEAMS:2
+$FIRE_COST:0.01
+
+if(<FIRE_RANGE <lastRange neq)
+    @UpdateRange
+endif
+
+Sys_Operable
+ElapsedTime >start
+
+if(Self GetUnitDirection <lastDir neq)
+    # Flip
+    Self dup GetRotation 90 add neg 90 sub SetRotation 
+    Self GetUnitDirection >lastDir
+endif
+
+if(Self GetAmmo <FIRE_COST gte)
+    Self dup GetRotation 360.0 <SPIN_TIME div add dup >rot SetRotation
+
+    <NUM_BEAMS AsInt 0 do
+        @ManageBeam(i)
+    loop
+endif
+
+:ManageBeam
+    >beamNum
+    if(<beams GetListCount i lte)
+        @MakeNewBeam
+    endif
+    <beams[<beamNum] >beam
+    Self GetPosition >pos
+    Self <beam <BEAM_RADIUS SetBeamWidth 
+    Self <beam <beamEnd SetBeamEnd
+    Self <beam <pos SetBeamStart
+    Self <beam true SetBeamEnabled
+    <rot 360 <NUM_BEAMS asfloat div <beamNum mul add >beamRot
+    <beamRot Deg2Rad mul cos <beamRot Deg2Rad mul sin V2 <FIRE_RANGE mul Self GetPosition add >beamEnd
+
+
+    GetCreeperOnLine(Self <beamRot <FIRE_RANGE <beamEnd false) >creeper
+    if(<creeper.x gte0)
+        # Damage the creeper
+        <pos <beamEnd <BEAM_RADIUS <BEAM_DAMAGE @DamageCreeperOnLine
+    endif
+
+
+:DamageCreeperOnLine
+    >damageAmt >radius >lowPos >highPos
+    0 >damageDealt
+    if(<lowPos.y <highPos.y gt)
+        <lowPos
+        <highPos >lowPos
+        >highPos
+    endif
+    <lowPos.y @lineX >lastX
+
+
+    if(<highPos.y AsInt <lowPos.y AsInt neq)
+        <highPos.y ceil 1 add <lowPos.y floor do
+            # Figure out the bounds for the X loop for this row, which is
+            # From <radius before where the line enters this Y value, to <radius after it leaves.
+
+            # Given two points (x1, y1) and (x2, y2), the equation for the line through those points is:
+            # y - y1 = (y2 - y1) / (x2 - x1) * (x - x1)
+
+            # Since we have Y and are solving for X, we get:
+            # x = (y - y1) / (y2 - y1) * (x2 - x1) + x1
+
+            # That equation is @lineX below. Using that, we get:
+            <lastX <radius sub >startIndex
+            i 1 add <highPos.y min @lineX dup >lastX <radius add 1 add >endIndex
+
+            # Now we just iterate across.
+            <endIndex <startIndex do
+                if(i j GetCreeper gt0)
+                    i j dup2 GetCreeper dup >oldCreeper <damageAmt 1000000 mul AsInt sub 0 max SetCreeper
+                    <damageDealt <oldCreeper i j GetCreeper sub 1000000.0 div add >damageDealt
+                endif 
+            loop
+        loop
+    endif
+
+    "GiveXp" <damageDealt SendMsg
+
+:lineX
+    >y
+    <y <lowPos.y sub <highPos.y <lowPos.y sub div <highPos.x <lowPos.x sub mul <lowPos.x add
+
+:MakeNewBeam
+    CreateBeam(Self "darkray") >beam
+    <beams <beam AppendToList
+    Self <beam true SetBeamAutoDisable
+    SetBeamCapVertices(Self <beam 5)
+
+:Once
+    Self 180 SetRotation
+    CreateList >beams
+
+:GameLoaded
+    #CreateList >beams
+    <NUM_BEAMS 0 do
+        @MakeNewBeam
+    loop
+    List >beams
+
+:Awake
+    @UpdateRange
+
+:UpdateRange
+    <FIRE_RANGE >lastRange
+    Self <FIRE_RANGE SetLosRange
+    Self <FIRE_RANGE SetShowRange
+    Self V4(0.467 0.11 0.659 0.8) SetShowRangeColor

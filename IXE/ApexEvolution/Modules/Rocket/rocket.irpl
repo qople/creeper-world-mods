@@ -1,11 +1,11 @@
-# Heavily nerfed and rebalanced rocket module, to fit in with the balance of the mode. 
+# Remade rocket module. 
 
 $FIRE_COST:0.5
 $FIRE_DELAY:100
 $FIRE_RANGE:75
-$SHOT_DAMAGE_COUNT:200
-$SHOT_DAMAGE_DISTANCE:7
-$SHOT_DAMAGE:-7000000
+$SHOT_DAMAGE_COUNT:99999
+$SHOT_DAMAGE_DISTANCE:8
+$SHOT_DAMAGE:40.0
 
 # Change RA range when the variable is updated mid-level
 if(<FIRE_RANGE <lastRange neq)
@@ -21,10 +21,10 @@ if(GetTimer0 eq0)
     if(Self GetAmmo <FIRE_COST gte)
         @Fire >fireSuccess
         if(<fireSuccess)
-            <FIRE_DELAY SetTimer0
+            <FIRE_DELAY RandInt(-3 4) add SetTimer0
         else
             #Short timer if we don't find creeper, but not 0 to help avoid lag when no creeper is near.
-            10 <FIRE_DELAY min SetTimer0
+            10 <FIRE_DELAY min RandInt(-3 4) add SetTimer0
         endif
     endif
 endif
@@ -33,14 +33,21 @@ endif
 :Fire
     GetDeepestCreeper(Self false true) dup >position trace
     if(<position.x gte0)
-        # Create the unit
-        "/ApexEvolution/RecreatedModules/Rocket/rocketshot" Self GetPosition true CreateUnit >shot
-        Self <position GetRaPath >pathlist
-        # Set variables on the shot
-        <shotVars 0 do
-            <shotVars[i] >varName
-            <shot <varName dup <-! dup trace SetScript1Var
+        10 0 do
+            <position RandInt(-10 11) RandInt(-10 11) V2 Add >newPos
+            if(Self <newPos GetRaPath dup <newPos EV2 GetCreeper gt0 &&)
+                >pathlist
+                break
+            else
+                pop 0 >pathlist
+            endif
         loop
+        if(<pathlist eq0)
+            Self <position GetRaPath >pathlist
+        endif
+        PlaySound("rocketfire" 1)
+        # Create the unit
+        "CreateShot" "rocket" Self 2 ListN SendMsg
         true return
     else
         false return
@@ -48,6 +55,8 @@ endif
 :Once
     #Vars in this list get copied to the bullet when we make it
     List("pathList" "SHOT_DAMAGE_COUNT" "SHOT_DAMAGE_DISTANCE" "SHOT_DAMAGE") >shotVars
+
+:Awake
     Self true EnableRa
     Self <FIRE_RANGE SetShowRange
     Self V4(1 0 0 1) SetShowRangeColor
