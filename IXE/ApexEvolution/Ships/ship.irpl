@@ -52,6 +52,7 @@ if(<checkMove)
     false >checkMove
 endif
 
+#A vector of: NONE, ONBOARD, INROUTE, DEAD
 Self GetAllPixelCount >allPixels
 
 
@@ -62,8 +63,8 @@ once
     return
 endonce
 # Keep track of the total number of pixels in the ship
-<allPixels.1 <maxPixels max >maxPixels
-<allPixels.1 <maxPixels asfloat div >portion
+<allPixels.1 <allPixels.2 add <maxPixels max >maxPixels
+<allPixels.1 <allPixels.2 add <maxPixels asfloat div >portion
 if(<portion 0.5 lt)
     2 SetTimer1
 endif
