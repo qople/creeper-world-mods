@@ -8,6 +8,14 @@ $module:"sentrygun"
 # If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
 $behavior:""
 
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "sentrygun" "cannon" "/ApexEvolution/Sprites/Shots/sentrygun.png" 
+    "basehit/hitcreeper/destroy"
+    "basedestroy/ondestroy/damage"
+    List
+    "RegisterShot" swap SendMsg
+
 #Defines all the default upgrades for each included module. 
 :AddUpgrades
     # Data is how many of this module are on the main ship to start
@@ -18,7 +26,7 @@ $behavior:""
     Table(
         "id"            "numsentrygun"
         "title"         "Weapon: Sentrygun"
-        "description"   "Stronger, slower cannon, targets mouse"
+        "description"   "Stronger, slower cannon, targets mouse. Fires while damaged."
         "effect"        "addmodule/sentrygun/1"
         "rarity"        1
         "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
@@ -62,7 +70,7 @@ $behavior:""
         "module"        "sentrygun"
         "description"   "Sentrygun damage X1.25, but its bullets have gravity and knock you back slightly."
         "effect"        "mulattr/sentrygun/shot_damage/1.25, incattr/sentrygun/shot_gravity/0.05, incattr/sentrygun/knockback/1"
-        "rarity"        5
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -70,9 +78,89 @@ $behavior:""
         "id"            "sentrygunmastery"
         "title"         "Sentrygun Mastery"
         "module"        "sentrygun"
-        "description"   "Sentrygun damage X1.5. Removes all future sentrygun upgrades."
-        "effect"        "mulattr/sentrygun/shot_damage/1.5, banmodule/sentrygun, banupgrade/sentrygun"
-        "rarity"        5
+        "description"   "Sentrygun damage X1.75. Removes all future sentrygun upgrades."
+        "effect"        "mulattr/sentrygun/shot_damage/1.75, banmodule/sentrygun, banupgrade/numsentrygun"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "sentrygunshotgun"
+        "title"         "Sentrygun: Shotgun Fire Mode"
+        "module"        "sentrygun"
+        "description"   "Sentrygun fire delay X4. Shoots 5 pellets in a spread with each shot."
+        "effect"        "mulattr/sentrygun/fire_delay/4, mulattr/sentrygun/num_shots/5, setattr/sentrygun/spread_rand_mode/1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "sentrygundmgovertime"
+        "title"         "Sentrygun: Damage Over Time"
+        "module"        "sentrygun"
+        "description"   "Sentrygun damage X1.1. Damage is dealt over 10 seconds."
+        "effect"        "mulattr/sentrygun/shot_damage/1.1, addbehavior/sentrygun/dmgovertime/ondestroy/afterdelay/0/10/30/damage/0.1, removebehavior/sentrygun/basedestroy"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "sentrygundoubleshot"
+        "title"         "Sentrygun: Double Shot"
+        "module"        "sentrygun"
+        "description"   "Sentrygun fires two projectiles, but each is weaker."
+        "effect"        "mulattr/sentrygun/spread/0.5, mulattr/sentrygun/num_shots/2, mulattr/sentrygun/shot_damage/0.8, mulattr/sentrygun/shot_damage_count/0.8"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "sentrygunspray"
+        "title"         "Sentrygun: Spray & Pray"
+        "module"        "sentrygun"
+        "description"   "Sentrygun fires twice as fast, but has reduced damage area and random spread."
+        "effect"        "mulattr/sentrygun/spread/2, setattr/sentrygun/spread_rand_mode/1, mulattr/sentrygun/shot_damage_count/0.6, mulattr/sentrygun/fire_delay/0.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "sentrygunspinfast"
+        "title"         "Sentrygun: Faster Spin"
+        "module"        "sentrygun"
+        "description"   "Sentrygun spins much faster, shots move faster, and deal X1.2 damage."
+        "effect"        "setattr/sentrygun/rotate_speed/50, mulattr/sentrygun/shot_damage/1.2, mulattr/sentrygun/shot_speed/2"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "sentrygundepthcharge"
+        "title"         "Sentrygun: Depth Charges"
+        "module"        "sentrygun"
+        "description"   "Sentrygun shots explode inside of deep creeper, wasting less damage. Also multiplies damage area by 1.1."
+        "effect"        "removebehavior/sentrygun/basehit, addbehavior/sentrygun/delayhit/hitcreeper/afterdelay/5/1/0/destroy/0, mulattr/sentrygun/shot_damage_count/1.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "id"            "sentrygunsynergyboost"
+        "title"         "Sentrygun: Synergy Boost"
+        "module"        "sentrygun"
+        "description"   "Sentrygun damage area X1.05 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_sentrygun/mulattr/sentrygun/shot_damage_count/1.05, foreachartifact/not_sentrygun/mulattr/sentrygun/shot_damage_distance/1.05"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "sentrygunpowerredirection"
+        "title"         "Sentrygun: Power Redirection"
+        "module"        "sentrygun"
+        "description"   "Sentrygun damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/sentrygun/shot_damage/0.8, mulattr/not_sentrygun/shot_damage/1.1"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -83,6 +171,7 @@ $behavior:""
     -1 ->*allModules{<module}
     <behavior ->*moduleBehaviors{<module}
     RegisterForMsg("add" <module concat "AddUpgrades")
+    RegisterForMsg("ShotRegistration" "ShotRegistration")
 
 :DetectModuleNum
     999 0 do

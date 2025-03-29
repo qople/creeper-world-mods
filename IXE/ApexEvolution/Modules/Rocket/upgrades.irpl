@@ -8,6 +8,13 @@ $module:"rocket"
 # If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
 $behavior:""
 
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "rocket" "rocket" "/ApexEvolution/Sprites/Shots/rocket.png" 
+    "basedestroy/ondestroy/damage"
+    List
+    "RegisterShot" swap SendMsg
+
 #Defines all the default upgrades for each included module. 
 :AddUpgrades
     # Data is how many of this module are on the main ship to start
@@ -31,6 +38,16 @@ $behavior:""
         "attribute_name"    "range"
         "module"            "rocket"
         "title"             "Larger Propellant Tanks"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+
+        
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "rocket"
+        "title"             "Stronger Charges"
         "effect_type"       "incmult"
         "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
     ) <upgrades swap AppendToList
@@ -66,8 +83,8 @@ $behavior:""
         "title"         "Swarm Rockets"
         "module"        "rocket"
         "description"   "Rocket fire delay is halved, but rockets are weaker."
-        "effect"        "mulattr/rocket/fire_delay/0.5, incattr/rocket/shot_damage_distance/-1, mulattr/rocket/shot_damage/0.8"
-        "rarity"        5
+        "effect"        "mulattr/rocket/fire_delay/0.5, mulatttr/rocket/shot_damage_distance/0.85"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
     
@@ -75,9 +92,89 @@ $behavior:""
         "id"            "rocketmastery"
         "title"         "Rocket Mastery"
         "module"        "rocket"
-        "description"   "Rocket damage X1.5. Removes all future rocket upgrades."
-        "effect"        "mulattr/rocket/shot_damage/1.5, banmodule/rocket, banupgrade/numrocket"
-        "rarity"        5
+        "description"   "Rocket damage X1.75. Removes all future rocket upgrades."
+        "effect"        "mulattr/rocket/shot_damage/1.75, banmodule/rocket, banupgrade/numrocket"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "rocketsynergyboost"
+        "title"         "Rocket: Synergy Boost"
+        "module"        "rocket"
+        "description"   "Rocket damage X1.05 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_rocket/mulattr/rocket/shot_damage/1.05"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "rocketpowerredirection"
+        "title"         "Rocket: Power Redirection"
+        "module"        "rocket"
+        "description"   "Rocket damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/rocket/shot_damage/0.8, mulattr/not_rocket/shot_damage/1.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "rocketcloserange"
+        "title"         "Rocket: In-Flight Fuel Detonation"
+        "module"        "rocket"
+        "description"   "Rocket shots deal damage around them as they travel, but they travel slower and have a much shorter range."
+        "effect"        "mulattr/rocket/fire_range/0.3, mulattr/rocket/shot_speed/0.3, addbehavior/rocket/damageaura/frametravel/damage/0.1/0.5/1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "rocketdoubleboom"
+        "title"         "Rocket: Second Explosion"
+        "module"        "rocket"
+        "description"   "Rocket shots explode a second time, with increased area and much lower damage."
+        "effect"        "addbehavior/rocket/boomafterdestroy/ondestroy/afterdelay/40/1/0/damage/0.1/1.5/1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "rocketcluster"
+        "title"         "Rocket: Cluster Rockets"
+        "module"        "rocket"
+        "description"   "Shoots a volley of 3 smaller rockets with each shot."
+        "effect"        "mulattr/rocket/num_shots/3, mulattr/rocket/shot_damage_distance/0.8, mulattr/rocket/shot_damage/0.65"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "rocketwideblast"
+        "title"         "Rocket: Wide Blasts"
+        "module"        "rocket"
+        "description"   "Rocket radius X1.5, but damage X0.5."
+        "effect"        "mulattr/rocket/shot_damage/0.5, mulattr/rocket/shot_damage_distance/1.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "rocketconcentrated"
+        "title"         "Rocket: Concentrated Blasts"
+        "module"        "rocket"
+        "description"   "Rocket radius is halved, but they deal 5X damage."
+        "effect"        "mulattr/rocket/shot_damage/5, mulattr/rocket/shot_damage_distance/0.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "rocketac"
+        "title"         "Anticreeper Rockets"
+        "module"        "rocket"
+        "description"   "Rockets now deposit anticreeper when destroyed instead of dealing damage, but damage is cut in half."
+        "effect"        "mulattr/rocket/shot_damage/0.5, removebehavior/rocket/basedestroy, addbehavior/rocket/acdestroy/ondestroy/ac"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -87,6 +184,7 @@ $behavior:""
     -1 ->*allModules{<module}
     <behavior ->*moduleBehaviors{<module}
     RegisterForMsg("add" <module concat "AddUpgrades")
+    RegisterForMsg("ShotRegistration" "ShotRegistration")
 
 :DetectModuleNum
     999 0 do

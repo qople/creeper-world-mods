@@ -1,0 +1,75 @@
+# Loki spirit launcher, targets strong, or close when creeper is nearby
+# This script is very barebones, most of the logic is in shotmanager instead.
+
+$fire_cost:3
+$fire_range:300
+$fire_delay:300
+$shot_damage_count:9999
+$shot_damage_distance:6
+$shot_damage:1.0
+
+$allowProtection:1
+
+# Shot specific vars
+$shot_lifetime:150
+$shot_speed:7.5
+$spirit_deep_mode:1
+$spirit_target_hold:1
+$TARGET_RAND:5
+
+if(<FIRE_RANGE <lastRange neq)
+    <FIRE_RANGE >lastRange
+    @UpdateRange
+endif
+
+# Set by shots since deepest creeper call only works in this script
+if(<_shotDeepCall)
+    Self false false GetDeepestCreeper >target
+    false >_shotDeepCall
+endif
+
+Sys_Operable
+
+if(<spirit_deep_mode <allowProtection &&)
+    # Change mode if creeper is close
+    if(Self false GetNearestCreeper [0] gte0)
+        false >spirit_deep_mode
+        SendMsg("StatsUpdated" ListN("lokispirit" "spirit_deep_mode" 0 3))
+    endif
+else
+    if(Self false GetNearestCreeper [0] lt0)
+        true >spirit_deep_mode
+        SendMsg("StatsUpdated" ListN("lokispirit" "spirit_deep_mode" 1 3))
+    endif
+
+endif
+
+if(GetTimer0 eq0 Self GetAmmo <fire_cost gte &&)
+    if(@TargetCreeper [0] gte0)
+        PlaySound("opendoor" 0.8)
+        <fire_delay RandFloat 0.5 sub 2 mul add SetTimer0
+        Self <fire_cost ConsumeAmmo
+        "CreateShot" "lokispirit" Self 2 ListN SendMsg
+    endif
+endif
+
+:TargetCreeper
+    if(<spirit_deep_mode)
+        Self false false GetDeepestCreeper
+    else
+        Self false GetNearestCreeper
+    endif
+
+:Awake
+    @UpdateRange
+
+:Once
+    30 SetTimer0
+
+:UpdateRange
+    EnableRa(self true)
+    SetRaRange(Self <fire_range)
+    EnableLos(self true)
+    SetLosRange(self 50) # This is a constant 40 (the near target trigger range)
+    SetShowRange(Self 50) # Show near trigger range rather than the max range
+    SetShowRangeColor(Self 0.224 0.365 0.094 0.8 V4)

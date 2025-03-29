@@ -27,7 +27,7 @@ $behavior:""
     # Templates, detected by the presence of the "attribute" element
     # They have less control than the normal tables, but are much smaller and easier to work with.
     Table(
-        "attribute"         "beam_radius"
+        "attribute"         "shot_damage_distance"
         "attribute_name"    "beam width"
         "module"            "darkling"
         "title"             "Bigger Beams"
@@ -36,7 +36,7 @@ $behavior:""
     ) <upgrades swap AppendToList
     
     Table(
-        "attribute"         "beam_damage"
+        "attribute"         "shot_damage"
         "attribute_name"    "damage"
         "module"            "darkling"
         "title"             "Hotter plasma"
@@ -63,18 +63,18 @@ $behavior:""
         "effect_type"       "incattr"
         "effect_strengths"  "1"
         "rarities"          "3"
-        "pickup_limit"      "2"
+        "pickup_limit"      "3"
     ) <upgrades swap AppendToList
 
 
     # Artifacts
     Table(
         "id"            "darklingswarm"
-        "title"         "Laser Saw"
+        "title"         "Darkling: Ramming Lasers"
         "module"        "darkling"
         "description"   "Double your darkling beams, but reduce their damage and range."
-        "effect"        "mulattr/darkling/num_beams/2.0, mulattr/darkling/beam_damage/0.8, mulattr/darkling/fire_range/0.75"
-        "rarity"        5
+        "effect"        "mulattr/darkling/num_beams/2.0, mulattr/darkling/shot_damage/0.8, mulattr/darkling/fire_range/0.75"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -82,9 +82,89 @@ $behavior:""
         "id"            "darklingmastery"
         "title"         "Darkling Mastery"
         "module"        "darkling"
-        "description"   "Darkling damage X1.5. Removes all future darkling upgrades."
-        "effect"        "mulattr/darkling/beam_damage/1.5, banmodule/darkling, banupgrade/numdarkling"
-        "rarity"        5
+        "description"   "Darkling damage X1.75. Removes all future darkling upgrades."
+        "effect"        "mulattr/darkling/shot_damage/1.75, banmodule/darkling, banupgrade/numdarkling"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingsynergyboost"
+        "title"         "Darkling: Synergy Boost"
+        "module"        "darkling"
+        "description"   "Darkling damage X1.05 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_darkling/mulattr/darkling/shot_damage/1.05"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingpowerredirection"
+        "title"         "Darkling: Power Redirection"
+        "module"        "darkling"
+        "description"   "Darkling damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/darkling/shot_damage/0.8, mulattr/not_darkling/shot_damage/1.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingfocusedbeams"
+        "title"         "Darkling: Ultra-Focused Beams"
+        "module"        "darkling"
+        "description"   "Darkling range X5, but beam width X0.25."
+        "effect"        "mulattr/darkling/fire_range/5, mulattr/darkling/shot_damage_distance/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingthickbeams"
+        "title"         "Darkling: Ultra-Wide Beams"
+        "module"        "darkling"
+        "description"   "Darkling beam width X5, but damage X0.25."
+        "effect"        "mulattr/darkling/shot_damage_distance/5, mulattr/darkling/shot_damage/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingalwayson"
+        "title"         "Darkling: Always On"
+        "module"        "darkling"
+        "description"   "The darkling no longer turns off when your ship takes damage."
+        "effect"        "setattr/darkling/fire_cost/0"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingfastrotation"
+        "title"         "Darkling: Sawblade Module"
+        "module"        "darkling"
+        "description"   "The darkling spins much faster, but deals slightly less damage."
+        "effect"        "mulattr/darkling/spin_time/0.26, mulattr/darkling/shot_damage/0.8"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingbeamcombiner"
+        "title"         "Darkling: Beam Combiner"
+        "module"        "darkling"
+        "description"   "The darkling is limited to one beam, but beam number multiplies damage instead. Beam width X1.25."
+        "effect"        "mulattr/darkling/shot_damage_distance/1.25, setattr/darkling/singlebeam/1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "darklingchargebeam"
+        "title"         "Darkling: Charge Beams"
+        "module"        "darkling"
+        "description"   "The darkling is active 5 seconds of every 10, but deals 2.5X damage."
+        "effect"        "setattr/darkling/uptime/150, setattr/darkling/downtime/150, mulattr/darkling/shot_damage/2.5"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 

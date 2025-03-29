@@ -4,6 +4,7 @@
 :Once
     RegisterForMsg("LoadShip" dup)
     false >loaded
+    false ->*shipLoaded
     CreateTable ->*moduleBehaviors
     CreateTable ->*unlockedModules
 
@@ -92,7 +93,8 @@
     
 :ManualSetup
     # Nothing right now, this is here in case something needs to be done here later.
-
+    pop
+    
 # Shorthand function
 :Get
     "ship" swap GetRegisteredScriptVar

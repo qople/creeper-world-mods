@@ -1,0 +1,119 @@
+# This is a template that can be used to make your own ship work in Apex Evolution!
+# I have attempted to make this as easy as possible, and explain things where I can.
+
+# IMPORTANT:
+# If the module you want to add (e.g. rocket) can be found in the "modules" folder in this mod,
+# USE THAT PART PATH INSTEAD OF THE VANILLA ONE OR IT WILL NOT WORK!!!!!!!!!!
+
+# Module count is determined automatically, but their lookup names should be setup properly.
+# Each module should be named "module0", "module1", and so on, with no skipped numbers.
+# the "module" should be replaced with the name of the module used by the mod.
+# Names supported by default are cannon, sentrygun, rocket, lathe, cryon, particlegun, and maker.
+# For other modules, the name is defined in the custom_modules list below, and part names should match.
+
+$ship_name:"The Soulkeeper"
+$ship_description:"A ship that uses various types of spirits to seek out and destroy creeper. Comes equipped with a phantom coil."
+
+# -------------------------
+
+# Describe any custom ship modules your ship has on it. This is any module that is not one of:
+# cannon, sentrygun, rocket, lathe, cryon, particlegun, and maker.
+# This is a comma separated list. Whitespace is removed, and it is converted to lowercase.
+# "Bertha,T H O R ,           spirit" becomes a list of ["bertha", "thor", "spirit"].
+# The names of variables below should match this.
+
+$custom_modules:""
+
+# -------------------------
+
+# Describe which modules are enabled by default.
+# Variable name should be "start_unlocked_[modulename]".
+# The first N modules of the matching name will be made active on game start, the rest will not.
+# For instance, if "start_unlocked_cannon" is 2, modules "cannon0" and "cannon1" will start enabled.
+# Any other cannon modules defined above will start inactive and can be picked up by upgrades at game time.
+# If a variable is not defined, it is assumed to be 0.
+
+$start_unlocked_lightspirit:1
+$start_unlocked_lathe:1
+
+# ---------------------------
+
+# Define upgrade setup modes for modules.
+# Variable name should be "setup_mode_[modulename]"
+# Built-in modules will automatically add their modules to the upgrade pool when on the ship if applicable. This is setup mode 0, and only works on built-in modules.
+# Custom modules by default have to have their upgrades manually defined below. This is setup mode 1.
+
+
+
+# ---------------------------
+
+# Define the primary script or controller for each custom module.
+# If you are using a setup mode other than 0 (automatic), you should define this for the module.
+# Variable name should be "primary_behavior_[modulename]"
+# If using a controller, give the controller name. 
+# If using an IRPL script, the full script path should be given, INCLUDING THE .IRPL AT THE END
+# If none is given, it defaults to IRPL script 1.
+
+# ===============================
+
+if(<revivechanceactive <-*mainShip "/ApexEvolution/Ships/ship.irpl" "portion" GetScriptVar 0.5 lte && GetTimer0 eq0 &&)
+    690 SetTimer0
+    # About to die! Roll if we need to
+    <reviveSeed @SeedRandFloat 0.5 lte <count 5 lt && if
+        <count 1 add >count
+        SendMsg("addrevive" 1)
+    endif
+endif
+
+:revivechance
+    true >revivechanceactive
+
+# Define upgrades associated with this ship. These will be added to the pool if the ship is picked for the level.
+:DefineUpgrades
+
+    CreateList >_upgrades
+
+    Table(
+        "id"            "chancerevive"
+        "title"         "Soulkeeper Special Upgrade: Quantum Soul"
+        "description"   "Whenever you would die, you have a 50% chance to be moved to a pocket dimension for repairs. Has a short cooldown after activation."
+        "effect"        "sendmsg/revivechance/0"
+        "rarity"        5
+        "pickuplimit"   1
+    ) <_upgrades swap AppendToList
+
+:Awake
+    # This must be in Awake for the description to show up properly.
+    RegisterScript("ship")
+
+:Once
+    # I don't want floating point precision to mess up chances, so I'm gonna use a slightly different RNG method:
+    ElapsedTime AsInt 1024 sub List >reviveSeed
+
+    RegisterForMsg("revivechance" dup)
+    # Defines the "_upgrades" variable containing all this ship's upgrades
+    @DefineUpgrades
+
+    Self >mainShip #So the loader script knows who we are
+    @LoadShip
+
+# Detects how many modules of the given type are attached to this ship
+:DetectModuleNum
+    >moduleName
+    999 0 do
+        if(Self <moduleName i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return
+
+:SeedRandFloat
+    dup trace >seed
+	<seed[0] 1 add dup >seed[0] sin 10000 mul dup floor sub
+    dup trace
+
+
+# Sends a message telling the ship loader to initialize the ship and its upgrades, and scrape this script for information about it.
+# THIS MUST BE CALLED FOR THIS TO WORK PROPERLY! 
+:LoadShip
+    SendMsg("LoadShip" 0)

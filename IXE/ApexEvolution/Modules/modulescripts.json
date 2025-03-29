@@ -8,6 +8,11 @@
         { "name": "/ApexEvolution/Modules/Bertha/upgrades.irpl", "execute_post": true, "run_when_paused": true },
         { "name": "/ApexEvolution/Modules/Maker/upgrades.irpl", "execute_post": true, "run_when_paused": true },
         { "name": "/ApexEvolution/Modules/Cryon/upgrades.irpl", "execute_post": true, "run_when_paused": true },
-        { "name": "/ApexEvolution/Modules/Darkling/upgrades.irpl", "execute_post": true, "run_when_paused": true }
+        { "name": "/ApexEvolution/Modules/Darkling/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/Blaster/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/OdinCannon/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/LightSpirit/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/HeavySpirit/upgrades.irpl", "execute_post": true, "run_when_paused": true },
+        { "name": "/ApexEvolution/Modules/LokiSpirit/upgrades.irpl", "execute_post": true, "run_when_paused": true },
     ]
 }

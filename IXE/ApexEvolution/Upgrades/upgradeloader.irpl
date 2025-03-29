@@ -5,7 +5,7 @@
     # first the rarity is chosen, then the upgrade from that rarity. 
     # This prevents upgrade chances from being additionally weighted by the 
     # number of upgrades in each type.
-    6 0 do
+    7 0 do
         CreateList
     loop
     List ->*upgradePool
@@ -21,8 +21,9 @@
     CreateTable ->*upgradeCollected
 
     CreateTable ->*bannedUpgrades
-
     CreateTable ->*bannedModules
+
+    CreateList ->*weaponsWithArts
 
     # Holds all stats for each module
     CreateTable ->*moduleStats
@@ -39,8 +40,8 @@
     
     # Chances for each rarity
     # These don't have to add up to 100, but they should be integers.
-    # Artifact rarity is 0, they only show up in specific rolls.
-    List(50 33 17 7 3 0) ->*upgradeRarityChances
+    # Artifact and weapon art rarity is 0, they only show up in specific rolls.
+    List(50 33 17 7 3 0 0) ->*upgradeRarityChances
 
     "id title description effect rarity pickuplimit" " " Split >requiredData
 
@@ -80,7 +81,7 @@
     if(<canAdd)
         # Generate stats for modules for all stats with upgrades
         "" ->attribute
-        if(<upgrade "module" TableContainsKey)
+        if(<upgrade "effect" TableContainsKey)
             # Parse what module and attribute is getting affected by the upgrade
             <upgrade{"module"} >modules
             <upgrade{"effect"} >effects
@@ -91,22 +92,32 @@
                 
                 if(<statModifyingEffects <effectType ListContains)
                     <effect[2] >attribute
+                    <effect[1] @ParseModuleList >modules
+                    <modules 0 do
+                        <modules[i] >module
+                        # Make the table for the module if it doesn't exist
+                        if(<-*moduleStats <module TableContainsKey !)
+                            CreateTable ->*moduleStats{<module}
+                        endif
+        
+                        # Make the list for the stat if it doesn't exist
+                        if(<-*moduleStats{<module} <attribute TableContainsKey !)
+                            <-*moduleStats{<module} <attribute @GetStat(<module <attribute) 0.0 1.0 1.0 4 ListN SetTableElement
+                        endif
+                    loop
                 endif
                 
-                # Make the table for the module if it doesn't exist
-                if(<-*moduleStats <module TableContainsKey !)
-                    CreateTable ->*moduleStats{<module}
-                endif
-
-                # Make the list for the stat if it doesn't exist
-                if(<-*moduleStats{<module} <attribute TableContainsKey !)
-                    <-*moduleStats{<module} <attribute @GetStat(<module <attribute) 0.0 1.0 1.0 4 ListN SetTableElement
-                endif
             loop
         endif
 
         if(<upgrade{"pickuplimit"} neq0)
             <-*upgradePool[<rarity] <upgrade AppendToList
+            if(<rarity 6 eq)
+                <upgrade{"module"} >module
+                if(<-*weaponsWithArts <module ListContains !)
+                    <-*weaponsWithArts <module AppendToList
+                endif
+            endif
         endif
     else
         # This is going off all the time, not sure why.
@@ -156,10 +167,19 @@
     endif
 
     # Try to generate a readable name if none is given
-    if(<attributeName StringLength !)
-        <attributeName @GenerateAlias >attributeName
+    if(<attributeName StringLength eq0)
+        <attribute @GenerateAlias >attributeName
     endif
     <attributeName >aliasTable{<attribute}
+
+    if(<-*moduleStats <module TableContainsKey !)
+        CreateTable ->*moduleStats{<module}
+    endif
+
+    # Make the list for the stat if it doesn't exist
+    if(<-*moduleStats{<module} <attribute TableContainsKey !)
+        <-*moduleStats{<module} <attribute @GetStat(<module <attribute) 0.0 1.0 1.0 4 ListN SetTableElement
+    endif
 
     # Effect strengths list, length determines how many upgrades are generated.
     <template{"effect_strengths"} >effectStrengths
@@ -206,13 +226,20 @@
         <template{"title"} >upgrade{"title"}
 
         # Module
-        <module >upgrade{"module"}
+        if(<module "unbanned" neq)
+            <module >upgrade{"module"}
+        endif
 
         # Description
         @BeginConcatAll
 
             # "Cannon damage " Or whatever
-            <module 0 1 Substring ToUpper <module 1 <module StringLength 1 sub Substring " " <attributeName " "
+            if(<module "unbanned" eq)
+                "All unbanned modules' "
+            else
+                <module 0 1 Substring ToUpper <module 1 <module StringLength 1 sub Substring " "
+            endif
+            <attributeName " "
             
             # Describe effect
             <effectStrengths[i] >strength
@@ -305,3 +332,28 @@ Full table: " <upgrade concat4)
 		concat
 	loop
 	--startSize
+
+:ParseModuleList
+    >moduleName
+    if(<moduleName "all" eq)
+        <-*allModules GetTableKeys
+    else if(<moduleName "unbanned" eq)
+        <-*allModules GetTableKeys >modules
+        -1 <modules 1 sub do
+            if(<-*bannedModules{<modules[i]})
+                <modules i RemoveListElement
+            endif
+        loop
+        <modules
+    else if(<moduleName "not_" StartsWith)
+        <moduleName "not_" "" StringReplace >moduleName
+        <-*allModules GetTableKeys >modules
+        -1 <modules 1 sub do
+            if(<modules[i] <moduleName eq)
+                <modules i RemoveListElement
+            endif
+        loop
+        <modules
+    else
+        <moduleName RemoveWhiteSpace "," Split
+    endif endif endif

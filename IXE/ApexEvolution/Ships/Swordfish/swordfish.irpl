@@ -16,7 +16,7 @@ $ship_description:"The standard warship of the Kholan civilization. Focuses on r
 
 # -------------------------
 
-# Describe any custom ship modules your ship has on it. This is any module that does not have a proper upgrades.irpl file associated with it.
+# Describe any custom ship modules your ship has on it. This is any module that does not have an upgrades.irpl file associated with it.
 # This is a comma separated list. Whitespace is removed, and it is converted to lowercase.
 # "Bertha,T H O R ,           spirit" becomes a list of ["bertha", "thor", "spirit"].
 # The names of variables below should match this.
@@ -39,19 +39,9 @@ $start_unlocked_lathe:1
 
 # Define upgrade setup modes for modules.
 # Variable name should be "setup_mode_[modulename]"
-# Built-in modules will automatically add their modules to the upgrade pool when on the ship if applicable. This is setup mode 0, and only works on built-in modules.
-# Custom modules by default have to have their upgrades manually defined below. This is setup mode 1.
+# By default, modules will automatically add their modules to the upgrade pool when on the ship. This is setup mode 0.
+# If you want to replace the default upgrades for a module for this ship, use setup mode 1.
 
-
-
-# ---------------------------
-
-# Define the primary script or controller for each custom module.
-# If you are using a setup mode other than 0 (automatic), you should define this for the module.
-# Variable name should be "primary_behavior_[modulename]"
-# If using a controller, give the controller name. 
-# If using an IRPL script, the full script path should be given, INCLUDING THE .IRPL AT THE END
-# If none is given, it defaults to IRPL script 1.
 
 # ===============================
 
@@ -62,7 +52,7 @@ $start_unlocked_lathe:1
         "id"            "allstatsup"
         "title"         "Swordfish Special Upgrade: All-Around Enhancement"
         "description"   "Slightly improve most stats on all weapons."
-        "effect"        "mulattr/all/fire_range/1.05, mulattr/all/shot_damage/1.05, mulattr/all/shot_damage_count/1.05, incattr/all/shot_damage_distance/1"
+        "effect"        "mulattr/all/fire_range/1.05, mulattr/all/shot_damage/1.05, mulattr/all/shot_damage_count/1.05, incattr/not_maker/shot_damage_distance/1, mulattr/maker/shot_damage_distance/1.025"
         "rarity"        5
         "pickuplimit"   1
     ) <_upgrades swap AppendToList

@@ -7,6 +7,10 @@ $SHOT_DAMAGE_COUNT:99999
 $SHOT_DAMAGE_DISTANCE:8
 $SHOT_DAMAGE:40.0
 
+$TARGET_RAND:10
+$NUM_SHOTS:1
+$SHOT_SPEED:1.5
+
 # Change RA range when the variable is updated mid-level
 if(<FIRE_RANGE <lastRange neq)
     Self <FIRE_RANGE SetRaRange
@@ -21,30 +25,19 @@ if(GetTimer0 eq0)
     if(Self GetAmmo <FIRE_COST gte)
         @Fire >fireSuccess
         if(<fireSuccess)
-            <FIRE_DELAY RandInt(-3 4) add SetTimer0
+            <FIRE_DELAY RandInt(-3 4) add RandFloat add SetTimer0
+            Self <FIRE_COST ConsumeAmmo
         else
             #Short timer if we don't find creeper, but not 0 to help avoid lag when no creeper is near.
-            10 <FIRE_DELAY min RandInt(-3 4) add SetTimer0
+            10 <FIRE_DELAY min SetTimer0
         endif
     endif
 endif
 
 
 :Fire
-    GetDeepestCreeper(Self false true) dup >position trace
+    GetDeepestCreeper(Self false true) >position
     if(<position.x gte0)
-        10 0 do
-            <position RandInt(-10 11) RandInt(-10 11) V2 Add >newPos
-            if(Self <newPos GetRaPath dup <newPos EV2 GetCreeper gt0 &&)
-                >pathlist
-                break
-            else
-                pop 0 >pathlist
-            endif
-        loop
-        if(<pathlist eq0)
-            Self <position GetRaPath >pathlist
-        endif
         PlaySound("rocketfire" 1)
         # Create the unit
         "CreateShot" "rocket" Self 2 ListN SendMsg

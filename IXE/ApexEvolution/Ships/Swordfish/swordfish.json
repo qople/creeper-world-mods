@@ -17,8 +17,12 @@
 	"playercontrolammosupply": false,
 	"isapex": true,
 	"isbuilt": true,
-	"powerdispatchstoremax": 5,
+	"destroysonhealth": false,
+	"powerdispatchstoremax": 50,
+	"powergeneration": [200, 200, 0],
 	"maxammo": 50,
+	"defaultdrag": 3,
+	"autoammo": 50,
 	"controllers": 	[
 						{
 							"name": "ondestroy_sandexplosion",
@@ -60,6 +64,12 @@
 				"name": "sentrygun1",
 				"sortingorder": 10,
 				"position": [ 5, -8 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Sentrygun/sentrygun.json",
+				"name": "sentrygun2",
+				"sortingorder": 10,
+				"position": [ 18, -6 ]
 			},
 
 			{

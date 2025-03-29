@@ -8,6 +8,14 @@ $module:"cannon"
 # If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
 $behavior:""
 
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "cannon" "cannon" "/ApexEvolution/Sprites/Shots/cannon.png" 
+    "basehit/hitcreeper/destroy"
+    "basedestroy/ondestroy/damage"
+    List
+    "RegisterShot" swap SendMsg
+    
 #Defines all the default upgrades for each included module. 
 :AddUpgrades
     # Data is how many of this module are on the main ship to start
@@ -24,6 +32,17 @@ $behavior:""
         "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
     ) <upgrades swap AppendToList
 
+
+    #Table(
+    #    "id"            "stattrack0"
+    #    "title"         "this is not in the pool actually"
+    #    "description"   "just lets the auto stat tracker know to track this stat"
+    #    "module"        "cannon"
+    #    "effect"        "incattr/cannon/shot_damage_distance/1"
+    #    "rarity"        0
+    #    "pickuplimit"   1
+    #) <upgrades swap AppendToList
+
     # Templates, detected by the presence of the "attribute" element
     # They have less control than the normal tables, but are much smaller and easier to work with.
     Table(
@@ -39,7 +58,7 @@ $behavior:""
         "attribute"         "shot_damage"
         "attribute_name"    "damage"
         "module"            "cannon"
-        "title"             "Antimatter propellant"
+        "title"             "Antimatter Propellant"
         "effect_type"       "incmult"
         "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
     ) <upgrades swap AppendToList
@@ -64,13 +83,15 @@ $behavior:""
         "pickup_limit"      "2,    2,    2,    1,    1"
     ) <upgrades swap AppendToList
 
+
+    # Artifacts
     Table(
         "id"            "cannonmultishot"
-        "title"         "Triple Shot"
+        "title"         "Cannon: Triple Shot"
         "module"        "cannon"
-        "description"   "Cannon has triple shot, but each shot is weaker"
-        "effect"        "incattr/cannon/num_shots/2, mulattr/cannon/shot_damage_count/0.75, mulattr/cannon/shot_damage/0.75"
-        "rarity"        5
+        "description"   "Cannon has triple shot, but fire delay is doubled and the shots are slightly weaker."
+        "effect"        "mulattr/cannon/num_shots/3, mulattr/cannon/fire_delay/2, mulattr/cannon/shot_damage_area/0.85"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -78,9 +99,89 @@ $behavior:""
         "id"            "cannonmastery"
         "title"         "Cannon Mastery"
         "module"        "cannon"
-        "description"   "Cannon damage X1.5. Removes all future cannon upgrades."
-        "effect"        "mulattr/cannon/shot_damage/1.5, banupgrade/numcannon, banmodule/cannon"
-        "rarity"        5
+        "description"   "Cannon damage X1.75. Removes all future cannon upgrades."
+        "effect"        "mulattr/cannon/shot_damage/1.75, banupgrade/numcannon, banmodule/cannon"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannonpierce"
+        "title"         "Cannon: Penetrating Shots"
+        "module"        "cannon"
+        "description"   "Cannon damage area X1.25. Shots pierce into creeper after they hit, dealing damage as they travel."
+        "effect"        "mulattr/cannon/shot_damage_count/1.25, addbehavior/cannon/walkbackonhit/hitcreeper/walkback, addbehavior/cannon/piercedestroy/hitcreeper/afterdelay/10/1/0/destroy, addbehavior/cannon/piercedmg/hitcreeper/afterdelay/0/10/1/damage/0.4/1/0.25, removebehavior/cannon/basedestroy, removebehavior/cannon/basehit"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannonsynergyboost"
+        "title"         "Cannon: Synergy Boost"
+        "module"        "cannon"
+        "description"   "Cannon damage X1.05 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_cannon/mulattr/cannon/shot_damage/1.05"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannonpowerredirection"
+        "title"         "Cannon: Power Redirection"
+        "module"        "cannon"
+        "description"   "Cannon damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/cannon/shot_damage/0.8, mulattr/not_cannon/shot_damage/1.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannondmgaura"
+        "title"         "Cannon: Damage Aura"
+        "module"        "cannon"
+        "description"   "Cannon shots deal damage with reduced area around them as they travel, piercing though shallow creeper."
+        "effect"        "addbehavior/cannon/dmgaura/frametravel/damage/1.0/1/0.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannonfocusshots"
+        "title"         "Cannon: Focused Explosives"
+        "module"        "cannon"
+        "description"   "Cannon damage X5, damage area X0.25"
+        "effect"        "mulattr/cannon/shot_damage/5, mulattr/cannon/shot_damage_count/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannonwideshots"
+        "title"         "Cannon: Wide-Area Explosives"
+        "module"        "cannon"
+        "description"   "Cannon fire delay X3, but damage area X4."
+        "effect"        "mulattr/cannon/fire_delay/3, mulattr/cannon/shot_damage_count/4, mulattr/cannon/shot_damage_distance/3"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannondoubleshot"
+        "title"         "Cannon: Double Shot"
+        "module"        "cannon"
+        "description"   "Cannon fires two projectiles, but each is weaker."
+        "effect"        "mulattr/cannon/spread/0.5, mulattr/cannon/num_shots/2, mulattr/cannon/shot_damage/0.8, mulattr/cannon/shot_damage_count/0.8"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "cannondoubleboom"
+        "title"         "Cannon: Double Boom"
+        "module"        "cannon"
+        "description"   "Cannon shots explode a second time when they hit creeper, with increased area but decreased damage."
+        "effect"        "addbehavior/cannon/doubleboom/hitcreeper/damage/0.1/2/3"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -91,6 +192,7 @@ $behavior:""
     <behavior ->*moduleBehaviors{<module}
     <-*moduleBehaviors trace
     RegisterForMsg("add" <module concat "AddUpgrades")
+    RegisterForMsg("ShotRegistration" "ShotRegistration")
 
 :DetectModuleNum
     999 0 do

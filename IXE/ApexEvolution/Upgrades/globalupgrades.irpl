@@ -1,3 +1,9 @@
+if(<-*shipLoaded)
+    once
+        @AddUpgrades
+    endonce
+endif
+
 
 if(<shipAC GetTimer0 eq0 &&)
     50 SetTimer0
@@ -22,9 +28,25 @@ endif
     RegisterForMsg("addcreeperglobalgrowth" dup)
     RegisterForMsg("addxpmult" dup)
     RegisterForMsg("LevelUp" dup)
+    RegisterForMsg("multiplyammo" dup)
+    RegisterForMsg("upgradenullifier" dup)
+    RegisterForMsg("addupgradechoices" dup)
+    RegisterForMsg("removecommons" dup)
+    RegisterForMsg("shipspeed" dup)
 
+:AddUpgrades
     # List of upgrade data. Each is a table.
     CreateList >_upgrades
+
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "unbanned"
+        "title"             "Efficiency Tweaks"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.05, 0.075, 0.11, 0.165, 0.25"
+    ) <_upgrades swap AppendToList
+    
 
     # Artifacts
         Table(
@@ -37,10 +59,37 @@ endif
         ) <_upgrades swap AppendToList
 
         Table(
+            "id"            "ammoup"
+            "title"         "Emergency Generators"
+            "description"   "Your ship can fire after taking damage for much, much longer."
+            "effect"        "sendmsg/multiplyammo/10"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "betternulli"
+            "title"         "Better Nullifier"
+            "description"   "Nullifier range +10 and charge time -50%."
+            "effect"        "sendmsg/upgradenullifier/0"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
             "id"            "globaldecay"
             "title"         "Damage Aura"
             "description"   "Deals a tiny amount of damage to all creeper, constantly. Scales with your level."
             "effect"        "sendmsg/addcreeperglobalgrowth/-100"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "extrachoice"
+            "title"         "Extra Upgrade Choice"
+            "description"   "You can pick from an additional choice with each level up or artifact."
+            "effect"        "sendmsg/addupgradechoices/1"
             "rarity"        5
             "pickuplimit"   1
         ) <_upgrades swap AppendToList
@@ -62,15 +111,86 @@ endif
             "rarity"        5
             "pickuplimit"   1
         ) <_upgrades swap AppendToList
-    
-    @ApplyUpgrades
 
-:ApplyUpgrades
+        Table(
+            "id"            "normalweaponart"
+            "title"         "Weapon Artifact"
+            "description"   "Choose a weapon artifact, which can give large stat boosts to your weapons."
+            "effect"        "sendmsg/ShowWeaponArt/1:0"
+            "rarity"        5
+            "pickuplimit"   -1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "hastyweaponart"
+            "title"         "Hasty Upgrades"
+            "description"   "Choose two weapon artifacts, but all modules' damage X0.9."
+            "effect"        "mulattr/all/shot_damage/0.9, sendmsg/ShowWeaponArt/2:0"
+            "rarity"        5
+            "pickuplimit"   3
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "nochoiceweaponart"
+            "title"         "Luck of the Draw"
+            "description"   "Get two weapon artifacts, but you can't choose which ones."
+            "effect"        "sendmsg/ShowWeaponArt/2:1"
+            "rarity"        5
+            "pickuplimit"   3
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "finalweaponart"
+            "title"         "Set in Stone"
+            "description"   "Choose four weapon artifacts, but no more will show up."
+            "effect"        "sendmsg/ShowWeaponArt/4:0, banupgrade/nochoiceweaponart, banupgrade/hastyweaponart, banupgrade/normalweaponart"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "nomorecommons"
+            "title"         "Single-Minded Focus"
+            "description"   "Common upgrades can no longer show up, but you get one fewer choice for each upgrade."
+            "effect"        "sendmsg/removecommons/0, sendmsg/addupgradechoices/-1"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "nomoreuncommons"
+            "title"         "Hyperfocus"
+            "description"   "UNCOMMON upgrades can no longer show up, but you get one fewer choice for each upgrade."
+            "effect"        "sendmsg/removecommons/1, sendmsg/addupgradechoices/-1"
+            "rarity"        5
+            "prerequisite"  "nomorecommons"
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "shipspeed"
+            "title"         "Riftium Engines"
+            "description"   "Your ship can move 40% faster."
+            "effect"        "sendmsg/shipspeed/1.4"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "revive"
+            "title"         "Phase Shifter"
+            "description"   "Right before your ship dies, can teleport you into a pocket dimension, letting you repair. Single-use."
+            "effect"        "sendmsg/addrevive/1"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+    
     SendMsg("AddUpgradesToPool" <_upgrades)
 
-# Artifact upgrade messages
+# ==================
+# Artifact upgrade message callbacks
 
-# One-off for the luck upgrade, might make this a variable luck stat at some point.
+# One-off for the luck upgrade
 :multiplyluck
     List(83 56 51 21 9 0) ->*upgradeRarityChances
 
@@ -82,3 +202,24 @@ endif
 
 :AddShipAc
     <shipAC <_DATA add >shipAC
+
+:addupgradechoices
+    <-*upgradeChoices <_DATA AsInt add ->*upgradeChoices
+
+:multiplyammo
+    <-*mainShip dup GetMaxAmmo <_DATA mul SetMaxAmmo
+
+:upgradenullifier
+    <-*mainShip @nulliScript "FIREFINAL_TIME" 52 SetScriptVar
+    <-*mainShip @nulliScript "FIRE_TIME" 75 SetScriptVar
+    <-*mainShip @nulliScript "RANGE" GetScriptVar >range
+    <-*mainShip @nulliScript "RANGE" <range 10 add SetScriptVar
+
+:nulliScript
+    "/ApexEvolution/Ships/mobilenullifier.irpl"
+
+:removecommons
+    CreateList ->*upgradePool[<_DATA asint]
+    
+:shipspeed
+    <-*mainShip "/ApexEvolution/Ships/ship.irpl" dup2 "moveSpeed" GetScriptvar <_DATA AsFloat mul "moveSpeed" swap SetScriptVar

@@ -1,55 +1,78 @@
 # Governs showing the upgrade UI, and choosing which upgrades to show.
-$baseUpgradeCost:9
-$upgradePower:2.5
+$baseUpgradeCost:8.0
+$upgradePower:2.8
 $scalingAdd:4
 
-#GetCreeperInArea(V4(0 0 512 512) false false) ->postUpdateCreeper
-#<-*preUpdateCreeper <postUpdateCreeper neq if
-#    <-*preUpdateCreeper <postUpdateCreeper sub dup trace
-#    <-*xpMult mul <-creeperDestroyed add ->creeperDestroyed
-#    
-#    true >remakeBar
-#    
-#    while <-creeperDestroyed <-upgradeCost gt repeat
-#        <-creeperDestroyed <-upgradeCost sub ->creeperDestroyed
-#        @LevelUp
-#    endwhile
-#else
-#    pop
-#endif
+# Softcap formula: above level X, multiply cost by 1 + ((level - x) ^ power * strength)
+$levelSoftcap:100
+$softcapStrength:0.01
+$softcapPower:1.4
 
+# Limit on weapon artifacts
+$weaponArtLimit:3
 
-if(<remakeBar)
-    false >remakeBar
-    SendMsg("RemakeLevelBar" <-creeperDestroyed <-upgradeCost AsFloat div)
+if(GetPause !)
+    if(<remakeBar)
+        false >remakeBar
+        SendMsg("RemakeLevelBar" <-creeperDestroyed <-upgradeCost AsFloat div)
+    endif
+endif
+
+if(<upgradeSounds gt0 ElapsedTime <upgradeSoundTime gt &&)
+    PlaySound("UpgradeGemCollected" 0.6)
+    <upgradeSounds 1 sub >upgradeSounds
+    ElapsedTime 400 add >upgradeSoundTime
 endif
 
 if(<upgradeOnScreen)
     true SetPause
+
+    <-chosenUpgrades 0 do
+        if("Alpha" i 1 add concat 0 GetKeyDown)
+            "UPGRADE_CHOSEN" TableN("name" i 1) SendMsg
+            break
+        endif
+    loop
 else if(<upgradeQueue)
     @ChooseUpgrades
 endif endif
 
 
+# Zoom the camera while paused
+if(GetMappedKeyDown("ZoomMapIn" 1))
+    SetCameraZoom(GetCameraZoom 6 sub)
+endif
+if(GetMappedKeyDown("ZoomMapOut" 1))
+    SetCameraZoom(GetCameraZoom 6 add)
+endif
+
+
 if(GetKeyDown("U" 1) GetEditMode &&)
-    @ShowUpgrade
+    if(GetKey("LeftAlt" 1))
+        @ShowArtifact
+    else
+        @ShowUpgrade
+    endif
 endif
 
 
 :Once
-    ElapsedTime List >upgradeSeed
-    ElapsedTime 3 add 10 mul List >artifactSeed
+    ElapsedTime 1000 add AsInt List >upgradeSeed
+    ElapsedTime AsInt List >artifactSeed
 
+    0 ->upgradeSounds
+    0 >upgradeSoundTime
+    3 ->*upgradeChoices
     1.0 ->*xpMult
     0 ->*shipLevel
-    0 >upgradeQueue
-    CreateList >artifactsInQueue
+    CreateList >upgradeQueue
     <baseUpgradeCost <-*shipLevel <scalingAdd add <upgradePower pow mul ->upgradeCost
     0 ->creeperDestroyed
-    V4(0.8 0.8 0.8 1) V4(0 1 0 1) V4(0 0.5 1 1) V4(0.7 0 1 1) V4(1 0.2 0.2 1) V4(0.8 0.3 0 1) List >rarityColors
-    "COMMON" "UNCOMMON" "RARE" "EPIC" "LEGENDARY" "ARTIFACT" List >rarityNames
+    V4(0.8 0.8 0.8 1) V4(0 1 0 1) V4(0 0.5 1 1) V4(0.7 0 1 1) V4(1 0.2 0.2 1) V4(0.8 0.3 0 1) V4(0.02 0.412 0.373 1) List >rarityColors
+    "COMMON" "UNCOMMON" "RARE" "EPIC" "LEGENDARY" "ARTIFACT" "WEAPON ARTIFACT" List >rarityNames
 
     RegisterForMsg("ShowArtifact" "ShowArtifact")
+    RegisterForMsg("ShowWeaponArt" "ShowWeaponArt")
     RegisterForMsg("GiveXp" dup)
 
 :GiveXP
@@ -61,17 +84,25 @@ endif
     true >remakeBar
 
 :LevelUp
+    <upgradeSounds 1 add >upgradeSounds
     <-*shipLevel 1 add ->*shipLevel
-    <baseUpgradeCost <-*shipLevel <scalingAdd add <upgradePower pow mul ->upgradeCost
+    <baseUpgradeCost <-*shipLevel <scalingAdd add <upgradePower pow mul 
+    if(<-*shipLevel <levelSoftcap gt)
+        <-*shipLevel <levelSoftcap sub <softcapPower pow <softcapStrength mul 1 add mul
+    endif
+    ->upgradeCost
     @ShowUpgrade
     SendMsg("LevelUp" <-*shipLevel)
 
 :UpgradeChosen
+    if(ElapsedTime <upgradeLock lt)
+        return
+    endif
     <-_DATA{"name"} asint >choice
     false >upgradeOnScreen
     <chosenUpgrades[<choice] >upgrade
     <-*upgradeCollected{<upgrade{"id"}} 1 add ->*upgradeCollected{<upgrade{"id"}}
-    3 0 do
+    <-*upgradeChoices 0 do
         SetUIActive("upgradeui" i false)
     loop
     #SetUIActive("upgradeui" <choice true)
@@ -80,78 +111,83 @@ endif
 
     DeregisterForMsg("UPGRADE_CHOSEN")
     false SetPause
+    
+    if(-?baseChoices)
+        <baseChoices ->*upgradeChoices
+        --baseChoices
+    endif
 
 :ShowUpgrade
-    <upgradeQueue 1 add >upgradeQueue
-    #@ChooseUpgrades
+    <upgradeQueue <-*upgradeRarityChances 1 ListN AppendToList
 
 :ShowArtifact
-    @ShowUpgrade
-    <artifactsInQueue <upgradeQueue AppendToList
+    <upgradeQueue -1 0 0 0 1 4 6 ListN 1 ListN AppendToList
+
+# This one's more complicated because of the different ways you can get it
+# First item is how many weapon arts to give, second is how many choices in each selection 0 is default choice count.
+:ShowWeaponArt
+    <_DATA RemoveWhiteSpace ":" split >data
+    <data[0] AsInt 0 do
+        <upgradeQueue -1 0 0 0 0 0 10 Asint 7 ListN <data[1] AsInt 2 ListN AppendToList
+    loop
 
 # Shows the UI buttons
 :ChooseUpgrades
     true SetPause
+    ElapsedTime 515 add >upgradeLock
+    30 SetTimer0
     RegisterForMsg("UPGRADE_CHOSEN" "UpgradeChosen")
-    <upgradeQueue 1 sub 0 max >upgradeQueue
-    <artifactsInQueue 0 do
-        <artifactsInQueue[i] 1 sub >artifactsInQueue[i]
-    loop
-    CreateList >chosenUpgrades
-    true >upgradeOnScreen
-    <upgradeSeed >activeSeed
+    <upgradeQueue PopList >upgradeSettings 
+    <upgradeSettings[0] >rarityChances
 
-    # Check if this is an artifact choice
-    if(<artifactsInQueue dup [0] eq0 &&)
-        true >selectingArtifact
-        <-*upgradeRarityChances >baseRarity
-        List(-1 0 0 0 1 4) ->*upgradeRarityChances
-        <artifactsInQueue 0 RemoveListElement
+    if(<rarityChances AsString <-*upgradeRarityChances AsString eq)
+        <upgradeSeed >activeSeed
+    else
         <artifactSeed >activeSeed
     endif
 
+    CreateList >chosenUpgrades
+    true >upgradeOnScreen
+
+    if(<upgradeSettings GetListCount 2 gte)
+        if(<upgradeSettings[1] gt0)
+            <-*upgradeChoices >baseChoices
+            <upgradeSettings[1] ->*upgradeChoices
+        endif
+    endif
+
+    <-*upgradeChoices 1 sub 0.5 mul 320 mul neg >uiX
     
-    3 0 do
+    <-*upgradeChoices 0 do
         i >uiName
         SetUIActive("upgradeui" <uiName true)
+        SetUiPosition("upgradeui" <uiName <uiX)
+        <uiX 320 add >uiX
         @RandomUpgrade >thisUpgrade
-        <chosenUpgrades <thisUpgrade AppendToList
-        SetUIBackgroundColor("upgradeui" <uiName <rarityColors[<thisUpgrade{"rarity"}])
-         
-        SetUiText("upgradeui" <uiName <thisUpgrade @ConstructText)
+        if(<thisUpgrade IsNull !)
+            <chosenUpgrades <thisUpgrade AppendToList
+            SetUIBackgroundColor("upgradeui" <uiName <rarityColors[<thisUpgrade{"rarity"}])
+            
+            SetUiText("upgradeui" <uiName <thisUpgrade @ConstructText)
+        else
+            SetUIBackgroundColor("upgradeui" <uiName Vector0)
+            SetUIText("upgradeui" <uiName "")
+            SetUIActive("upgradeui" <uiName false)
+        endif
     loop
-
-    if(<selectingArtifact)
-        <baseRarity ->*upgradeRarityChances
-    endif
+    
 
 :RandomUpgrade
     false >isValid
-    <activeSeed trace
-    <-*upgradeRarityChances DeepCopy >chances
+    <-rarityChances DeepCopy >chances
     while <isValid ! repeat
-        #Set up weighted random
 
-        0
-        <-chances 0 do
-            dup <-chances[i] add
-        loop
-        dup 1 add >maxRandNum
-        <-chances ListN >weightList pop
+        <chances @WeighedRand >rarity
 
-        60 86 96 99 100
-        #Pick a number, then search for that in the list to find the correct rarity
-        0 <maxRandNum <activeSeed @SeedRandInt >rand
-        -1
-        <weightList 0 do
-            if(<weightList[i] <rand gte)
-                pop i break
-            endif
-        loop
-        >rarity
 
         # Now that we have the rarity, pick an unweighted random upgrade from that rarity.
         <-*upgradePool[<rarity] >upgrades
+        CreateList >upgradeWeights
         CreateList >filteredUpgrades
         <upgrades 0 do
             <upgrades[i] >upgrade
@@ -159,9 +195,43 @@ endif
             #Check if the upgrade is valid
             true >isValid
 
+            # Enough weapon art slots must be available, for weapon art effects
+            if(<upgrade{"effect"} AsString dup "ShowWeaponArt" "" StringReplace neq)
+                <-*allModules GetTableKeys >modules
+                
+                0
+                <modules 0 do
+                    <modules[i] >module
+                    
+                    # Module must be unlocked
+                    if(<-*unlockedModules{<module} eq0 <-*bannedModules{<module} ||)
+                        0
+                    else if(<-*weaponsWithArts <module ListContains)
+                        <weaponArtLimit <-*weaponArtifacts{<module} GetListCount sub
+                    else
+                        0
+                    endif endif
+                    add
+                loop
+                >availableArtSlots
+                <upgrade{"effect"} >effects
+                0 >numArtifacts
+                <effects 0 do
+                    if(<effects[i] AsString dup "ShowWeaponArt" "" StringReplace neq)
+                        <numArtifacts <effects[i] dup GetListCount 1 sub GetListElement ":" Split 0 GetListElement AsInt add >numArtifacts
+                    endif
+                loop
+                if(<availableArtSlots <numArtifacts lt)
+                    false >isValid
+                endif
+            endif
+
             #Module must be unlocked
             if(<upgrade{"module"} IsNull !)
                 <upgrade{"module"} >module
+                if(<rarity 6 eq <-*weaponArtifacts{<module} GetListCount <weaponArtLimit gte &&)
+                    false >isValid
+                endif
                 if(<-*unlockedModules{<module} eq0 <-*bannedModules{<module} ||)
                     false >isValid
                 endif
@@ -205,6 +275,7 @@ endif
             0 >chances[<rarity]
             null >upgrade
             
+            # Check if any rarities haven't been checked yet
             true >isValid
             <chances 0 do
                 if(<chances[i])
@@ -218,10 +289,38 @@ endif
 
     <upgrade return
 
+:WeighedRand
+    >list
+    #Set up weighted random
+
+    0
+    <-list 0 do
+        dup <-list[i] add
+    loop
+    dup 1 add >maxRandNum
+    <-list ListN >weightList pop
+
+
+    #Pick a number, then search for that in the list to find the correct rarity
+    0 <maxRandNum <activeSeed @SeedRandInt >rand
+    -1
+    <weightList 0 do
+        if(<weightList[i] <rand gte)
+            pop i break
+        endif
+    loop
+
+
 :ConstructText
     >thisUpgrade
+    if(<thisUpgrade{"rarity"} 6 eq <thisUpgrade{"module"} IsNull ! &&)
+        "<br>(" <-*weaponArtifacts{<thisUpgrade{"module"}} GetListCount 1 add " of " <weaponArtLimit ")" concat4 concat >limitText
+    else
+        "" >limitText
+    endif
     <rarityNames[<thisUpgrade{"rarity"}] >rarityName
-    <rarityName "<br><br>" <thisUpgrade{"title"} "<br><br>" <thisUpgrade{"description"} concat4 concat
+    
+    <rarityName "<br><br>" <thisUpgrade{"title"} <limitText "<br><br>" <thisUpgrade{"description"} concat4 concat3
 
 # Thank you to Grabz for showing me this rand function
 # This one uses a list with one element as the seed, 

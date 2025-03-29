@@ -5,43 +5,9 @@
 # To make a shot, Send message "CreateShot" with the following data, in a list:
 
 # First element: shot type:
-# "cannon", "sentrygun", "maker"
-
-# Rocket and bertha still have their own shots since they fire much less often. This might change later.
+# "cannon", "sentrygun", "maker", "rocket"
 
 # Second element: part ID of the unit making the shot
-
-
-# Cannon shot Needs:
-    # position
-    # shotvel
-
-    # On fire we need:
-    #num_shots
-    #spread
-    
-    # On hit we need:
-    #shot_damage
-    #shot_damage_distance
-    #shot_damage_count
-
-# Sentrygun shot is the same as cannon shot, but also needs gravity
-
-# Maker shot needs:
-    # position
-    # shotvel
-    # actrail
-    # shot_damage:1
-    # shot_damage_distance
-
-# Rocket and bertha are the same, with different speeds and images
-# They need:
-    # pathlist (dup, don't copy, to save memory and time)
-    # position
-
-    # On hit, they need:
-    #shot_damage
-    #shot_damage_distance
 
 if(<-*shipLoaded)
     once
@@ -49,18 +15,27 @@ if(<-*shipLoaded)
     endonce
 endif
 
+0 >xp
+
 # Run a tick for each shot type
-0 >count
 <shotTypes 0 do
     <shotTypes[i] >type
+
+    # Stores a bunch of vars we will need when we simulate each shot
+    <type @CacheModule
+
     # Iterate in reverse order, since we may remove shots from the list as we go
     -1 <type "Shots_" concat <-! dup >list 1 sub do
-        <list[i] <type refcall
-        if # Result of true means the shot hit
-            <list i RemoveListElement
+        <list[i] <class refcall
+        if # Result of true means the shot was destroyed
+            
+            if(i <list GetListCount 1 sub neq)
+                <list PopList >list[i]
+            else
+                <list i RemoveListElement
+            endif
         endif
     loop
-    <list GetListCount <count add >count
 
     # Destroy sprites over time if we don't need them
     if(GetGameUpdateCount <type "LastMade_" concat <-! sub 300 gt)
@@ -68,87 +43,442 @@ endif
         if(<sprites)
             <sprites[0] >sprite
             <sprites PopList DestroySprite
-            GetGameUpdateCount 290 sub <type "LastMade_" concat ->!
+            GetGameUpdateCount 295 sub <type "LastMade_" concat ->!
         endif
     endif
 loop
 
-#<count Trace
+# Run any after-delay effects
+if(<delayMap{GetGameUpdateCount})
+    <delayMap{GetGameUpdateCount} >allEffects
+    <allEffects GetTableKeys >types
+    <types 0 do
+        <types[i] >type
+        <type @CacheModule
+        <allEffects{<type} >effects
+        <effects 0 do
+            # Make the effect
+            <effects[i] >effect
+            <effect[3] >shot
+            
+            if(<class "cannon" eq)
+                <shot[0] >pos
+                <shot[1] >vel
+                <shot[2] >sprite
+                <shot[3] >time
+            else if(<class "rocket" eq)
+                <shot[0] >pos
+                <shot[1] >path
+                <shot[2] >sprite
+                <shot[3] >index
+            else if(<class "spirit" eq)
+                <shot[0] >pos
+                <shot[1] >mode
+                <shot[2] >sprite
+                <shot[3] >target
+                <shot[4] >time
+            endif endif endif
+
+            if(<effect[2][1] "destroy" eq)
+                true >pos.w
+                <pos >shot[0]
+            else
+                <effect[2] dup [1] dup >behaviorType refcall
+    
+                # Add it back in with one less
+                <effect[0] 1 sub >effect[0]
+                GetGameUpdateCount <effect[1] add >nextUpdate
+                
+                if(<effect[0])
+                    if(<delayMap <nextUpdate TableContainsKey !)
+                        CreateTable dup >delayMap{<nextUpdate}
+                        >table
+                        CreateList dup >table{<type}
+                    else
+                        <delayMap{<nextUpdate}
+                        if(dup <type TableContainsKey)
+                            {<type}
+                        else
+                            >table
+                            CreateList dup >table{<type}
+                        endif
+                    endif
+                    <effect AppendToList
+                endif
+            endif
+        loop
+    loop
+    <delayMap GetGameUpdateCount RemoveTableElement
+endif
+
+"GiveXp" <xp SendMsg
+
 :Once
     RegisterScript("shots")
     RegisterForMsg("CreateShot" dup)
     RegisterForMsg("StatsUpdated" dup)
-    List("cannon" "sentrygun" "rocket" "bertha" "maker") >shotTypes
+    RegisterForMsg("AddBehavior" dup)
+    RegisterForMsg("RemoveBehavior" dup)
+    RegisterForMsg("RegisterShot" dup)
+    RegisterForMsg("RunShots" dup)
+
+    # Cache whether cannon shots can move through each type of sand
+    256 0 do
+        i GetSandDefData {"blocksUnits"}
+    loop
+    List >sandBlocksShots
+
+    # Type corresponds to the module type making the shot, and determines which stats to use
+    CreateList >shotTypes
+    #List("cannon" "sentrygun" "rocket" "bertha" "maker") >shotTypes
+
+    # Shot class corresponds to the base shot logic, current options are:
+    # Cannon (moves in a straight path)
+    # Rocket (follows a path list to a destination)
+    # spirit (Spirit that targets nearest or deepest creeper and has a lifetime)
+    List("cannon" "rocket" "spirit") >shotClasses
+
+    CreateTable >spriteNames
+
+    # Converts module type to shot class
+    CreateTable >classForType
+    
+    CreateTable >delayMap
+
+    List("frametravel" "celltravel" "ondestroy" "hitcreeper" "create" "hittarget" "lifetimeend") >triggerTypes
+
+
+    # Behaviors and triggers
+    # Behaviors are a list, the first element is a trigger, the second is the behavior type, 
+    # some may have arguments that can go after
+    
+    # Triggers are (not case sensitive):
+    # frametravel: activate the behavior once per frame while traveling 
+    # celltravel: activate the behavior once per CELL while traveling (cannon class only)
+    # ondestroy: activate the behavior when the shot is destroyed
+    # hitcreeper: activate on the first frame the shot touches creeper
+    # create: activate the behavior when the shot is created
+    
+    # Note: cannon shots are force-destroyed when they hit a wall,
+    # and rocket shots are force-destroyed when they reach the end of their path.
+
+    
+    # Behaviors are (not case sensitive):
+    
+    # Damage: runs a DamageCreeper function at the shot's position
+    #   Uses the module's "shot_damage", "shot_damage_distance", and "shot_damage_count" vars
+    #   Optional arguments are: multiplier to damage, multiplier to distance, multiplier to count, in order.
+
+    # AC: Adds anticreeper in range at the shot's position
+    #   Uses the module's "shot_damage" and "shot_damage_distance" vars
+    #   Optional arguments are: multiplier to damage, multiplier to distance
+
+    # Destroy: destroys the shot, and triggers any behaviors attached to the "ondestroy" trigger
+    #   Optional argument is whether to call the WalkBack behavior before detonation.
+
+    # WalkBack: (cannon class shots only) Walks the shot position back up to 1 frame, until a cell with no creeper is found.
+    #   Use to synchronize a shot with the edge of the creeper on hit.
+    #   No arguments.
+
+    # AfterDelay: Triggers a second behavior after a certain amount of time, over time, or both.
+    #   Arguments are the initial delay in frames, the number of activations, the delay between activations, the behavior, followed by any arguments for that behavior
+    #   For example: ListN("HitCreeper" "AfterDelay" 20 1 0 "Destroy" 6) will trigger the "Destroy" behavior once 20 frames after the shot hits creeper.
+
+    # All in all, a trigger/behavior declaration may look like:
+    # ListN("celltravel" "ac" 0.5 0.25 4)
+    # This is the same as the "overflowing shells" artifact for the maker.
+    
     Table(
-        "cannon" "/ApexEvolution/Sprites/Shots/cannon.png"
-        "sentrygun" "/ApexEvolution/Sprites/Shots/sentrygun.png"
-        "maker" "/ApexEvolution/Sprites/Shots/maker.png"
-        "bertha" "/ApexEvolution/Sprites/Shots/bertha.png"
-        "rocket" "/ApexEvolution/Sprites/Shots/rocket.png"
-    ) >spriteNames
+        "num_shots"             "numShots"
+        "spread"                "spread"
+        "spread_rand_mode"      "spreadRand"
+        "shot_speed"            "shotSpeed"
+        "shot_damage"           "damage"
+        "shot_damage_distance"  "dmgDist"
+        "shot_damage_count"     "dmgCount"
+        "shot_gravity"          "gravity"
+        "shot_digitalis_damage" "digiDamage"
+    ) >cannonStats_
+    <cannonStats_ GetTableKeys >cannonStatNames_
+    
+    Table(
+        "num_shots"             "numShots"
+        "shot_speed"            "shotSpeed"
+        "shot_damage"           "damage"
+        "shot_damage_distance"  "dmgDist"
+        "shot_damage_count"     "dmgCount"
+        "target_rand"           "targetRand"
+        "shot_digitalis_damage" "digiDamage"
+    ) >rocketStats_
+    <rocketStats_ GetTableKeys >rocketStatNames_
+    
+    Table(
+        "shot_speed"            "shotSpeed"
+        "shot_damage"           "damage"
+        "shot_damage_distance"  "dmgDist"
+        "shot_damage_count"     "dmgCount"
+        "shot_lifetime"         "lifetime"
+        "target_rand"           "targetRand"
+        "spirit_deep_mode"      "targetMode"
+        "spirit_target_hold"    "targetHold"
+        "shot_digitalis_damage" "digiDamage"
+        "target_rand"           "targetRand"
+    ) >spiritStats_
+    <spiritStats_ GetTableKeys >spiritStatNames_
 
-    List("num_shots" "spread" "shot_damage" "shot_damage_distance" "shot_damage_count") >cannonStats_
-    List("shot_gravity" "shot_damage" "shot_damage_distance" "shot_damage_count") >sentrygunStats_
-    List("actrail" "shot_damage" "shot_damage_distance") >makerStats_
-    List("shot_damage" "shot_damage_distance" "shot_damage_count") >rocketStats_
-    List("shot_damage" "shot_damage_distance" "shot_damage_count") >berthaStats_
+# Registers a shot type. Data is a list containing the following information:
+# - module name
+# - Shot class
+# - Path for the sprite image
+# - Any further arguments are interpreted as behaviors
+#
+# This should only be called once for each shot type.
+:RegisterShot
+    # Parse the data
+    <_DATA >data
+    <data[0] >type
+    <data[1] >class
+    <data[2] >spritePath
 
-    # Initialize vars for each
-    <shotTypes 0 do
-        <shotTypes[i] >type
-        CreateList <type "Sprites_" concat ->!
-        0 <type "LastMade_" concat ->!
-        CreateList <type "Shots_" concat ->!
+    # Format behaviors from strings into lists for further processing
+    <data 3 do
+        <data[i] "/" split >list
+        <list 0 do
+            <list[i]
+            if(dup asfloat)
+                asfloat
+            endif
+        loop
+        <list ListN
+    loop
+    List >behaviors
+    <behaviors trace
+
+    # Register the shot type
+    <class >classForType{<type}
+    <shotTypes <type AppendToList
+    <spritePath >spriteNames{<type}
+
+    # Create necessary variables
+    CreateList <type "Sprites_" concat ->!
+    0 <type "LastMade_" concat ->!
+    CreateList <type "Shots_" concat ->!
+
+    # Fully process behaviors
+    CreateTable >behaviorTable
+
+    <behaviors 0 do
+        <behaviors[i] >behavior
+
+        <behavior[1] >trigger
+        <behavior 1 RemoveListElement
+
+        if(<behaviorTable <trigger TableContainsKey !)
+            CreateList >behaviorTable{<trigger}
+        endif
+        <behaviorTable{<trigger} <behavior dup "format" swap [1] concat refcall AppendToList
+    loop
+    <behaviorTable <type "Behaviors_" concat ->!
+
+
+:AddBehavior
+    <_DATA[0] >type
+    <_DATA[1] >behavior
+    #<behavior[0] >type
+    #<behavior 0  RemoveListElement
+    <behavior[1] >trigger
+    <behavior 1 RemoveListElement
+
+    <type "Behaviors_" concat <-! >behaviorTable
+
+    if(<behaviorTable <trigger TableContainsKey !)
+        CreateList >behaviorTable{<trigger}
+    endif
+    <behaviorTable{<trigger} <behavior dup "format" swap [1] concat refcall AppendToList
+
+# Removes all behaviors with the given name
+:RemoveBehavior
+    <_DATA[0] >module
+    <_DATA[1] >name
+    <module "Behaviors_" concat <-! >moduleBehaviors
+    <moduleBehaviors GetTableKeys >triggers
+    -1 <triggers 1 sub do
+        <triggers[i] >trigger
+        <moduleBehaviors{<trigger} >triggerBehaviors
+        -1 <triggerBehaviors 1 sub do
+            <triggerBehaviors[i] >behavior
+            if(<behavior[0] ToLower <name ToLower eq)
+                <triggerBehaviors i RemoveListElement
+            endif
+        loop
+
+        if(<triggerBehaviors GetListCount eq0)
+            <moduleBehaviors <trigger RemoveTableElement
+        endif
     loop
 
-    3 >cannonSpeed
-    4 >makerSpeed
-    2 >sentrygunSpeed
-    1.5 >rocketSpeed
+:formatDamage
+    >behavior
+    <behavior GetListCount >count
+    "name" "damage" 1.0 1.0 1.0 5 ListN >default
+    <default <count do
+        <behavior <default[i] AppendToList
+    loop
+    <behavior
+
+:formatAC
+    >behavior
+    <behavior GetListCount >count
+    "name" "ac" 1.0 1.0 4 ListN >default
+    <default <count do
+        <behavior <default[i] AppendToList
+    loop
+    <behavior
+
+:formatDestroy
+    >behavior
+    <behavior GetListCount >count
+    "name" "destroy" 1 3 ListN >default
+    <default <count do
+        <behavior <default[i] AppendToList
+    loop
+    <behavior
+
+:formatDamageDigi
+    >behavior
+    <behavior GetListCount >count
+    "name" "damagedigi" 1 1 4 ListN >default
+    <default <count do
+        <behavior <default[i] AppendToList
+    loop
+    <behavior
+
+:formatWalkBack
+    # No args
+    
+:formatAfterDelay
+    >behavior
+    if(<behavior GetListCount 6 lt)
+        # Invalid, do nothing
+        Trace("ERROR: AfterDelay behavior formatted incorrectly.")
+        null return
+    else
+        # Separate the second part of the list
+        1 >count
+        "child"
+        <behavior 5 do
+            <count 1 add >count
+            <behavior[i]
+        loop
+        <count ListN >subBehavior
+
+        # Keep the first part on the stack
+        5 0 do 
+            <behavior[i]
+        loop
+        5 ListN 
+
+        # Now we format the second part and add it on
+        <subBehavior dup "format" swap [1] concat refcall >subBehavior
+        >behavior
+        <behavior <subBehavior AppendToList
+        <behavior return
+    endif
+
+# Loads relevant module vars into shorter and consistent ones so we can use static var reads
+# This makes things a lot faster, especially with large numbers of shots
+:CacheModule
+    >type
+    <classForType{<type} >class
+    
+    <class "StatNames_" concat <-! >statNames
+    <class "Stats_" concat <-! >aliases
+    <statNames 0 do
+        <type <statNames[i] concat <-! <aliases{<statNames[i]} ->!
+    loop
+
+    # Clear old behaviors
+    <triggerTypes 0 do
+        <triggerTypes[i] "Behaviors" concat --!
+    loop
+
+    # Load new behavior lists
+    <type "Behaviors_" concat <-! >behaviors
+    <behaviors GetTableKeys >triggers
+    <triggers 0 do
+        <triggers[i] >trigger
+        <behaviors{<trigger} <trigger "Behaviors" concat ->!
+    loop
 
 :CreateShot
     <_DATA[0] >shotType
     <_DATA[1] >unit
-    "create" <shotType concat refcall
+    <shotType @CacheModule # Load stats in case any effects happen on shot creation
+    "create" <class concat refcall
 
 # Creates a cannon shot (or several, based on num_shots)
 :CreateCannon
-    <unit "spread" GetScript1Var >spread
     <unit GetPosition >pos
-    <unit GetRotation <cannonnum_shots 1 sub <cannonspread 0.5 mul mul sub >rot
 
+    if(<spreadRand)
+        <unit GetRotation >baseRot
+    else
+        <unit GetRotation <numShots 1 sub <spread 0.5 mul mul sub >rot
+    endif
+    
     # Make the shots
     # Until the shot hits, we only need position and velocity for the shot, and a sprite ID.
-    <cannonnum_shots 0 do
-        ListN(<pos <rot Deg2Rad mul cos <rot Deg2Rad mul sin V2 <cannonSpeed mul @GetSprite("cannon") dup <rot false SetSpriteRotation GetGameUpdateCount 4)
-        <rot <cannonspread add >rot
+    <numShots 1 max 0 do
+        if(<spreadRand)
+            <baseRot RandFloat 0.5 sub <spread mul <numShots mul add >rot
+        endif
+        ListN(<pos <rot Deg2Rad mul cos <rot Deg2Rad mul sin V2 <shotSpeed mul @GetSprite(<shotType) dup <rot false SetSpriteRotation GetGameUpdateCount 4)
+        <rot <spread add >rot
     loop
-    <cannonShots_ AppendStackToList
+    <shotType "Shots_" concat <-! AppendStackToList
 
-# Creates a maker shot (or several, based on num_shots)
-:CreateMaker
-    <unit GetPosition >pos
-    <unit GetRotation >rot
-
-    # Make the shots
-    # Until the shot hits, we only need position and velocity for the shot, and a sprite ID.
-    ListN(<pos <rot Deg2Rad mul cos <rot Deg2Rad mul sin V2 Normalize @GetSprite("maker") dup <rot false SetSpriteRotation GetGameUpdateCount 4)
-    <makerShots_ AppendStackToList
-
-# Creates a sentrygun shot (or several, based on num_shots)
-:CreateSentrygun
-    <unit GetPosition >pos
-    <unit GetRotation >rot
-
-    # Make the shots
-    # Until the shot hits, we only need position and velocity for the shot, and a sprite ID.
-    ListN(<pos <rot Deg2Rad mul cos <rot Deg2Rad mul sin V2 <sentrygunSpeed mul @GetSprite("sentrygun") dup <rot false SetSpriteRotation GetGameUpdateCount 4)
-    <sentrygunShots_ AppendStackToList
-
-# Creates a rocket shot
+# Creates a rocket shot (or several, depending on numShots)
 :CreateRocket
-    <unit "pathList" GetScript1Var >pathList
-    <rocketShots_ ListN(0 <pathList "rocket" @GetSprite  <unit GetPosition 4) AppendToList 
+    #<unit "pathList" GetScript1Var >pathList
+    CreateList >pathList
+    GetDeepestCreeper(<unit false true) >basePos
+    <numShots 0 do
+        <basePos >position
+        if(<targetRand)
+            10 0 do
+                <position RandInt(<targetRand neg <targetRand 1 add) RandInt(<targetRand neg <targetRand 1 add) V2 Add >newPos
+                if(<unit <newPos GetRaPath dup GetListCount <newPos EV2 GetCreeper gt0 && <unit GetPosition <newPos GetPosition Distance <unit GetRaRange lt &&)
+                    >pathlist
+                    <newPos >position
+                    break
+                else
+                    pop 0 >pathlist
+                endif
+            loop
+        endif
+        if(<pathlist eq0)
+            <unit <position GetRaPath >pathlist
+        endif
+        
+        <shotType "Shots_" concat <-! ListN(<unit GetPosition <pathList <shotType @GetSprite 0.0 4) AppendToList 
+    loop
+
+:CreateSpirit
+    <unit GetPosition >pos
+    
+    # Find target
+    if(<targetMode)
+        <unit false false GetDeepestCreeper >target
+    else
+        <unit false GetNearestCreeper dup >target
+        <unit GetPosition sub Normalize 4 mul <target add >target
+    endif
+
+    # Create the shot
+    # List vars are position, mode (moving to target, hovering on target, returning), sprite, target, lifetime, parent unit
+    <pos 1 @GetSprite(<shotType) dup >sprite <target GetGameUpdateCount <lifetime add <unit List
+    <sprite <target <pos sub EV2 swap atan2 rad2deg mul false SetSpriteRotation # Rotate the sprite for the trip to the target
+    <shotType "Shots_" concat <-! AppendStackToList
 
 # Runs one tick for one cannon shot. Performance critical.
 :Cannon
@@ -158,67 +488,333 @@ loop
     <shot[2] >sprite
     <shot[3] >time
 
+    if(<pos.w)
+        <pos @DetCannon
+        1 return
+    endif
+
+    if(<pos.x dup 0 511 Clamp neq <pos.y dup 0 511 clamp neq ||)
+        # Out of the map bounds
+        <pos @DetCannon
+        1 return
+    endif
+
+    # This var gets changed to true if any behavior destroys the shot
+    false >destroyed
+
     if(GetGameUpdateCount <time sub 60 gt)
         <pos @DetCannon
-        true return
+        <destroyed return
     endif
 
     <pos <vel add >pos
-    if(<pos EV2 GetCreeper gt0 <pos EV2 IsSandEmpty ! ||)
-        if(<pos EV2 GetCreeper lte0 <pos EV2 GetSand GetSandDefData {"blocksUnits"} ! &&)
-        else
-            # Hit! Walk us back to the cell we hit
-            <vel Normalize >oneVel
-            false >det
-            <pos
-            <vel Magnitude 0 do
-                <oneVel sub
-                if(dup EV2 GetCreeper lte0)
-                    # Do detonation effect here
-                    true >det
-                    <oneVel add @DetCannon
-                    break
-                endif
+    
+
+    # apply gravity
+    if(<gravity gt0)
+        <vel.y <gravity sub >vel.y
+        <sprite <vel EV2 swap Atan2 Rad2Deg mul false SetSpriteRotation
+        <vel >shot[1] 
+    endif
+
+    # Do frame travel behaviors
+    <frameTravelBehaviors 0 do
+        <frameTravelBehaviors[i] dup [1] refcall
+    loop
+
+    # Do cell travel behaviors
+    if(<cellTravelBehaviors)
+        <pos <vel sub >oldPos
+        <vel Normalize >oneVel
+        <shotSpeed 0 do
+            <oldPos <oneVel add dup >oldPos >pos
+            <cellTravelBehaviors 0 do
+                <cellTravelBehaviors[i] dup [1] refcall
             loop
+        loop
+    endif
 
-            if(<det !)
-                @DetCannon
-            endif
-
-            true return
+    if(<pos EV2 IsSandEmpty !)
+        if(<sandBlocksShots[<pos EV2 GetSand])
+            #Force destroy
+            "destroy" 0 2 ListN @Destroy
         endif
     endif
+    if(<pos EV2 GetCreeper gt0 <pos.z eq0 &&)
+        1 >pos.z
+        # First hit on creeper, run creeper hit behaviors
+        <hitCreeperBehaviors 0 do
+            <hitCreeperBehaviors[i] dup [1] refcall
+        loop
+    endif
+
     # Keep going, move the sprite
     <pos >shot[0]
     <sprite <pos false SetSpritePosition
-    false return
+
+
+    <destroyed return
+
+:Spirit
+    >shot
+    false >destroyed
+
+    # List vars are position, mode (returning, moving to target, hovering on target), sprite, target, lifetime
+    <shot[0] >pos
+    <shot[1] >mode
+    <shot[2] >sprite
+    <shot[3] >target
+    <shot[4] >time
+
+    if(<pos.w)
+        <pos @DetCannon
+        1 return
+    endif
+
+    if(GetGameUpdateCount <time gte)
+        <lifetimeendbehaviors 0 do
+            <lifetimeendBehaviors[i] dup [1] refcall
+        loop
+        0 >mode
+    endif
+
+    if(<mode eq0)
+        # Returning to base
+        <sprite
+        <pos dup <shot[5] GetPosition <shotSpeed MoveTowards dup >pos
+
+        # Rotate the sprite too
+        swap sub EV2 swap atan2 rad2deg mul false SetSpriteRotation
+
+        if(<pos <shot[5] GetPosition Distance 0.01 lte)
+            # Returned, destroy
+            "destroy" 0 2 ListN @Destroy
+            1 return
+        endif
+
+    else if(<mode 1 eq)
+        # Going to target
+        <pos <target <shotSpeed MoveTowards dup >pos
+
+        # Rotate the sprite too
+        #sub EV2 swap atan2 neg rad2deg mul false SetSpriteRotation
+
+        if(<target Distance 0.01 lte)
+            # Run hittarget behaviors
+            <hittargetbehaviors 0 do
+                <hittargetBehaviors[i] dup [1] refcall
+            loop
+
+            # Hover on target for a bit
+            <targetHold 2 add >shot[1]
+        endif
+    else if(<mode 2 eq)
+        # Get our next target
+        if(<targetMode)
+            <shot[5] "target" GetScript1Var >target 
+
+            if(<targetRand)
+                10 0 do
+                    <position RandInt(<targetRand neg <targetRand 1 add) RandInt(<targetRand neg <targetRand 1 add) V2 Add >newPos
+                    if(<newPos EV2 GetCreeper gt0 <unit GetPosition <newPos GetPosition Distance <unit GetRaRange lt &&)
+                        <newPos >target
+                        break
+                    endif
+                loop
+            endif
+            
+            # Don't target super duper close again, wait a frame instead
+            if(<target <pos Distance 2 gt <target.x gte0 &&)
+                <target >shot[3]
+            else
+                <shot[5] "_shotDeepCall" true SetScript1Var
+                true >wait
+            endif
+        else
+            <shot[5] false GetNearestCreeper dup >target
+            <shot[5] GetPosition sub Normalize 4 mul <target add dup >target >shot[3]
+        endif
+
+        if(<wait !)
+
+            # Wait until we get a valid target to change modes
+            if(<target.x gte0)
+                1 >shot[1] #Changes the mode for the shot to move to the new target
+
+                <sprite <target <pos sub EV2 swap atan2 rad2deg mul false SetSpriteRotation
+            else
+                # Return to base
+                0 >shot[1]
+            endif
+        else
+            false >wait
+        endif
+    else
+        # Hovering on target, go until target = 2 (then it changes to target switch mode)
+        <targetHold 2.0 add <mode sub <targetHold div >portion
+        <portion 10 mul >angle
+        <target <angle cos <angle sin V2 <portion 8 mul mul add >pos
+
+        # Rotate the sprite too
+        <sprite <angle rad2deg mul 90 add false SetSpriteRotation
+        <mode 1 sub dup >shot[1]
+
+        if(2 eq <targetMode &&)
+            <shot[5] "_shotDeepCall" true SetScript1Var
+        endif
+    endif endif endif
+
+    # Keep going, move the sprite
+    <pos >shot[0]
+    <sprite <pos false SetSpritePosition
+
+    # Do frame travel behaviors
+    <frameTravelBehaviors 0 do
+        <frameTravelBehaviors[i] dup [1] refcall
+    loop
+
+    <destroyed return
+
+:Destroy
+    >args
+    false >det
+    <pos
+    if(<args[2] <class "cannon" eq &&)
+        # Try to walk us back to the cell we hit
+        <vel Normalize >oneVel
+        <vel Magnitude 0 do
+            <oneVel sub
+            if(dup EV2 GetCreeper lte0)
+                # Do detonation effect here
+                true >det
+                <oneVel add @DetCannon
+                break
+            endif
+        loop
+    endif
+
+    if(<det !)
+        @DetCannon
+    endif
+
+:WalkBack
+    >args
+    <pos
+    <vel Normalize >oneVel
+    <vel Magnitude 0 do
+        <oneVel sub
+        if(dup EV2 GetCreeper lte0)
+            # Return this pos
+            break
+        endif
+    loop
+    >pos
+    >pos >shot[0]
+
+# Deposits AC
+:AC
+    >args
+    <args[2] >dmgMult
+    <args[3] >dmgDistMult
+    <damage <dmgMult mul neg >dmg
+
+    <dmgDist <dmgDistMult mul dup >d dup mul >dsqr
+
+    0 >count
+    <xp
+    # This works with a decimal radius, on average
+    <pos.y <d ceil sub <pos.y <d ceil add 1 add do
+        <dsqr i <pos.y sub dup mul sub sqrt 
+        dup <pos.x swap sub swap <pos.x add 1 add do
+            i j <dmg AddCreeper
+            <dmg sub
+            <count 1 add >count
+        loop
+    loop
+    >xp
+    <count trace
+
+# Creates a structure similar to a shot, that activates another behavior at a point in time
+:AfterDelay
+    >args
+    <args[2] >initialDelay
+    <args[3] >numActivations
+    <args[4] >repeatDelay
+    GetGameUpdateCount <initialDelay add 1 add >startTime
+
+    if(<delayMap <startTime TableContainsKey !)
+        CreateTable dup >delayMap{<startTime}
+        >table
+        CreateList dup >table{<type}
+    else
+        <delayMap{<startTime}
+        if(dup <type TableContainsKey)
+            {<type}
+        else
+            >table
+            CreateList dup >table{<type}
+        endif
+    endif
+    
+    ListN(<numActivations <repeatDelay <args[5] <shot 4) AppendToList
+
+:DamageDigi
+    >args
+    <args[2] AsFloat >dmgMult
+    <args[3] AsFloat >dmgDistMult
+    <dmgDist <dmgDistMult mul RandFloat add AsInt >dist
+    <pos <dist <digiDamage DamageDigitalis
 
 # Runs one tick for one rocket shot
 :Rocket
     >shot
-    <shot[0] >index
+    <shot[0] >oldPos
     <shot[1] >path
     <shot[2] >sprite
-    <shot[3] >oldPos
+    <shot[3] >index
+
+    if(<oldPos.w)
+        "destroy" 0 2 ListN @Destroy
+        1 return
+    endif
     
     # New index based on speed
-    <index <rocketSpeed add dup >index >shot[0]
+    <index <shotSpeed add dup >index >shot[3]
 
     <index AsInt >intIndex
 
     # Check if we've reached the end of the path
     if(<intIndex <path GetListCount 1 sub gte)
-        <path dup GetListCount 1 sub GetListElement @DetRocket
+        <path dup GetListCount 1 sub GetListElement @DetCannon
+        
         true return
     endif
 
     # Move sprite based on index
-    <sprite GetPosition
-    <path[<intIndex] <path[<intIndex] <index <intIndex sub @Lerp >pos
+    #<path[<intIndex] >pos
+    <path[<intIndex 1 sub] <path[<intIndex] <index <intIndex sub @Lerp >pos
     
-    <sprite <pos <oldPos sub EV2 swap Atan2 Rad2Deg mul false SetSpriteRotation
+    if(<index <intIndex sub <shotSpeed lte)
+        <sprite <pos <oldPos sub EV2 swap Atan2 Rad2Deg mul false SetSpriteRotation
+    endif 
     <sprite <pos false SetSpritePosition
-    <pos >shot[3]
+    # HitCreeper
+    if(<oldPos.z eq0)
+        if(<pos EV2 GetCreeper gt0)
+            <hitCreeperBehaviors 0 do
+                <hitCreeperBehaviors[i] dup [1] refcall
+            loop
+            true >pos.z
+        endif
+    endif
+
+    # Frame travel
+    <frameTravelBehaviors 0 do
+        <frameTravelBehaviors[i] dup [1] refcall
+    loop
+
+    <oldPos.z <pos.z || >pos.z
+    <pos >shot[0]
     false return
 
 # Lerps between two numbers with the weight given
@@ -230,197 +826,38 @@ loop
     >blend >secondNum >firstNum
     <secondNum <firstNum sub <blend mul <firstNum add return
 
-# Runs one tick for one cannon shot. Performance critical.
-:Maker
-    >shot
-    <shot[0] >pos
-    <shot[1] >vel
-    <shot[2] >sprite
-    <shot[3] >time
-
-    if(GetGameUpdateCount <time sub 60 gt)
-        <pos @DetMaker
-        true return
-    endif
-
-    if(<makeractrail)
-        # A little more complicated when trail is on
-        false >det
-        <makerSpeed 0 do
-            <pos <vel add >pos
-            if(<pos EV2 GetCreeper gt0 <pos EV2 IsSandEmpty ! ||)
-                if(<pos EV2 GetCreeper lte0 <pos EV2 GetSand GetSandDefData {"blocksUnits"} ! &&)
-                else
-                    true >det
-                    <pos @DetMaker
-                    true return
-                    break
-                endif
-            endif
-            if(<det !)
-                0
-                # This works with a decimal radius, on average
-                <pos.y <makershot_damage_distance 0.25 mul ceil sub <pos.y <makershot_damage_distance 0.25 mul ceil add 1 add do
-                    <pos.x <makershot_damage_distance 0.25  mul ceil sub <pos.x <makershot_damage_distance 0.25 mul ceil add 1 add do
-                        if(<pos i j V2 Distance <makershot_damage_distance 0.25 mul lte)
-                            i j <makershot_damage 0.5 mul neg AddCreeper
-                            <makershot_damage 0.5 mul add
-                        endif
-                    loop
-                loop
-                "GiveXp" swap SendMsg
-                <pos >shot[0]
-                <sprite <pos false SetSpritePosition
-            endif
-        loop
-        false return
-    else
-        <pos <vel <makerSpeed mul add >pos
-        if(<pos EV2 GetCreeper gt0 <pos EV2 IsSandEmpty ! ||)
-            if(<pos EV2 GetCreeper lte0 <pos EV2 GetSand GetSandDefData {"blocksUnits"} ! &&)
-                #shield or similar, move on
-            else
-                # Hit! Walk us back to the cell we hit
-                <vel Normalize >oneVel
-                false >det
-                <pos
-                <vel Magnitude 0 do
-                    <oneVel sub
-                    if(dup EV2 GetCreeper lte0)
-                        # Do detonation effect here
-                        true >det
-                        <oneVel add @DetMaker
-                        true return
-                    endif
-                loop
-
-                if(<det !)
-                    @DetMaker
-                    true return
-                endif
-            endif
-        endif
-        # Keep going, move the sprite
-        <pos >shot[0]
-        <sprite <pos false SetSpritePosition
-        false return
-    endif
-
-# Runs one tick for one cannon shot. Performance critical.
-:Sentrygun
-    >shot
-    <shot[0] >pos
-    <shot[1] >vel
-    <shot[2] >sprite
-    <shot[3] >time
-
-    if(GetGameUpdateCount <time sub 60 gt)
-        <pos @DetSentrygun
-        true return
-    endif
-
-    <pos <vel add >pos
-
-    if(<pos EV2 GetCreeper gt0 <pos EV2 IsSandEmpty ! ||)
-        if(<pos EV2 GetCreeper lte0 <pos EV2 GetSand GetSandDefData {"blocksUnits"} ! &&)
-            #shield or similar, move on
-        else
-            # Hit! Walk us back to the cell we hit
-            <vel Normalize >oneVel
-            false >det
-            <pos
-            <vel Magnitude 0 do
-                <oneVel sub
-                if(dup EV2 GetCreeper lte0)
-                    # Do detonation effect here
-                    true >det
-                    <oneVel add @DetSentrygun
-                    break
-                endif
-            loop
-
-            if(<det !)
-                @DetSentrygun
-            endif
-
-            true return
-        endif
-    endif
-    # Keep going, move the sprite
-    <pos >shot[0]
-    <sprite <pos false SetSpritePosition
-
-    # apply gravity
-    if(<sentrygunshot_gravity gt0)
-        <vel.y <sentrygunshot_gravity sub >vel.y
-        <sprite <vel EV2 swap Atan2 Rad2Deg mul false SetSpriteRotation
-        <vel >shot[1] 
-    endif
-    false return
-    
-
 # Detonates a cannon shot at the coords given
 :DetCannon
-    # Clean up this shot
-    "cannon" <sprite @FreeSprite
-    dup >pos
-
-    <pos.x 0 round <cannonshot_damage_distance sub 
-    <pos.y 0 round <cannonshot_damage_distance sub 
-    <pos.x 0 round <cannonshot_damage_distance add 1 add 
-    <pos.y 0 round <cannonshot_damage_distance add 1 add 
-    V4 dup false false GetCreeperInArea >preCreeper
-    swap EV2 <cannonshot_damage_count <cannonshot_damage_distance <cannonshot_damage -1000000 mul DamageCreeper
-    false false GetCreeperInArea <preCreeper swap sub >xp
-    "GiveXp" <xp SendMsg
-
-# Detonates a cannon shot at the coords given
-:DetSentrygun
-    # Clean up this shot
-    "sentrygun" <sprite @FreeSprite
-    dup >pos
-
-    <pos.x 0 round <sentrygunshot_damage_distance sub 
-    <pos.y 0 round <sentrygunshot_damage_distance sub 
-    <pos.x 0 round <sentrygunshot_damage_distance add 1 add 
-    <pos.y 0 round <sentrygunshot_damage_distance add 1 add 
-    V4 dup false false GetCreeperInArea >preCreeper
-    swap EV2 <sentrygunshot_damage_count <sentrygunshot_damage_distance <sentrygunshot_damage -1000000 mul DamageCreeper
-    false false GetCreeperInArea <preCreeper swap sub >xp
-    "GiveXp" <xp SendMsg
-
-:DetMaker
-    "maker" <sprite @FreeSprite
     >pos
-    0
-    # This works with a decimal radius, on average
-    <pos.y <makershot_damage_distance ceil sub <pos.y <makershot_damage_distance ceil add 1 add do
-        <pos.x <makershot_damage_distance ceil sub <pos.x <makershot_damage_distance ceil add 1 add do
-            if(<pos i j V2 Distance <makershot_damage_distance lte)
-                i j <makershot_damage neg AddCreeper
-                <makershot_damage add
-            endif
-        loop
-    loop
-    "GiveXp" swap SendMsg
+    true >pos.w
+    <pos >shot[0]
+    # Clean up this shot
+    <type <sprite @FreeSprite
+    true >destroyed
 
-:DetRocket
-    "rocket" <sprite @FreeSprite
-    dup >pos
+    <onDestroyBehaviors 0 do
+        <onDestroyBehaviors[i] dup [1] refcall
+    loop
     
-    <pos.x 0 round <rocketshot_damage_distance sub 
-    <pos.y 0 round <rocketshot_damage_distance sub 
-    <pos.x 0 round <rocketshot_damage_distance add 1 add 
-    <pos.y 0 round <rocketshot_damage_distance add 1 add 
+:Damage
+    >args
+    <args[2] AsFloat >dmgMult
+    <args[3] AsFloat >dmgDistMult
+    <args[4] AsFloat >dmgCellsMult
+    <dmgDist <dmgDistMult mul RandFloat add AsInt >d
+    <pos
+    <pos.x 0 round <d sub 
+    <pos.y 0 round <d sub 
+    <pos.x 0 round <d add 1 add 
+    <pos.y 0 round <d add 1 add 
     V4 dup false false GetCreeperInArea >preCreeper
-    swap EV2 <rocketshot_damage_count <rocketshot_damage_distance <rocketshot_damage -1000000 mul DamageCreeper
-    false false GetCreeperInArea <preCreeper swap sub >xp
-    "GiveXp" <xp SendMsg
+    swap EV2 <dmgCount <dmgCellsMult mul <d <damage AsFloat <dmgMult mul -1000000 mul DamageCreeper
+    false false GetCreeperInArea <preCreeper swap sub <xp add >xp    
 
 # Pulls a sprite from the pool of existing unused sprites for shots, or makes one if none are free.
 :GetSprite
     dup >type "Sprites_" concat <-! dup >sprites
-    if
+    GetListCount if
         # We have a sprite already made, just give that one!
         <sprites PopList
         dup true SetSpriteActive
@@ -453,15 +890,19 @@ loop
     <module <var concat ->!
 
 :SetUpStats
+    SendMsg("ShotRegistration" 0)
+    
     <shotTypes 0 do
         <shotTypes[i] >type
-        <type "Stats_" concat <-! dup GetTableKeys >stats
+        <classForType{<type} "Stats_" concat <-! dup GetTableKeys >stats
         0 do
             <type <stats[i] @UpdateStat
         loop
     loop
 
+
 :GameLoaded
+    RegisterScript("shots")
     <shotTypes 0 do
         <shotType[i] >type
         

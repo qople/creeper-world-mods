@@ -1,0 +1,64 @@
+# Heavy spirit launcher, targets strong
+# This script is very barebones, most of the logic is in shotmanager instead.
+
+$fire_cost:3
+$fire_range:120
+$fire_delay:600
+$shot_damage_count:9999
+$shot_damage_distance:8
+$shot_damage:20
+
+# Shot specific vars
+$TARGET_RAND:10
+$shot_lifetime:600
+$shot_speed:0.5
+$spirit_deep_mode:1
+$spirit_target_hold:1
+
+if(<FIRE_RANGE <lastRange neq)
+    <FIRE_RANGE >lastRange
+    @UpdateRange
+endif
+
+# Set by shots since deepest creeper call only works in this script
+if(<_shotDeepCall)
+    Self false false GetDeepestCreeper >target
+    false >_shotDeepCall
+endif
+
+Sys_Operable
+
+if(GetTimer0 eq0 Self GetAmmo <fire_cost gte &&)
+    if(@TargetCreeper [0] gte0)
+        PlaySound("opendoor" 0.8)
+        <fire_delay RandFloat 0.5 sub 2 mul add SetTimer0
+        Self <fire_cost ConsumeAmmo
+        "CreateShot" "heavyspirit" Self 2 ListN SendMsg
+    endif
+endif
+
+:TargetCreeper
+    if(<spirit_deep_mode)
+        Self false false GetDeepestCreeper
+    else
+        Self false GetNearestCreeper
+    endif
+
+:Awake
+    @UpdateRange
+
+:Once
+    30 SetTimer0
+
+:UpdateRange
+    if(<spirit_deep_mode)
+        EnableRa(self true)
+        EnableLos(self false)
+        SetRaRange(Self <fire_range)
+    else
+        EnableRa(self false)
+        EnableLos(self true)
+        SetLosRange(Self <fire_range)
+    endif
+    SetShowRange(Self <fire_range)
+    SetShowRangeColor(Self 0 0.608 0.745 0.8 V4)

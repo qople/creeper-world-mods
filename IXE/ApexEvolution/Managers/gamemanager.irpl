@@ -4,6 +4,7 @@ $creeperMultExponent:1 # Base multiplier is raised to this power.
 
 if(GetCreeperTotal eq0 GetGameUpdateCount 30 gte &&)
     once
+        1 >waiting
         SendMsg("ShowEndlessButton" 0)
         RegisterForMsg("StartEndless" dup)
     endonce
@@ -21,6 +22,7 @@ if(<endlessStart gte0)
         once
             @ShowEndText
         endonce
+        return
     else
         @UpdateEndlessText
     endif
@@ -30,9 +32,9 @@ if(<endlessStart gte0)
     if(<timePassed dup 5400 mod eq0 &&)
         SendMsg("ShowArtifact" 0)
     endif
-    <timePassed 18000.0 div 1 add <timePassed 18000.0 div 4 add pow >productionMult
+    <timePassed 18000.0 div 1 add <timePassed 18000.0 div 4 add pow >endlessProductionMult
     
-    <endlessTimer <productionMult add dup trace >endlessTimer
+    <endlessTimer <endlessProductionMult add >endlessTimer
     while <endlessTimer 300 gte repeat
         <endlessTimer 300 sub >endlessTimer
         @SpawnCreeper
@@ -75,14 +77,26 @@ endif
     <-*shipLevel >startLevel
     "ship" "ship_name" GetRegisteredScriptVar >shipName
     GetGameUpdateCount >endlessStart
-    #DestroyUi("AevEndless")
     @SpawnCreeper
-    SetUiSize("AevEndless" "main" V2(400 50))
-    @UpdateEndlessText
+    SetUiSize("AevEndless" "main" V2(400 72))
     DeregisterForMsg("StartEndless")
+    @UpdateEndlessText
+
+:GameLoaded
+    if(<endlessStart gte0 <waiting || GetGameUpdateCount gt0 &&)
+        SendMsg("ShowEndlessButton" 0)
+    endif
+    if(<waiting !)
+        @UpdateEndlessText
+    endif
 
 :Once
     RegisterScript("game")
+
+    # Change the 
+    if(GetSlammer)
+        1.3 >creeperMultExponent
+    endif
     -1 >endlessStart
 
 # Marks this point in the stack as the start of the section for concatall to operate on.
@@ -98,17 +112,21 @@ endif
 
 :UpdateEndlessText
     "AevEndless" "main"
+    2 <endlessProductionMult log10 AsInt sub 0 max >places
+    @BeginConcatAll
     "ENDLESS ACTIVE
+Creeper strength: " <endlessProductionMult <places round "
 Time passed: " GetTimeString(<timePassed) concat
-    SetUIText
+    @ConcatAll SetUIText
 
 :ShowEndText
-    SetUiSize("AevEndless" "main" V2(500 100))
+    SetUiSize("AevEndless" "main" V2(500 122))
     "AevEndless" "main"
     @BeginConcatAll
     "ENDLESS RESULTS: " <shipName "
 Endless start: " <endlessStart GetTimeString "
 Survived " <timePassed GetTimeString " (until " GetGameUpdateCount GetTimeString ")
-Level at endless start/end: " <startLevel "/" <-*shipLevel
+Level at endless start/end: " <startLevel "/" <-*shipLevel "
+Final Power Level: " <endlessProductionMult <places round
     @ConcatAll
     SetUiText

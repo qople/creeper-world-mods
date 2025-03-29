@@ -1,0 +1,141 @@
+{
+	"type": "unit",
+	"enemy": false,
+	"displayname":"The Soulkeeper",
+	"image": "image.png",
+	"sortingorder": 0,
+	"position": [0, 0],
+	"pivot": [0.5, 0.5],
+	"hasphysics": true,
+	"gravityscale": 0,
+	"fowrange": 150,
+	"creeperdamages": true,
+	"digitalissource": false,
+	"nullifiable": false,
+	"playercandestroy": false,
+	"playercontrolbuildsupply": false,
+	"playercontrolammosupply": false,
+	"isapex": true,
+	"isbuilt": true,
+	"destroysonhealth": false,
+	"powerdispatchstoremax": 50,
+	"powergeneration": [200, 200, 0],
+	"maxammo": 50,
+	"defaultdrag": 3,
+	"autoammo": 50,
+	"controllers": 	[
+						{
+							"name": "ondestroy_sandexplosion",
+							"amt": 256,
+							"minvelocity": 1.5,
+							"maxvelocity": 3,
+							"color0":[0.2, 0.4, 2],
+							"color1":[0.2, 0.6, 2],
+							"sandtype": 2
+						}
+					],
+	"scripts": [
+		{"name": "/ApexEvolution/Ships/ship.irpl"},
+		{"name": "/ApexEvolution/Ships/mobilenullifier.irpl"},
+		{"name": "soulkeeper.irpl"}
+		],
+	"parts":
+		[
+			{
+				"part": "$/weapon_phantombeam/weapon_phantombeam.json",
+				"name": "phantombeam0",
+				"sortingorder": -10,
+				"position": [ 6, 0 ]
+			},
+
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe0",
+				"sortingorder": 10,
+				"position": [ 6.25, 0.25 ]
+			},
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe1",
+				"sortingorder": 10,
+				"position": [ 18.75, 0.25 ]
+			},
+			
+			{
+				"part": "/ApexEvolution/Modules/LokiSpirit/lokispirit.json",
+				"name": "lokispirit0",
+				"sortingorder": 10,
+				"position": [ -3.75, 1.25 ]
+			},
+
+			{
+				"part": "/ApexEvolution/Modules/HeavySpirit/heavyspirit.json",
+				"name": "heavyspirit0",
+				"sortingorder": 10,
+				"position": [ -10.25, 1.25 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/HeavySpirit/heavyspirit.json",
+				"name": "heavyspirit1",
+				"sortingorder": 10,
+				"position": [ -10.25, -3.25 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/HeavySpirit/heavyspirit.json",
+				"name": "heavyspirit2",
+				"sortingorder": 10,
+				"position": [ -3.75, -3.25 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/HeavySpirit/heavyspirit.json",
+				"name": "heavyspirit3",
+				"sortingorder": 10,
+				"position": [ -16.75, -1.75 ]
+			},
+
+			{
+				"part": "/ApexEvolution/Modules/LightSpirit/lightspirit.json",
+				"name": "lightspirit0",
+				"sortingorder": 10,
+				"position": [ 24.75, 2.75]
+			},
+			{
+				"part": "/ApexEvolution/Modules/LightSpirit/lightspirit.json",
+				"name": "lightspirit1",
+				"sortingorder": 10,
+				"position": [ -17.25, 3.25]
+			},
+			{
+				"part": "/ApexEvolution/Modules/LightSpirit/lightspirit.json",
+				"name": "lightspirit2",
+				"sortingorder": 10,
+				"position": [ -8.75, -7.75]
+			},
+			{
+				"part": "/ApexEvolution/Modules/LightSpirit/lightspirit.json",
+				"name": "lightspirit3",
+				"sortingorder": 10,
+				"position": [ 12.5, 2.75]
+			},
+
+			{
+				"part": "/ApexEvolution/Modules/Sentrygun/sentrygun.json",
+				"name": "sentrygun0",
+				"sortingorder": 10,
+				"position": [ 14.25, -5.5 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Sentrygun/sentrygun.json",
+				"name": "sentrygun1",
+				"sortingorder": 10,
+				"position": [ 4.25, -6.75 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Sentrygun/sentrygun.json",
+				"name": "sentrygun2",
+				"sortingorder": 10,
+				"position": [ -16.25, -8.25 ]
+			},
+
+		]
+}

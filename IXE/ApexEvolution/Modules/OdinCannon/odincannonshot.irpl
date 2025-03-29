@@ -1,0 +1,58 @@
+
+if(GetTimer0)
+    Self false true GetDeepestCreeper >target
+    if(<target.x gte0)
+        "/ApexEvolution/Sprites/Shots/rocket.png" Self GetPosition <target false Self CreateRaRocket
+    endif
+    if(GetTimer0 1 eq)
+        Self true Destroy
+    endif
+    return
+endif
+
+if(GetTimer2 eq0)
+    Self true Destroy
+endif
+
+<pos <vel add >pos
+
+if(<pos EV2 IsSandEmpty !)
+    if(<pos EV2 GetSand GetSandDefData {"blocksUnits"})
+        #Force destroy
+        @Detonate
+    endif
+endif
+if(<pos EV2 GetCreeper gt0)
+    # First hit on creeper, run creeper hit behaviors
+    @Detonate
+endif
+
+Self <pos SetPosition
+
+:Once
+    300 SetTimer2
+    if(-?parent !)
+        Self Destroy
+    endif
+    Self 50 SetRaRange
+
+    Self GetRotation Deg2Rad mul dup cos swap sin V2 <shot_speed mul >vel
+    Self GetPosition >pos
+
+:Detonate
+
+    <pos.x 0 round <shot_damage_distance sub 
+    <pos.y 0 round <shot_damage_distance sub 
+    <pos.x 0 round <shot_damage_distance add 1 add 
+    <pos.y 0 round <shot_damage_distance add 1 add 
+    V4 dup false false GetCreeperInArea >preCreeper
+    <pos EV2 <shot_damage_count <shot_damage_distance <shot_damage -1000000 mul DamageCreeper
+    false false GetCreeperInArea <preCreeper swap sub "GiveXp" swap SendMsg
+
+    if(<shrapnel)
+        <shrapnel 1 add SetTimer0
+        Self true EnableRa
+        #Self false SetActive
+    else
+        Self true Destroy
+    endif

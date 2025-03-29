@@ -1,0 +1,146 @@
+{
+	"type": "unit",
+	"enemy": false,
+	"displayname":"Odin City",
+	"image": "image.png",
+	"sortingorder": 0,
+	"position": [0, 0],
+	"pivot": [0.5, 0.5],
+	"hasphysics": true,
+	"gravityscale": 0,
+	"fowrange": 150,
+	"creeperdamages": true,
+	"digitalissource": false,
+	"nullifiable": false,
+	"playercandestroy": false,
+	"playercontrolbuildsupply": false,
+	"playercontrolammosupply": false,
+	"isapex": true,
+	"isbuilt": true,
+	"destroysonhealth": false,
+	"powerdispatchstoremax": 50,
+	"powergeneration": [200, 200, 0],
+	"maxammo": 50,
+	"defaultdrag": 3,
+	"autoammo": 50,
+	"controllers": 	[
+						{
+							"name": "ondestroy_sandexplosion",
+							"amt": 256,
+							"minvelocity": 1.5,
+							"maxvelocity": 3,
+							"color0":[0.2, 0.4, 2],
+							"color1":[0.2, 0.6, 2],
+							"sandtype": 2
+						}
+					],
+	"scripts": [
+		{"name": "/ApexEvolution/Ships/ship.irpl"},
+		{"name": "/ApexEvolution/Ships/mobilenullifier.irpl"},
+		{"name": "odincity.irpl"}
+		],
+	"parts":
+		[
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe0",
+				"sortingorder": 10,
+				"position": [ 16.5, 9.5 ]
+			},
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe1",
+				"sortingorder": 10,
+				"position": [ -15.5, 9.5 ]
+			},
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe2",
+				"sortingorder": 10,
+				"position": [ 0, -17 ]
+			},
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe3",
+				"sortingorder": 10,
+				"position": [ 0, -26 ]
+			},
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe4",
+				"sortingorder": 10,
+				"position": [ 23, 16 ]
+			},
+			{
+				"part": "$/weapon_lathe/weapon_lathe.json",
+				"name": "lathe5",
+				"sortingorder": 10,
+				"position": [ -23, 16 ]
+			},
+
+
+			{
+				"part": "/ApexEvolution/Modules/Blaster/blaster.json",
+				"name": "blaster0",
+				"sortingorder": 10,
+				"position": [ 23.5, -10.5 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Blaster/blaster.json",
+				"name": "blaster1",
+				"sortingorder": 10,
+				"position": [ -25, -10.5 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Blaster/blaster.json",
+				"name": "blaster2",
+				"sortingorder": 10,
+				"position": [ -0.75, 21 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Blaster/blaster.json",
+				"name": "blaster3",
+				"sortingorder": 10,
+				"position": [ 18.5, 13 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Blaster/blaster.json",
+				"name": "blaster4",
+				"sortingorder": 10,
+				"position": [ -20.5, 13 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Blaster/blaster.json",
+				"name": "blaster5",
+				"sortingorder": 10,
+				"position": [ -1, -21.5 ]
+			},
+
+			{
+				"part": "/ApexEvolution/Modules/Bertha/bertha.json",
+				"name": "bertha0",
+				"sortingorder": 10,
+				"position": [ -35.25, -15.5 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Bertha/bertha.json",
+				"name": "bertha1",
+				"sortingorder": 10,
+				"position": [ 35.25, -15.5 ]
+			},
+			{
+				"part": "/ApexEvolution/Modules/Bertha/bertha.json",
+				"name": "bertha2",
+				"sortingorder": 10,
+				"position": [ 0, 34.5 ]
+			},
+
+			{
+				"part": "/ApexEvolution/Modules/OdinCannon/odincannon.json",
+				"name": "odincannon0",
+				"sortingorder": 10,
+				"position": [ 0, 0 ]
+			},
+
+		]
+}

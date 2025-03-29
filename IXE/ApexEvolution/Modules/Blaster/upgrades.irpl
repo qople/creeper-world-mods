@@ -1,0 +1,191 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"blaster"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+
+    Table(
+        "id"            "numblaster"
+        "title"         "Weapon: Blaster"
+        "description"   "A precursor to the cannon, fires fractal lasers instead of physical shots."
+        "effect"        "addmodule/blaster/1"
+        "rarity"        0
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+
+    # Track the following upgrades in the stat table:
+    Table(
+        "attribute"         "shot_damage_distance"
+        "attribute_name"    "beam radius"
+        "module"            "blaster"
+    ) <upgrades swap AppendToList
+
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "fire_range"
+        "attribute_name"    "range"
+        "module"            "blaster"
+        "title"             "Better Sensors"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "blaster"
+        "title"             "High-Energy Lasers"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "shot_penetration"
+        "attribute_name"    "penetration"
+        "module"            "blaster"
+        "title"             "Phase Sync"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "fire_delay"
+        "attribute_name"    "fire delay"
+        "module"            "blaster"
+        "title"             "Superconducting Chargers"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "2,    2,    2,    1,    1"
+    ) <upgrades swap AppendToList
+
+
+    # Artifacts
+    Table(
+        "id"            "blastermastery"
+        "title"         "Blaster Mastery"
+        "module"        "blaster"
+        "description"   "Blaster damage X1.75. Removes all future blaster upgrades."
+        "effect"        "mulattr/blaster/shot_damage/1.75, banupgrade/numblaster, banmodule/blaster"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blastersynergyboost"
+        "title"         "Blaster: Synergy Boost"
+        "module"        "blaster"
+        "description"   "Blaster damage X1.05 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_blaster/mulattr/blaster/shot_damage/1.05"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blasterpowerredirection"
+        "title"         "Blaster: Power Redirection"
+        "module"        "blaster"
+        "description"   "Blaster damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/blaster/shot_damage/0.8, mulattr/not_blaster/shot_damage/1.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blasterlinger"
+        "title"         "Blaster: Fallout"
+        "module"        "blaster"
+        "description"   "Blaster lasers deal reduced damage as they fade."
+        "effect"        "setattr/blaster/fallout/0.03"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blasterpierce"
+        "title"         "Blaster: Laser Cutter"
+        "module"        "blaster"
+        "description"   "Blaster pierce and damage X2, but width X0.3."
+        "effect"        "mulattr/blaster/shot_damage/2, mulattr/blaster/shot_penetration/2, mulattr/blaster/shot_damage_distance/0.3"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blasteramplifier"
+        "title"         "Blaster: Progressive Amplification"
+        "module"        "blaster"
+        "description"   "Blaster shots deal more damage to cells farther inside of creeper, up to 2X at 20 cells deep."
+        "effect"        "setattr/blaster/amplifier/2"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blasterprism"
+        "title"         "Blaster: Prism"
+        "module"        "blaster"
+        "description"   "The blaster now shoots 6 shots in a tight spread, but with much longer fire delay."
+        "effect"        "mulattr/blaster/num_shots/6, mulattr/blaster/fire_delay/4.8, setattr/blaster/rainbow/1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blasterdisperser"
+        "title"         "Blaster: Beam Disperser"
+        "module"        "blaster"
+        "description"   "Blaster width X5, but damage X0.25."
+        "effect"        "mulattr/blaster/shot_damage_distance/5, mulattr/blaster/shot_damage/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blasterbypass"
+        "title"         "Blaster: Bypassed Cooldown Protocols"
+        "module"        "blaster"
+        "description"   "Blaster fire delay is halved, but penetration is reduced."
+        "effect"        "mulattr/blaster/fire_delay/0.5, mulattr/blaster/shot_penetration/0.6"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "blasterexplosive"
+        "title"         "Blaster: Explosive Cavitation"
+        "module"        "blaster"
+        "description"   "Blaster shots make an explosion where they hit, scaling with damage and penetration"
+        "effect"        "setattr/blaster/cavitation/1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    <-*moduleBehaviors trace
+    RegisterForMsg("add" <module concat "AddUpgrades")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return
+

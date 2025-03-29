@@ -1,0 +1,189 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"lokispirit"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "lokispirit" "spirit" "/ApexEvolution/Sprites/Shots/lokispirit.png" 
+    "basedmg/frametravel/damage"
+    List
+    "RegisterShot" swap SendMsg
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+    
+    Table(
+        "id"            "numlokispirit"
+        "title"         "Weapon: Loki Spirit"
+        "description"   "These spirits are incredibly fast, harassing creeper across the map and protecting you when creeper is close."
+        "effect"        "addmodule/lokispirit/1"
+        "rarity"        3
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+    
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "lokispirit"
+        "title"             "Better Onboard Weaponry"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+
+    Table(
+        "attribute"         "shot_damage_distance"
+        "attribute_name"    "damage radius"
+        "module"            "lokispirit"
+        "title"             "Bigger Boom"
+        "effect_type"       "incattr"
+        "effect_strengths"  "0.5, 1, 2"
+        "rarities"   "2, 3, 4"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "fire_delay"
+        "attribute_name"    "fire delay"
+        "module"            "lokispirit"
+        "title"             "Faster Production"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "2,    2,    2,    1,    1"
+    ) <upgrades swap AppendToList
+
+    # Additional stats to track
+    Table(
+        "attribute"         "shot_lifetime"
+        "attribute_name"    "lifetime"
+        "module"            "lokispirit"
+    ) <upgrades swap AppendToList
+
+    # Artifacts
+    Table(
+        "id"            "lokispiritslow"
+        "title"         "Lokispirit: Overburdened"
+        "module"        "lokispirit"
+        "description"   "Lokispirit damage radius X1.1. Loki spirits move at 1/4 the speed."
+        "effect"        "mulattr/lokispirit/shot_damage_distance/1.1, mulattr/lokispirit/shot_speed/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lokispiritmastery"
+        "title"         "Lokispirit Mastery"
+        "module"        "lokispirit"
+        "description"   "Lokispirit damage X1.75. Removes all future lokispirit upgrades."
+        "effect"        "mulattr/sentrygun/shot_damage/1.75, banmodule/lokispirit, banupgrade/numlokispirit"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lokispiritalwaysclose"
+        "title"         "Lokispirit: Sociopathy"
+        "module"        "lokispirit"
+        "description"   "Lokispirit lifetime X1.25. Loki spirits will no longer enter protection mode when creeper is nearby."
+        "effect"        "mulattr/lokispirit/shot_lifetime/1.25, setattr/lokispirit/allowprotection/0"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lokispiritconcentrated"
+        "title"         "Lokispirit: Concentrated Fire"
+        "module"        "lokispirit"
+        "description"   "Lokispirit damage X5, but damage radius is halved."
+        "effect"        "mulattr/lokispirit/shot_damage/5, mulattr/lokispirit/shot_damage_distance/0.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lokispiritfastcreation"
+        "title"         "Lokispirit: Supercharged Creation Facilities"
+        "module"        "lokispirit"
+        "description"   "Loki spirits are made 5X faster, but they last 1/4 as long."
+        "effect"        "mulattr/lokispirit/fire_delay/0.2, mulattr/lokispirit/shot_lifetime/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "likispiritacdetonation"
+        "title"         "Lokispirit: AC Detonation"
+        "module"        "lokispirit"
+        "description"   "Loki spirits explode into a large amount of anticreeper when they die."
+        "effect"        "addbehavior/lokispirit/lifetimedestroy/lifetimeend/destroy, addbehavior/lokispirit/acdestroy/ondestroy/ac/10"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lokispiritlonglasting"
+        "title"         "Lokispirit: Everlasting Trickery"
+        "module"        "lokispirit"
+        "description"   "Loki spirits last for 5X as long, but damage X0.25."
+        "effect"        "mulattr/lokispirit/shot_lifetime/5, mulattr/lokispirit/shot_damage/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lokispiritbigone"
+        "title"         "Lokispirit: The Big One"
+        "module"        "lokispirit"
+        "description"   "Lokispirit damage radius X2.5, but fire delay X5."
+        "effect"        "mulattr/lokispirit/shot_damage_distance/2.5, mulattr/lokispirit/fire_delay/5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "id"            "lokispiritsynergyboost"
+        "title"         "Lokispirit: Synergy Boost"
+        "module"        "lokispirit"
+        "description"   "Lokispirit damage radius X1.025 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_lokispirit/mulattr/lokispirit/shot_damage_distance/1.025"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lokispiritpowerredirection"
+        "title"         "Lokispirit: Power Redirection"
+        "module"        "lokispirit"
+        "description"   "Lokispirit damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/lokispirit/shot_damage/0.8, mulattr/not_lokispirit/shot_damage/1.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    RegisterForMsg("add" <module concat "AddUpgrades")
+    RegisterForMsg("ShotRegistration" "ShotRegistration")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return

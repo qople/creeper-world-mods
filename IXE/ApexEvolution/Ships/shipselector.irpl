@@ -143,7 +143,7 @@ endif
     NULL return
 
 :GameLoaded
-    if(GetEditMode !)
+    if(GetEditMode ! <-*shipLoaded &&)
         False ShowInventory
     endif
     
@@ -223,7 +223,7 @@ endif
                             },
                             {
                                 'type':  'button', 
-                                'text': 'CTRL-CLICK AND DRAG A SHIP HERE FOR A WIDER VIEW',
+                                'text': 'CTRL-CLICK AND DRAG SHIP BELOW FOR A WIDER VIEW',
                                 'pivot': [0.5, 0],
                                 'pos': [-413, -32], 
                                 'width': 200, 

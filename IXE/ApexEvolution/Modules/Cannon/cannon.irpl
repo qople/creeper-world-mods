@@ -1,14 +1,17 @@
 $shot_damage:2.0
-$shot_damage_distance:8
+$shot_damage_distance:12
 $shot_damage_count:18
 $fire_range:54
 $fire_delay:10
 $ROTATE_SPEED:12.0
 $FIRE_COST:0.1
+$shot_digitalis_damage:10000
 
 $num_shots:1
+$shot_speed:3
 $spread:20
 
+#3.6 / frame
 
 if(<fire_range <lastRange neq)
     SetLosRange(Self <fire_range)
@@ -18,9 +21,15 @@ endif
 
 SYS_Operable
 
+0 >rotateTarget
 GetNearestCreeper(self false) ->nearestCreeper
 if (<-nearestCreeper.x gte0)
 	<-nearestCreeper ->rotateTarget
+else
+    GetNearestDigitalis(Self) dup >nearestCreeper >rotateTarget
+endif
+
+if(<rotateTarget.x gte0)
 	SignedAngle(GetDirRight(self) <-rotateTarget GetPosition(self) -) ->rotationRemaining
 	if (abs(<-rotationRemaining) 0.001 <)
 		<-nearestCreeper ->hardTarget
@@ -51,7 +60,7 @@ endif
         #    <shot <rot SetRotation
         #    <rot <spread add >rot
         #loop
-        <fire_delay SetTimer0
+        <fire_delay RandFloat add SetTimer0
         ConsumeAmmo(Self 0.5)
 	endif
 #---

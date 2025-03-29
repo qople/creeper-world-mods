@@ -1,11 +1,15 @@
 # Big ol' gun.
 
-$shot_damage:25.0 # 25
-$shot_damage_count:9999
+$shot_damage:25.0
+$shot_damage_count:99999
 $shot_damage_distance:14
 $fire_delay:300  # 10 seconds
 $FIRE_RANGE:100
-$FIRE_COST:10
+$FIRE_COST:3
+
+$TARGET_RAND:0
+$NUM_SHOTS:1
+$SHOT_SPEED:3
 
 # Remade rocket module, NO damage map since that doesn't exist as of when this was written.
 
@@ -20,29 +24,26 @@ endif
 Sys_Operable
 
 if(GetTimer0 eq0)
-    #if(Self GetAmmo <FIRE_COST gte)
+    if(Self GetAmmo <FIRE_COST gte)
         @Fire >fireSuccess
         if(<fireSuccess)
-            <FIRE_DELAY SetTimer0
+            <FIRE_DELAY RandFloat add SetTimer0
+            Self <FIRE_COST ConsumeAmmo
         else
             #Short timer if we don't find creeper, but not 0 to help avoid lag when no creeper is near.
             10 <FIRE_DELAY min SetTimer0
         endif
-    #endif
+    endif
 endif
 
 :Fire
     GetDeepestCreeper(Self false true) >position
     if(<position.x gte0)
         # Create the unit
-        "/ApexEvolution/Modules/Bertha/berthashot" Self GetPosition true CreateUnit >shot
         PlaySound("retro_weapon_gun_misc_shot_08" 0.5)
-        Self <position GetRaPath >pathlist
-        # Set variables on the shot
-        <shotVars 0 do
-            <shotVars[i] >varName
-            <shot <varName dup <-! SetScript1Var
-        loop
+
+        "CreateShot" "bertha" self 2 ListN SendMsg
+
         true return
     else
         false return

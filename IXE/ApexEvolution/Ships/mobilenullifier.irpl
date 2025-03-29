@@ -1,9 +1,13 @@
 # Mobile nullifier part made to be attached to The Ship in AEV mode
 
 $RANGE:50
-$PLATE_ROTATION_RATE:20.0
 $FIRE_TIME:150
 $FIREFINAL_TIME:105
+
+if(<RANGE <lastRange neq)
+	@UpdateFireRange
+	<RANGE >lastRange
+endif
 
 GetOnboardComplete(self 0 true) ->onboardComplete
 
@@ -31,7 +35,7 @@ endif endif
 
 :UpdateFireRange
 	SetShowRange(self <-RANGE)
-
+	SetLOSRange(self <-RANGE)
 
 :StopSound
 	if (<-chargeLoopPlaying)
@@ -105,6 +109,7 @@ endif endif
 	
 :Kaboom
 	0 >nCount
+	PlaySound("AwardObjective" 1)
 	do (GetListCount(<-foundUnits) 0)
 		<-foundUnits[I] ->unit
 		GetPosition(<-unit) ->unitPos

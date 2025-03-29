@@ -1,0 +1,16 @@
+{
+	"type": "part",
+	"image": "body.png",
+	"position": [0, 0],
+	"pivot": [0.3333, 0.5],
+	"collider": {"type":"none"},
+	"isbuilt": false,
+	"creeperdamages": true,
+
+	"sanddamages": true,
+    "scripts": [
+        {
+            "name": "odincannon.irpl"
+        }
+    ]
+}

@@ -1,0 +1,188 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"heavyspirit"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "heavyspirit" "spirit" "$/spirit/bodyNew.png" 
+    "basedmg/hittarget/damage"
+    List
+    "RegisterShot" swap SendMsg
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+    
+    Table(
+        "id"            "numheavyspirit"
+        "title"         "Weapon: Heavy Spirit"
+        "description"   "Launches larger spirits, that target deep creeper around you."
+        "effect"        "addmodule/heavyspirit/1"
+        "rarity"        2
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+    
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "heavyspirit"
+        "title"             "Better Onboard Weaponry"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "shot_speed"
+        "attribute_name"    "speed"
+        "module"            "heavyspirit"
+        "title"             "Bigger Boosters"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "fire_delay"
+        "attribute_name"    "fire delay"
+        "module"            "heavyspirit"
+        "title"             "Faster Production"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "2,    2,    2,    1,    1"
+    ) <upgrades swap AppendToList
+
+    # Additional stats to track
+    Table(
+        "attribute"         "shot_lifetime"
+        "attribute_name"    "lifetime"
+        "module"            "heavyspirit"
+    ) <upgrades swap AppendToList
+
+    # Artifacts
+    Table(
+        "id"            "heavyspiritquantity"
+        "title"         "Heavyspirit: Quantity over Quality"
+        "module"        "Heavyspirit"
+        "description"   "Heavyspirit fire delay X0.2, but damage radius is halved."
+        "effect"        "mulattr/heavyspirit/fire_delay/0.2, mulattr/heavyspirit/shot_damage_distance/0.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "heavyspiritmastery"
+        "title"         "Heavyspirit Mastery"
+        "module"        "heavyspirit"
+        "description"   "Heavyspirit damage X1.75. Removes all future heavyspirit upgrades."
+        "effect"        "mulattr/heavyspirit/shot_damage/1.75, banmodule/heavyspirit, banupgrade/heavyspirit"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "heavyspiritvortex"
+        "title"         "Heavyspirit: Vortex Protocol"
+        "module"        "heavyspirit"
+        "description"   "Heavy spirits spin around their targets, dealing damage around them as they do."
+        "effect"        "setattr/heavyspirit/spirit_target_hold/32, addbehavior/heavyspirit/vortexdmg/hittarget/afterdelay/1/30/1/damage/0.01"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "heavyspirittargetshift"
+        "title"         "Heavyspirit: Target Shift"
+        "module"        "heavyspirit"
+        "description"   "Heavy spirits target close creeper instead of deep. Range X0.75."
+        "effect"        "setattr/heavyspirit/spirit_deep_mode/0, mulattr/heavyspirit/fire_range/0.75"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "heavyspiritslow"
+        "title"         "Heavier Spirits"
+        "module"        "heavyspirit"
+        "description"   "Heavy spirits last twice as long and deal 2.5X damage, but travel at 1/4 the speed."
+        "effect"        "mulattr/heavyspirit/shot_lifetime/2, mulattr/heavyspirit/shot_damage/2.5, mulattr/heavyspirit/shot_speed/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "heavyspiritac"
+        "title"         "Heavyspirit: Anticreeper Mode"
+        "module"        "heavyspirit"
+        "description"   "Heavy spirits deposit AC instead of damaging creeper, but deal half the damage."
+        "effect"        "mulattr/heavyspirit/shot_damage/0.5, removebehavior/heavyspirit/basedmg, addbehavior/heavyspirit/baseac/hittarget/ac"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "heavyspirittrail"
+        "title"         "Heavyspirit: Damage Trail"
+        "module"        "heavyspirit"
+        "description"   "Heavy spirits deal a small amount of damage under them, similar to light spirits."
+        "effect"        "addbehavior/heavyspirit/dmgtrail/frametravel/damage/0.01/0.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "heavyspiritsuperfast"
+        "title"         "Heavyspirit: Ultra Thrusters"
+        "module"        "heavyspirit"
+        "description"   "Heavy spirits move 5X as fast, but last for 1/4 the time."
+        "effect"        "mulattr/heavyspirit/shot_speed/5, mulattr/heavyspirit/shot_lifetime/0.25"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "id"            "heavyspiritsynergyboost"
+        "title"         "Heavyspirit: Synergy Boost"
+        "module"        "heavyspirit"
+        "description"   "Heavyspirit shot speed X1.05 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_heavyspirit/mulattr/heavyspirit/shot_speed/1.05"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "heavyspiritpowerredirection"
+        "title"         "Heavyspirit: Power Redirection"
+        "module"        "heavyspirit"
+        "description"   "Heavyspirit damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/heavyspirit/shot_damage/0.8, mulattr/not_heavyspirit/shot_damage/1.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    RegisterForMsg("add" <module concat "AddUpgrades")
+    RegisterForMsg("ShotRegistration" "ShotRegistration")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return

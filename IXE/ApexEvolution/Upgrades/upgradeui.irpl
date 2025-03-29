@@ -94,6 +94,18 @@
 								'color':'#FFFFFF',
 								'active':false,
                                 'events': ['UPGRADE_CHOSEN']
+							},
+							{
+								'type':  'button', 
+								'text': 'upgrade here',
+								'pivot': [0.5, 0.5],
+								'pos': [320, 0], 
+								'width': 300, 
+								'height': 400,
+								'name':'3',
+								'color':'#FFFFFF',
+								'active':false,
+                                'events': ['UPGRADE_CHOSEN']
 							}
         ]
     }"
@@ -225,6 +237,13 @@
 		'Components': 	[
 	"
 
+	# Show artifact button first
+	<depth 30 sub >depth
+	"{'type':'button', 'name':'ARTIFACTS', 'anchor': [0, 1],'pivot': [0, 1], 'width': 186, 'height': 30, 
+	'pos': [0," <depth "], 
+	'text': 'ARTIFACTS', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_MODULE_STATS'],
+	}, "
+
 	# Show stats for each unlocked module
 	<-*unlockedModules GetTableKeys >modules
 	<modules 0 do
@@ -246,6 +265,11 @@
 	@ConcatAll
 
 :UiModule
+	if(<module ToUpper "ARTIFACTS" eq)
+		@UiArtifacts
+		return
+	endif
+
 	60 >depth
 	@BeginConcatAll
 	"{
@@ -307,6 +331,81 @@
 						]
 	}"
 	@ConcatAll
+
+:UiArtifacts
+	30 >depth
+
+	@BeginConcatAll
+	"{
+		'anchor': [0, 1],
+		'pos': [186, -42],
+		'pivot': [0, 1],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#00000000',
+		'Components': 	[
+	"
+
+	# Show a button for each artifact collected
+	
+	<-*upgradeCollected GetTableKeys >upgrades
+	<upgrades 0 do
+		--upgrade
+		<upgrades[i] >upgradeId
+
+		# Find the artifact with the matching ID, if any
+		<-*upgradePool[5] >artifacts
+		<artifacts 0 do
+			if(<artifacts[i]{"id"} <upgradeId eq)
+				<artifacts[i] >upgrade
+				break
+			endif
+		loop
+
+		# Show info on the upgrade if we find one
+		if(-?upgrade)
+			<depth 30 sub >depth
+			"{'type':'button', 'name':'" <upgrade{"id"} "', 'anchor': [0, 1],'pivot': [0, 1], 'width': 500, 'height': 30, 
+			'pos': [0," <depth "], 
+			'text': ' "
+			"<align=" DQ "left" DQ ">"
+			if(<-*upgradeCollected{<upgradeId} 1 gt)
+				"(X" <-*upgradeCollected{<upgradeId} ") "
+			endif
+			<upgrade{"title"} ": " ":" StringReplace ":" Split dup GetListCount 1 sub GetListElement "'" "\'" StringReplace
+
+			"', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_MODULE_STATS'],
+			'tooltip': '" <upgrade{"description"} "'" "\'" StringReplace "'
+			}, "
+		endif
+	loop
+
+	<depth 30 sub >depth
+
+	# Show a button for each WEAPON artifact
+	<-*weaponArtifacts GetTableValues >artLists
+	<artLists 0 do
+		<artLists[i] >arts
+		<arts 0 do
+			<arts[i] >upgrade
+			<depth 30 sub >depth
+			"{'type':'button', 'name':'" <upgrade{"id"} "', 'anchor': [0, 1],'pivot': [0, 1], 'width': 500, 'height': 30, 
+			'pos': [0," <depth "], 
+			'text': ' "
+			"<align=" DQ "left" DQ ">"
+			<upgrade{"title"} "'" "\'" StringReplace
+			"', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_MODULE_STATS'],
+			'tooltip': '" <upgrade{"description"} "'" "\'" StringReplace "'
+			}, "
+
+		loop
+	loop
+
+	"
+						]
+	}"
+	@ConcatAll
+	dup trace
 
 # Calculates the current UI scale
 :GetUiScale

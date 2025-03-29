@@ -8,6 +8,14 @@ $module:"maker"
 # If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
 $behavior:""
 
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "maker" "cannon" "/ApexEvolution/Sprites/Shots/maker.png" 
+    "basehit/hitcreeper/destroy"
+    "basedestroy/ondestroy/ac"
+    List
+    "RegisterShot" swap SendMsg
+
 #Defines all the default upgrades for each included module. 
 :AddUpgrades
     # Data is how many of this module are on the main ship to start
@@ -70,8 +78,8 @@ $behavior:""
         "title"         "Overflowing Maker Shots"
         "module"        "maker"
         "description"   "Maker shots leave behind a trail of anticreeper as they fly, but deposit less on impact."
-        "effect"        "incattr/maker/actrail/1, mulattr/maker/shot_damage/0.5"
-        "rarity"        5
+        "effect"        "mulattr/maker/shot_gravity/0.5, mulattr/maker/shot_speed/0.5, mulattr/maker/shot_damage/0.5, addbehavior/maker/actrail/frametravel/ac/0.5/0.25"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -79,9 +87,90 @@ $behavior:""
         "id"            "makermastery"
         "title"         "Maker Mastery"
         "module"        "maker"
-        "description"   "Maker damage X1.5. Removes all future maker upgrades."
-        "effect"        "mulattr/maker/shot_damage/1.5, banmodule/maker, banupgrade/nummaker"
-        "rarity"        5
+        "description"   "Maker damage X1.75. Removes all future maker upgrades."
+        "effect"        "mulattr/maker/shot_damage/1.75, banmodule/maker, banupgrade/nummaker"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "makerdumpmode"
+        "title"         "Maker: Dump Mode"
+        "module"        "maker"
+        "description"   "Makers are always on, and dump many small shots with gravity down around you."
+        "effect"        "mulattr/maker/shot_damage/0.4, mulattr/maker/shot_damage_distance/0.8, mulattr/maker/num_shots/5, incattr/maker/shot_gravity/0.3, mulattr/maker/spread/360, setattr/maker/spread_rand_mode/1, setattr/maker/dump_mode/1, banupgrade/fire_rangemaker"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "makerdoubleshot"
+        "title"         "Maker: Double Shot"
+        "module"        "maker"
+        "description"   "The maker fires two shots, but each one is weaker."
+        "effect"        "mulattr/maker/num_shots/2, mulattr/maker/shot_damage/0.85, mulattr/maker/shot_damage_distance/0.85"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "makerwidearea"
+        "title"         "Maker: Wide-Area Shots"
+        "module"        "maker"
+        "description"   "Maker AC radius X1.5, but damage is halved."
+        "effect"        "mulattr/maker/shot_damage/0.5, mulattr/maker/shot_damage_distance/2"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "makerpierce"
+        "title"         "Maker: Piercing Shots"
+        "module"        "maker"
+        "description"   "Maker shots can travel through creeper, and deal a bonus 35% damage when hitting a wall."
+        "effect"        "removebehavior/maker/basehit, removebehavior/maker/basedestroy, addbehavior/maker/piercehit/hitcreeper/ac, addbehavior/maker/wallhit/ondestroy/ac/0.35"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "makerbigglobs"
+        "title"         "Maker: Bigger Globs"
+        "module"        "maker"
+        "description"   "Maker radius X2, but they fire 3X slower."
+        "effect"        "mulattr/maker/shot_damage_distance/2, mulattr/maker/fire_delay/3"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "makergatling"
+        "title"         "Maker: Gatling"
+        "module"        "maker"
+        "description"   "Double maker fire rate, but AC depth X0.75 and radius X0.9."
+        "effect"        "mulattr/maker/shot_damage/0.75, mulattr/maker/shot_damage_distance/0.9, mulattr/maker/fire_delay/0.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+        
+    Table(
+        "id"            "makersynergyboost"
+        "title"         "Maker: Synergy Boost"
+        "module"        "maker"
+        "description"   "Maker fire radius X1.025 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_maker/mulattr/maker/shot_damage_distance/1.025"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "makerpowerredirection"
+        "title"         "Maker: Power Redirection"
+        "module"        "maker"
+        "description"   "Maker damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/maker/shot_damage/0.8, mulattr/not_maker/shot_damage/1.1"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -91,6 +180,7 @@ $behavior:""
     -1 ->*allModules{<module}
     <behavior ->*moduleBehaviors{<module}
     RegisterForMsg("add" <module concat "AddUpgrades")
+    RegisterForMsg("ShotRegistration" "ShotRegistration")
 
 :DetectModuleNum
     999 0 do

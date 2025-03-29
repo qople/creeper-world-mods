@@ -3,17 +3,32 @@
 
 $FIRE_RANGE:40
 $SPIN_TIME:600 # Frames for one rotation
-$BEAM_RADIUS:1.0
-$BEAM_DAMAGE:1.8 # Depth PER FRAME
-$NUM_BEAMS:2
-$FIRE_COST:0.01
+$shot_damage_distance:1.0
+$shot_damage:1.3 # Depth PER FRAME
+$NUM_BEAMS:1
+$FIRE_COST:0.1
+
+# Flag set by a weapon artifact
+$singleBeam:0
+
+$uptime:1
+$downtime:0
 
 if(<FIRE_RANGE <lastRange neq)
     @UpdateRange
 endif
 
+if(<singleBeam)
+    once
+        <NUM_BEAMS AsInt 1 do
+            Self <beams[i] DestroyBeam
+        loop
+    endonce
+endif
+
 Sys_Operable
-ElapsedTime >start
+
+<NUM_BEAMS 1 max >NUM_BEAMS
 
 if(Self GetUnitDirection <lastDir neq)
     # Flip
@@ -21,12 +36,29 @@ if(Self GetUnitDirection <lastDir neq)
     Self GetUnitDirection >lastDir
 endif
 
-if(Self GetAmmo <FIRE_COST gte)
-    Self dup GetRotation 360.0 <SPIN_TIME div add dup >rot SetRotation
+if(GetTimer0 eq0 <downtime &&)
+    <up ! >up
+    if(<up)
+        <uptime SetTimer0
+    else
+        <downtime SetTimer0
+    endif
+endif
 
+Self dup GetRotation 360.0 <SPIN_TIME div add dup >rot SetRotation
+
+if(<up !)
+    return
+endif
+
+if(Self GetAmmo <FIRE_COST gte)
     <NUM_BEAMS AsInt 0 do
-        @ManageBeam(i)
+        if(i <singleBeam && !)
+            @ManageBeam(i)
+        endif
     loop
+
+    Self <FIRE_COST ConsumeAmmo
 endif
 
 :ManageBeam
@@ -36,19 +68,35 @@ endif
     endif
     <beams[<beamNum] >beam
     Self GetPosition >pos
-    Self <beam <BEAM_RADIUS SetBeamWidth 
-    Self <beam <beamEnd SetBeamEnd
+    Self <beam <shot_damage_distance SetBeamWidth 
     Self <beam <pos SetBeamStart
-    Self <beam true SetBeamEnabled
     <rot 360 <NUM_BEAMS asfloat div <beamNum mul add >beamRot
-    <beamRot Deg2Rad mul cos <beamRot Deg2Rad mul sin V2 <FIRE_RANGE mul Self GetPosition add >beamEnd
+    <beamRot Deg2Rad mul dup cos swap sin V2 dup normalize >forward <FIRE_RANGE mul Self GetPosition add >beamEnd
+    Self <beam <beamEnd SetBeamEnd
+    Self <beam true SetBeamEnabled
 
-
-    GetCreeperOnLine(Self <beamRot <FIRE_RANGE <beamEnd false) >creeper
+    GetCreeperOnLine(Self <beamRot <FIRE_RANGE V2(-1 -1) false) >creeper
     if(<creeper.x gte0)
+        if(Self <beamEnd EV2 GetLOS !)
+            # Check along the rest of the beam for LOS
+            <creeper <pos Distance >startDist
+            <creeper >target
+            <FIRE_RANGE <startDist sub 0 do
+                <target <forward add >target
+                Self <target EV2 GetLos ! <pos <target Distance <fire_range gt || if
+                    break
+                endif
+            loop 
+            #<target dup <pos Distance " " swap trace3
+        else
+            <beamEnd >target
+        endif
+
+        #<target trace
         # Damage the creeper
-        <pos <beamEnd <BEAM_RADIUS <BEAM_DAMAGE @DamageCreeperOnLine
+        <creeper <target <shot_damage_distance <shot_damage if(<singleBeam) <NUM_BEAMS mul endif @DamageCreeperOnLine
     endif
+
 
 
 :DamageCreeperOnLine
@@ -59,39 +107,64 @@ endif
         <highPos >lowPos
         >highPos
     endif
-    <lowPos.y @lineX >lastX
+    <highPos.y <lowPos.y 0.1 add max >highPos.y 
 
+    <highPos <lowPos sub EV2 atan2 >angle
+    <radius <angle cos abs 0.001 max dup2 div abs >r
+    mul abs >r2
+    <radius <angle sin abs 0.001 max mul abs >rY
 
-    if(<highPos.y AsInt <lowPos.y AsInt neq)
-        <highPos.y ceil 1 add <lowPos.y floor do
-            # Figure out the bounds for the X loop for this row, which is
-            # From <radius before where the line enters this Y value, to <radius after it leaves.
+    <highPos.x <lowPos.x
+    dup2 sub >dx
+    dup2 max <r2 add >maxX
+    min <r2 sub >minX
 
-            # Given two points (x1, y1) and (x2, y2), the equation for the line through those points is:
-            # y - y1 = (y2 - y1) / (x2 - x1) * (x - x1)
+    #<minX " " <maxX trace3
+    <highPos.y <lowPos.y sub >dy
 
-            # Since we have Y and are solving for X, we get:
-            # x = (y - y1) / (y2 - y1) * (x2 - x1) + x1
+    <lowPos.y <radius sub floor @lineX >lastX
 
-            # That equation is @lineX below. Using that, we get:
-            <lastX <radius sub >startIndex
-            i 1 add <highPos.y min @lineX dup >lastX <radius add 1 add >endIndex
+    # Count creeper in the whole rectangle we're in, so we can do it in one RPL call    
+    <minX <lowPos.y <rY sub floor <maxX <highPos.y <rY add 1 add V4 >area
+    
+    <area false false GetCreeperInArea >creeper
+    
+    #<highPos.y <lowPos.y do 
+    <area.3 <area.1 do
+        # Figure out the bounds for the X loop for this row, which is
+        # From <radius before where the line enters this Y value, to <radius after it leaves.
 
-            # Now we just iterate across.
-            <endIndex <startIndex do
-                if(i j GetCreeper gt0)
-                    i j dup2 GetCreeper dup >oldCreeper <damageAmt 1000000 mul AsInt sub 0 max SetCreeper
-                    <damageDealt <oldCreeper i j GetCreeper sub 1000000.0 div add >damageDealt
-                endif 
-            loop
+        # Given two points (x1, y1) and (x2, y2), the equation for the line through those points is:
+        # y - y1 = (y2 - y1) / (x2 - x1) * (x - x1)
+
+        # Since we have Y and are solving for X, we get:
+        # x = (y - y1) / (y2 - y1) * (x2 - x1) + x1
+
+        # That equation is @lineX below. Using that, we get:
+
+        if(<angle lt0)
+            <lastX <r add <maxX min >startIndex
+            i 1 add <highPos.y min @lineX dup >lastX <r sub <minX max >endIndex
+        else
+            <lastX <r sub <minX max >startIndex
+            i 1 add <highPos.y min @lineX dup >lastX <r add <maxX min >endIndex
+        endif
+
+        # Now we just iterate across.
+        <endIndex <startIndex
+        dup2 min >startIndex
+        max 1 add <startIndex swap do
+            i j 1 1 <damageAmt 
+            -1000000 mul DamageCreeper
         loop
-    endif
+    loop
+
+    <creeper <area false false GetCreeperInArea sub >damageDealt
 
     "GiveXp" <damageDealt SendMsg
 
 :lineX
-    >y
-    <y <lowPos.y sub <highPos.y <lowPos.y sub div <highPos.x <lowPos.x sub mul <lowPos.x add
+    <lowPos.y sub <dy div <dx mul <lowPos.x add
 
 :MakeNewBeam
     CreateBeam(Self "darkray") >beam
@@ -100,8 +173,10 @@ endif
     SetBeamCapVertices(Self <beam 5)
 
 :Once
+    Self true EnableLos
     Self 180 SetRotation
     CreateList >beams
+    true >up
 
 :GameLoaded
     #CreateList >beams
@@ -115,6 +190,7 @@ endif
 
 :UpdateRange
     <FIRE_RANGE >lastRange
-    Self <FIRE_RANGE SetLosRange
+    #Self 2 SetLosSandPassBits
+    Self <FIRE_RANGE 1 add SetLosRange
     Self <FIRE_RANGE SetShowRange
     Self V4(0.467 0.11 0.659 0.8) SetShowRangeColor

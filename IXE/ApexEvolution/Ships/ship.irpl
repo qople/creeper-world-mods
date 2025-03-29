@@ -1,16 +1,41 @@
 $moveSpeed:3.0
-$friction:2.0
 $camZoom:64
 $allowWarp:1
 $allowFlip:0 # CURRENTLY BROKEN, DO NOT USE.
+$revives:0
+
+# Measure the length between each update for interpolation reasons
+ElapsedTime dup <lastTime sub >lastUpdateLength >lastTime
 
 # ==========================
-if(<checkMove)
+if(<reviving)
+    Self <pos SetPosition
+    <reviving 1 sub >reviving
+    if(<reviving eq0)
+        # Move us back and convert
+        Self <revPos SetPosition
+        <revPos >pos
+        <pos EV2 45 false ConvertCreeperToAc
+        StopSoundLoop(Self)
+    endif
+    return # Halt the script
 
+else if(GetTimer1 1 eq)
+    # Check for the revive
+    # The script waits 1 frame, so that scripts like the soulkeeper's can step in and give a revive
+    if(<revives)
+        @Revive
+    else
+        Self 1 Destroy
+    endif
+endif endif
+
+if(<checkMove)
     if(Self true GetOverSand)
         # Move back
         Self <pos SetPosition
         Self <dir SetUnitDirection
+        10 SetTimer0
     else
         if(<checkMove 2 neq)
             Self GetPosition
@@ -19,7 +44,7 @@ if(<checkMove)
             <pos SetCameraPosition
             if(<checkMove 1 eq)
                 Self <pos MoveUnit
-                PlaySound("GalaxyShipMove" 1)
+                PlaySound("jump" 1)
                 <pos dup >pos >lastPos
             endif
         endif
@@ -27,15 +52,28 @@ if(<checkMove)
     false >checkMove
 endif
 
+Self GetAllPixelCount >allPixels
+
+
 
 @Move
 
+once
+    return
+endonce
+# Keep track of the total number of pixels in the ship
+<allPixels.1 <maxPixels max >maxPixels
+<allPixels.1 <maxPixels asfloat div >portion
+if(<portion 0.5 lt)
+    2 SetTimer1
+endif
+
 :Move
-    if(Self GetAllPixelCount [2] Self GetAllPixelCount [1] eq0 &&)
+    if(<allPixels.2 <allPixels.1 eq0 &&)
         Self GetPosition >lastPos
     endif
+    Self <pos Self GetPhysicsVelocity 30 div add SetPosition
     Self GetPosition >pos
-
     
     # Push the ship based on what keys are pressed
     Vector0
@@ -54,48 +92,66 @@ endif
     >moveForce
     Self <moveForce false AddPhysicsForce
 
-    # Apply a force backwards, much stronger if control is held.
-    if(-?lastPos)
-        <pos <lastPos sub >velocity
-        AddPhysicsForce(Self <velocity if(GetKey("LeftControl" 1)) 5.0 else <friction endif mul neg false)
-    endif
-
     # Handle rotation back to center, scaled stronger the farther we are from aligned
     Self GetRotation >rot
+
+    # When flipped:
+    # Add rotation = clockwise
+
+    # When not:
+    # Add rotation = counter clockwise
     
     180 180 <rot sub abs sub
-    #if(Self GetUnitDirection)
-    #    90 add neg 90 sub
-    #endif
+    if(Self GetUnitDirection)
+        #neg
+        #90 add neg 90 sub
+    endif
     >dist
     
-        
  
     Self MoveTowardsAngle(<rot
     if(Self GetUnitDirection)
-        neg
+        neg 
+    #    360 add 360 mod
+    #    #90 add neg 90 sub 180 add
     endif
-     0 <dist 0.01 mul 0.01 add) MoveRotation
+    0 <dist 
+    #if(Self GetUnitDirection)
+    #    0.001 mul 0.001 add
+    #else
+        0.01 mul 0.01 add
+    #endif 
+    #if(Self GetUnitDirection)
+    #    neg
+    #endif
+    1 min) dup >newRot MoveRotation
 
+    False SetPrintPrefixEnabled
 
-    if(GetMappedKeyDown("Custom1" 1) <allowWarp &&)
-        Self GetPosition >pos
-        Self GetUnitDirection >dir
-        GetAllPixelCount(self) ->pixelCounts #A vector of: NONE, ONBOARD, INROUTE, DEAD
-        if(<pixelCounts.1 neq0)
-            Self GetMouseCell SetPosition
-            true >checkMove
-            #Self GetMouseCell EV2 1 1 V4 MoveUnit
+    if(GetMappedKeyDown("Custom1" 1) <allowWarp && GetTimer0 eq0 &&)
+        GetMousePos >mouse
+        150 SetTimer0
+        if(<mouse.x dup 0 511 clamp eq <mouse.y dup 0 511 clamp eq &&)
+            #if(<mouse Self GetPosition V4(0 0 511 511) false IsPassable)
+                Self GetPosition >pos
+                Self GetUnitDirection >dir
+                #GetAllPixelCount(self) ->pixelCounts #A vector of: NONE, ONBOARD, INROUTE, DEAD
+                #if(<pixelCounts.1 neq0)
+                    Self GetMouseCell SetPosition
+                    true >checkMove
+                    #Self GetMouseCell EV2 1 1 V4 MoveUnit
 
+                #endif
+            #endif
         endif
     endif
 
     if(GetSelectedUnits Self 1 sub ListContains GetMappedKeyDown("FlipShip" 1) && <allowFlip &&)
         Self GetPosition >pos
         Self GetUnitDirection >dir
+        Self 0 MoveRotation
         GetAllPixelCount(self) ->pixelCounts #A vector of: NONE, ONBOARD, INROUTE, DEAD
         if(<pixelCounts.1 neq0)
-            #Self 0 SetRotation
             Self dup GetUnitDirection ! SetUnitDirection
             #Self GetMouseCell SetPosition
             2 >checkMove
@@ -111,22 +167,43 @@ endif
 
     #Move the camera
     SetMoveMapManualMode(true)
-    
-    # Zoom the camera
-    if(GetMappedKeyDown("ZoomMapIn" 1))
-        SetCameraZoom(GetCameraZoom 4 sub)
-    endif
-    if(GetMappedKeyDown("ZoomMapOut" 1))
-        SetCameraZoom(GetCameraZoom 4 add)
-    endif
 
     SetCameraPosition(<pos)
     <pos >lastPos
+    Self GetPhysicsVelocity 30 div <lastUpdateLength div >vel
 
+:Revive
+    390 >reviving
+    Self GetPosition >revPos
+    Self V2(1500 1500) dup >pos SetPosition
+    <revives 1 sub >revives
+    PlaySoundLoop("SoundLoop_alarm2" 1 Self)
 
 :Once
+    Self GetPosition >pos
+    0 >maxPixels
     SetCameraZoom(<camZoom)
+    RegisterForMsg("MSG_FrameAdvance" "FrameAdvance")
+    RegisterForMsg("addrevive" dup)
 
+# Runs every FRAME, be careful what you put here!
+:FrameAdvance
+    if(<checkMove)
+        return
+    endif
+    if(GetPause !)
+        # Interpolate the ship's position
+        Self
+
+        # Velocity is already adjusted to cells per millisecond to simplify this calculation
+        <pos <vel ElapsedTime <lastTime sub mul add
+        dup SetCameraPosition
+        SetPosition
+        
+    else
+        Self <pos SetCameraPosition
+        ElapsedTime >lastTime
+    endif
 
 :Awake
     RegisterForMsg("ConfirmShipPlaced" dup)
@@ -139,11 +216,12 @@ endif
 
 :ConfirmShipPlaced
     SendMsg("PingBack" Self)
-    #ClearInventory
-    #false ShowInventory
 
 :Destroyed
     false SetMoveMapManualMode
     if(GetEditMode ! <-*loseOnShipDeath &&)
         MissionLoss
     endif
+
+:addrevive
+    <revives <_DATA Asint add >revives

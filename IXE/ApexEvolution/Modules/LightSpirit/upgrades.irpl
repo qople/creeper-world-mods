@@ -1,0 +1,197 @@
+# Template for adding a module, along with default upgrades
+
+# The name of the module
+$module:"lightspirit"
+
+# Primary behavior of the module
+# Defaults to IRPL script 1 if empty
+# If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
+$behavior:""
+
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "lightspirit" "spirit" "/ApexEvolution/Sprites/Shots/lightspirit.png" 
+    "basedmg/frametravel/damage"
+    List
+    "RegisterShot" swap SendMsg
+
+#Defines all the default upgrades for each included module. 
+:AddUpgrades
+    # Data is how many of this module are on the main ship to start
+    <_DATA >startingModules
+
+    CreateList >upgrades
+    
+    Table(
+        "id"            "numlightspirit"
+        "title"         "Weapon: Light Spirit"
+        "description"   "Launches semi-autonomous drones, that target creeper close to your ship."
+        "effect"        "addmodule/lightspirit/1"
+        "rarity"        0
+        "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
+    ) <upgrades swap AppendToList
+    
+    # Templates, detected by the presence of the "attribute" element
+    # They have less control than the normal tables, but are much smaller and easier to work with.
+    Table(
+        "attribute"         "fire_range"
+        "attribute_name"    "range"
+        "module"            "lightspirit"
+        "title"             "Long-range Scanning"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+
+    Table(
+        "attribute"         "shot_damage"
+        "attribute_name"    "damage"
+        "module"            "lightspirit"
+        "title"             "Better Onboard Weaponry"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "shot_damage_count"
+        "attribute_name"    "damage area"
+        "module"            "lightspirit"
+        "title"             "Damage Dispersal"
+        "effect_type"       "incmult"
+        "effect_strengths"  "0.1, 0.15, 0.22, 0.33, 0.5"
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "attribute"         "fire_delay"
+        "attribute_name"    "fire delay"
+        "module"            "lightspirit"
+        "title"             "Faster Production"
+        "sequential"        true
+        "effect_type"       "incmult"
+        "effect_strengths"  "-0.1, -0.1, -0.1, -0.1, -0.1"
+        "pickup_limit"      "2,    2,    2,    1,    1"
+    ) <upgrades swap AppendToList
+
+    # Additional stats to track
+    Table(
+        "attribute"         "shot_lifetime"
+        "attribute_name"    "lifetime"
+        "module"            "lightspirit"
+    ) <upgrades swap AppendToList
+
+    # Artifacts
+    Table(
+        "id"            "lightspiritnotsolight"
+        "title"         "Not-so-light Spirits"
+        "module"        "lightspirit"
+        "description"   "Light spirits take 4X as long to make, but deal 5X damage."
+        "effect"        "mulattr/lightspirit/fire_delay/4, mulattr/lightspirit/shot_damage/5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lightspiritmastery"
+        "title"         "Lightspirit Mastery"
+        "module"        "lightspirit"
+        "description"   "Lightspirit damage X1.75. Removes all future lightspirit upgrades."
+        "effect"        "mulattr/lightspirit/shot_damage/1.75, banmodule/lightspirit, banupgrade/numlightspirit"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+#
+    Table(
+        "id"            "lightspiritac"
+        "title"         "Lightspirit: Extra AC Tank"
+        "module"        "lightspirit"
+        "description"   "Light spirits deposit some AC when they hit their target."
+        "effect"        "addbehavior/lightspirit/actank/hittarget/ac/1/1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lightspiritlonglasting"
+        "title"         "Lightspirit: Larger Fuel Tanks"
+        "module"        "lightspirit"
+        "description"   "Light spirits can stay out for twice as long, but take 60% longer to make."
+        "effect"        "mulattr/lightspirit/shot_lifetime/2, mulattr/lightspirit/fire_delay/1.6"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lightspiritshortrange"
+        "title"         "Lightspirit: Short-Range Destruction"
+        "module"        "lightspirit"
+        "description"   "Light spirit range and lifetime are halved, but damage is tripled."
+        "effect"        "mulattr/lightspirit/fire_range/0.5, mulattr/lightspirit/shot_lifetime/0.5, mulattr/lightspirit/shot_damage/3"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lightspiritultrawide"
+        "title"         "Lightspirit: Ultra-Wide Effects"
+        "module"        "lightspirit"
+        "description"   "Light spirits deal damage over 5X the area, but with 1/4 the damage."
+        "effect"        "mulattr/lightspirit/shot_damage/0.25, mulattr/lightspirit/shot_damage_distance/2, mulattr/lightspirit/shot_damage_count/5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lightspiritdetonation"
+        "title"         "Lightspirit: Unfinished Business"
+        "module"        "lightspirit"
+        "description"   "Light spirits explode instead of returning when they reach the end of their lifetime."
+        "effect"        "addbehavior/lightspirit/lifetimedestroy/lifetimeend/destroy, addbehavior/lightspirit/dmgondestroy/ondestroy/damage/15/1.5/100"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lightspiritquantoverqual"
+        "title"         "Lightspirit: Quantity over Quality"
+        "module"        "lightspirit"
+        "description"   "Light spirits are made twice as fast, but their duration is reduced."
+        "effect"        "mulattr/lightspirit/shot_lifetime/0.65, mulattr/lightspirit/fire_delay/0.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "id"            "lightspiritsynergyboost"
+        "title"         "Lightspirit: Synergy Boost"
+        "module"        "lightspirit"
+        "description"   "Lightspirit damage area X1.05 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_lightspirit/mulattr/lightspirit/shot_damage_count/1.05"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "lightspiritpowerredirection"
+        "title"         "Lightspirit: Power Redirection"
+        "module"        "lightspirit"
+        "description"   "Lightspirit damage X0.8, but other modules damage X1.1."
+        "effect"        "mulattr/lightspirit/shot_damage/0.8, mulattr/not_lightspirit/shot_damage/1.1"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+
+    SendMsg("AddUpgradesToPool" <upgrades) 
+
+:Once
+    -1 ->*allModules{<module}
+    <behavior ->*moduleBehaviors{<module}
+    RegisterForMsg("add" <module concat "AddUpgrades")
+    RegisterForMsg("ShotRegistration" "ShotRegistration")
+
+:DetectModuleNum
+    999 0 do
+        if(<-*mainShip <module i concat GetChild -1 eq)
+            i return
+        endif
+    loop
+    999 return

@@ -1,3 +1,97 @@
+# Version 1.1 changes
+
+# Fixes:
+# You can now change your move target before pixels arrive, but there is a 5 second cooldown after starting the move before you can do it again.
+# Fixed weapon artifacts occasionally showing a (X2) on the stats menu
+# Fixed weapon artifacts rarely getting reset (hopefully)
+# Tentative fix for rockets spawning from the wrong position.
+# "Start endless" button is now recreated on save/load
+# Fixed tooltips on artifact stat menu
+
+# Misc. Changes:
+# Endless mode now shows the current creeper strength, and gives it as your "score" on death
+
+# Shot system:
+# Switched the shot system to use message-based shot type creation,
+#   so new shot types can now be easily created for new modules.
+#   Note that new shot classes cannot be created this way.
+# Added the spirit shot class
+#   The class has triggers for hittarget and lifetimeend, which are not supported on other shot classes
+# Greatly optimized cannon shots traveling over sand
+# Slightly optimized the AC behavior on shots
+
+# Ships:
+# Moved ammo generation and physics friction into unit JSON attributes
+# Added the Soulkeeper ship
+
+# Modules:
+# Added lightspirit, heavyspirit, and lokispirit modules
+# Increased the maximum damage radius of the cannon (8 -> 12) and sentrygun (12 -> 18)
+# Increased the base radius of the maker from 1.5 to 1.75.
+
+# Artifacts:
+# Fixed a couple weapon artifacts
+#   - Maker bigger globs is X3 fire delay instead of X5 (The math was wrong, it would actually decrease DPS)
+#   - Changed blaster beam disperser downside from 1/4 penetration to 1/4 damage
+#   - Sentrygun Spray and Pray was missing the fire rate bonus effect
+#   - Maker piercing shots no longer changes the damage stat, and the maker still deals full damage on hitting creeper, removing its downsides and antisynergies
+#   - The darkling had only 9 weapon artifacts, so it now has a new one to bring it to 10: the beam combiner.
+#   - Fixed a typo in the description for maker power redirection
+# Added a couple new artifacts
+
+
+# =====================================
+
+# Version 1.0 changes
+
+# Fixes:
+# Fixed rng seed breaking after the game has been running for a long time
+# Fixed inventory disappearing after save/load before placing a ship
+# Upgrade selection shouldn't break when the pool goes below 3 now
+# Endless mode menu should be properly recreated on save/load
+# Fixed some issues with the DamageCreeperOnLine function used by the Darkling and the new Blaster, and optimized it some
+# Upgrades cannot be chosen until half a second after they appear
+
+# Misc. changes:
+# Level cost scaling exponent has been increased from 2.5 to 2.8 to adjust for weapon artifacts
+# Level cost scaling now increases further over level 100
+# Added FrameAdvance ship and camera interpolation (may cause some slight artifacts)
+# Slammer mode now changes the creeper scaling exponent from 1 to 1.3
+# Added an upgrade sound effect (the gem collect sound)
+
+# Artifacts:
+# Added several new artifacts
+# Added 10 weapon artifacts for each weapon, which can be found through a couple choices in the normal artifact pool.
+# Up to 3 weapon artifacts can be picked for each weapon, totaling 120 different artifact combinations for each weapon.
+# Added an artifact list to the stats UI
+
+# Modules:
+# Added ConsumeAmmo calls to darkling, bertha, and rocket. The sentrygun still fires while damaged.
+# Changed darkling ammo consumption per frame from 0.01 to 0.1.
+# The darkling now starts with one beam. 4 beams is still the maximum that can be gotten through beam splitter upgrades.
+# The Darkling now shows the damage effect on cells it hits
+# Reduced darkling base damage from 1.8 to 1.3
+# Added damage depth upgrades to the rocket.
+# Modules now work with decimal fire rates. For instance, fire rate of 2.4 has a 60% chance to have a delay of 2, 40% chance of delay 3. Delay below 1 has no added bonus.
+# Added blaster and odincannon modules
+
+# Ships:
+# Added Odin City ship
+# Added a second lathe to the Guardian
+# Added a third sentrygun to the Swordfish
+
+# Shot system:
+# Updated the shot system in shotmanager.irpl to be modifiable and function-based.
+# This allows shots to have their properties changed over the course of the level.
+
+# Upgrade system:
+# Added more robust module selection for upgrade effects
+# Fixed some issues with automatic stat tracking
+# Fixed "setattr" upgrade effect
+# Added "addbehavior", "removebehavior", "foreachartifact", and "foreachlevel" options for upgrade effect types
+
+# =====================================
+
 # Beta Version 0.2 changes
 # These are the major changes, almost everything has had some sort of touch up
 
@@ -8,7 +102,6 @@
 # Increased the size of the upgrade boxes.
 
 # Ships
-# Removed two rockets from the swordfish.
 # Added the Guardian ship.
 # Added a ship selector.
 

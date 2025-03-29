@@ -1,0 +1,231 @@
+$shot_damage:2.0
+$shot_damage_distance:5.0
+$shot_penetration:4
+$fire_range:54
+$fire_delay:20
+$ROTATE_SPEED:6.0
+$FIRE_COST:0.2
+
+$num_shots:1
+$spread:5
+
+$fadeAmt:0.08
+
+# Vars set by artifacts to get some special effects in
+$fallout:0.0
+$rainbow:0
+$cavitation:0
+$rayofdoom:0
+$amplifier:0
+
+if(<fire_range <lastRange neq)
+    SetLosRange(Self <fire_range)
+    SetShowRange(Self <fire_range)
+    <fire_range >lastRange
+endif
+
+
+# Fade the beams
+-1 <beams 1 sub do
+    <beamFade[i] <fadeAmt sub dup >beamFade[i]
+    if(lte0)
+        # Recycle the beam for future shots
+        Self <beams[i] false SetBeamEnabled
+        <beamPool <beams[i] AppendToList
+
+        <beams i RemoveListElement
+        <beamFade i RemoveListElement
+        <beamStart i RemoveListElement
+        <beamEnd i RemoveListElement
+        <beamColor i RemoveListElement
+    else
+        Self <beams[i] V4(<beamColor[i] EV3 <beamFade[i]) SetBeamColor
+        if(<fallout gt0)
+            Self <beamStart[i] <beamEnd[i] <shot_damage_distance <shot_damage <fallout mul @DamageCreeperOnLine
+        endif
+    endif  
+loop
+
+SYS_Operable
+
+GetNearestCreeper(self false) ->nearestCreeper
+if (<-nearestCreeper.x gte0)
+	<-nearestCreeper ->rotateTarget
+	SignedAngle(GetDirRight(self) <-rotateTarget GetPosition(self) -) ->rotationRemaining
+	if (abs(<-rotationRemaining) 0.001 <)
+		<-nearestCreeper ->hardTarget
+	else
+		Rotate(self clamp(<-rotationRemaining neg(<-ROTATE_SPEED) <-ROTATE_SPEED))
+		V2(-1 -1) ->hardTarget
+	endif
+	if (GetTimer0 eq0) 
+		if (GetAmmo(self) <-FIRE_COST >=)
+			@TryFire
+		endif	
+	endif	
+endif
+
+#---
+:TryFire
+	GetCreeperOnLine(self dup GetRotation 500 V2(-1 -1) false) ->col
+	if (<-col.x gte0)
+        PlaySound("retro_laser_gun_shoot_25" 0.4)
+
+        Self GetRotation <num_shots 1 sub <spread 0.5 mul mul sub >rot
+        <num_shots 0 do
+            if(<rainbow)
+                <rainbowColors[i]
+            else
+                V4(0.114 0.604 0.114 0.8)
+            endif
+            >color
+
+            if(<num_shots 1 gt)
+                GetCreeperOnLine(self <rot 500 V2(-1 -1) false) ->col
+            endif
+            @Fire
+            <rot <spread add >rot
+        loop
+        ConsumeAmmo(Self <FIRE_COST)
+        <fire_delay RandFloat add SetTimer0
+	endif
+
+#Shoots one shot
+:Fire
+    Self GetPosition >pos
+
+    if(<col.x lt0)
+        # Move the hit position to the end of our range
+        <pos <rot Deg2Rad mul cos <rot Deg2Rad mul sin V2 Normalize <-fire_range mul add >col
+    endif
+
+
+    # Move the target into the creeper based on penetration
+    <col <pos sub dup Magnitude >dist normalize <dist <shot_penetration add mul <pos add >target
+
+    # Make a beam
+    @GetBeam >beam
+    SetBeamStart(Self <beam <pos)
+    SetbeamEnd(Self <beam <target)
+    SetbeamWidth(Self <beam <shot_damage_distance)
+    
+
+    
+    Self <beam <color SetBeamColor
+    
+
+    <col <target <shot_damage_distance <shot_damage @DamageCreeperOnLine
+
+    if(<cavitation)
+        <target EV2 9999 <shot_damage_distance <shot_penetration mul 3 div <shot_damage 0.1 mul -1000000 mul DamageCreeper
+    endif
+    
+    <beams <beam AppendToList
+    <beamFade 0.8 AppendToList
+    <beamStart <col AppendToList
+    <beamEnd <target AppendToList
+    <beamColor <color AppendToList
+#---
+
+:DamageCreeperOnLine
+    >damageAmt >radius >lowPos >highPos
+    0 >damageDealt
+    if(<lowPos.y <highPos.y gt)
+        <lowPos
+        <highPos >lowPos
+        >highPos
+    endif
+    <highPos.y <lowPos.y 0.1 add max >highPos.y 
+
+    <highPos <lowPos sub EV2 atan2 tau mod2 >angle
+    <radius <angle cos abs 0.001 max dup2 div dup trace >r
+    mul >r2
+    <radius <angle sin abs 0.001 max mul abs >rY
+
+    <highPos.x <lowPos.x
+    dup2 sub >dx
+    dup2 max <r2 add >maxX
+    min <r2 sub >minX
+    <highPos.y <lowPos.y sub >dy
+
+    <lowPos.y <radius sub @lineX >lastX
+
+    # Count creeper in the whole rectangle we're in, so we can do it in one RPL call    
+    <minX <lowPos.y <rY sub floor <maxX <highPos.y <rY add 1 add V4 >area
+    
+    <area false false GetCreeperInArea >creeper
+    
+    
+    <area.3 <area.1 do
+        # Figure out the bounds for the X loop for this row, which is
+        # From <radius before where the line enters this Y value, to <radius after it leaves.
+
+        # Given two points (x1, y1) and (x2, y2), the equation for the line through those points is:
+        # y - y1 = (y2 - y1) / (x2 - x1) * (x - x1)
+
+        # Since we have Y and are solving for X, we get:
+        # x = (y - y1) / (y2 - y1) * (x2 - x1) + x1
+
+        # That equation is @lineX below. Using that, we get:
+
+        if(<angle lt0)
+            <lastX <r add <maxX min >startIndex
+            i 1 add <highPos.y min @lineX dup >lastX <r sub <minX max >endIndex
+        else
+            <lastX <r sub <minX max >startIndex
+            i 1 add <highPos.y min @lineX dup >lastX <r add <maxX min >endIndex
+        endif
+
+        # Now we just iterate across.
+        <endIndex <startIndex
+        dup2 min >startIndex
+        max 1 add <startIndex swap do
+            i j 1 1 <damageAmt 
+            if(<amplifier)
+                i j V2 <col Distance 20.0 div 1 add 2 max mul
+            endif
+            -1000000 mul DamageCreeper
+        loop
+    loop
+
+    <creeper <area false false GetCreeperInArea sub >damageDealt
+
+    "GiveXp" <damageDealt SendMsg
+
+:lineX
+    >y
+    <y <lowPos.y sub <dy div <dx mul <lowPos.x add
+
+:Once
+    List("shot_damage_distance" "shot_damage", "shot_damage_count") >shotVars
+    <fire_delay SetTimer0
+    V4(1 0 0 1)
+    V4(1 0.4 0 1)
+    V4(1 1 0 1)
+    V4(0.3 0.8 0.3 1)
+    V4(0.3 0.3 1.0 1)
+    V4(0.5 0 1.0 1)
+    List >rainbowColors
+
+:GetBeam
+    if(<beamPool)
+        <beamPool PopList
+    else
+        Self "basic" CreateBeam
+    endif
+
+:Awake
+    # Beams don't persist
+    CreateList >beams
+    CreateList >beamFade
+    CreateList >beamStart
+    CreateList >beamEnd
+    CreateList >beamColor
+
+    CreateList >beamPool
+
+    0 ->lastRange
+	EnableLOS(self true)
+    SetLosRange(Self <fire_range)
+    SetShowRange(Self <fire_range)
+    SetShowRangeColor(Self 0.102 0.361 0.051 0.8 V4)

@@ -8,6 +8,14 @@ $module:"bertha"
 # If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
 $behavior:""
 
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "bertha" "rocket" "/ApexEvolution/Sprites/Shots/bertha.png" 
+    "basedestroy/ondestroy/damage"
+    List
+    "RegisterShot" swap SendMsg
+    
+
 #Defines all the default upgrades for each included module. 
 :AddUpgrades
     # Data is how many of this module are on the main ship to start
@@ -19,7 +27,7 @@ $behavior:""
     Table(
         "id"            "numbertha"
         "title"         "Weapon: bertha"
-        "description"   "The biggest gun we could build."
+        "description"   "A giant weapon similar to a rocket, capable of destroying large areas in one shot."
         "effect"        "addmodule/bertha/1"
         "rarity"        3
         "pickuplimit"   @DetectModuleNum <startingModules sub 0 max
@@ -62,9 +70,9 @@ $behavior:""
         "id"            "biggerbertha"
         "title"         "Bigger Bertha"
         "module"        "bertha"
-        "description"   "Bertha radius and damage X1.5, but double its fire delay."
-        "effect"        "mulattr/bertha/shot_damage/1.5, mulattr/bertha/shot_damage_distance/1.5, mulattr/bertha/fire_delay/2"
-        "rarity"        5
+        "description"   "Bertha radius X1.5, but double its fire delay."
+        "effect"        "mulattr/bertha/shot_damage_distance/1.5, mulattr/bertha/fire_delay/2"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -72,9 +80,89 @@ $behavior:""
         "id"            "berthamastery"
         "title"         "Bertha Mastery"
         "module"        "bertha"
-        "description"   "Bertha damage X1.5. Removes all future bertha upgrades."
-        "effect"        "mulattr/bertha/shot_damage/1.5, banmodule/bertha, banupgrade/numbertha"
-        "rarity"        5
+        "description"   "Bertha damage X1.75. Removes all future bertha upgrades."
+        "effect"        "mulattr/bertha/shot_damage/1.75, banmodule/bertha, banupgrade/numbertha"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "berthasuppression"
+        "title"         "Bertha: Suppressing Fire"
+        "module"        "bertha"
+        "description"   "Bertha shoots 5X faster, and shots move faster as well, but deal damage over half the radius."
+        "effect"        "mulattr/bertha/fire_delay/0.2, mulattr/bertha/shot_speed/2, mulattr/bertha/shot_damage_distance/0.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "berthaproximity"
+        "title"         "Bertha: Proximity Detonation"
+        "module"        "bertha"
+        "description"   "Bertha shots detonate immediately on hitting creeper, but deal 1.2X more damage."
+        "effect"        "mulattr/bertha/shot_damage/1.2, addbehavior/bertha/proximitydestroy/hitcreeper/destroy"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+    
+    Table(
+        "id"            "berthasynergyboost"
+        "title"         "Bertha: Synergy Boost"
+        "module"        "bertha"
+        "description"   "Bertha fire delay X0.95 for each weapon artifact on OTHER modules."
+        "effect"        "foreachartifact/not_bertha/mulattr/bertha/fire_delay/0.95"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "berthapowerredirection"
+        "title"         "Bertha: Power Redirection"
+        "module"        "bertha"
+        "description"   "Bertha fire delay X1.2, but other modules fire delay X0.9."
+        "effect"        "mulattr/bertha/fire_delay/1.2, mulattr/not_bertha/fire_delay/0.9"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "berthaconcentrated"
+        "title"         "Bertha: Concentrated Shots"
+        "module"        "bertha"
+        "description"   "Bertha damage X2, but radius X0.8."
+        "effect"        "mulattr/bertha/shot_damage/2, mulattr/bertha/shot_damage_distance/0.8"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "berthadmgcone"
+        "title"         "Bertha: Damage Cone"
+        "module"        "bertha"
+        "description"   "Bertha shots deal extra damage to the middle of the explosion area."
+        "effect"        "addbehavior/bertha/conedmg/ondestroy/damage/2/0.35"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "berthasniper"
+        "title"         "Bertha: Sniper"
+        "module"        "bertha"
+        "description"   "Bertha range X3, shot speed X2, and damage X2. Fire delay X1.5."
+        "effect"        "mulattr/bertha/fire_range/3, mulattr/bertha/shot_speed/2, mulattr/bertha/shot_damage/2, mulattr/bertha/fire_delay/1.5"
+        "rarity"        6
+        "pickuplimit"   1
+    ) <upgrades swap AppendToList
+
+    Table(
+        "id"            "berthacreepereater"
+        "title"         "Bertha: Creeper Eater Rounds"
+        "module"        "bertha"
+        "description"   "Bertha shots slowly eat away at creeper for 5 seconds after hitting."
+        "effect"        "addbehavior/bertha/creepereater/ondestroy/afterdelay/1/15/10/damage/0.1/1/0.001"
+        "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
 
@@ -84,6 +172,7 @@ $behavior:""
     -1 ->*allModules{<module}
     <behavior ->*moduleBehaviors{<module}
     RegisterForMsg("add" <module concat "AddUpgrades")
+    RegisterForMsg("ShotRegistration" "ShotRegistration")
 
 :DetectModuleNum
     999 0 do

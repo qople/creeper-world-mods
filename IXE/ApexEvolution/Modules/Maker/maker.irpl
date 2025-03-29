@@ -1,10 +1,16 @@
-$shot_damage:1.25
-$shot_damage_distance:2
+$shot_damage:1.5
+$shot_damage_distance:1.75
 $fire_range:45
 $fire_delay:10
 $ROTATE_SPEED:4.0
 $FIRE_COST:0.5
 $actrail:0
+
+$num_shots:1
+$shot_speed:4
+$spread:10
+$dump_mode:0
+
 
 if(<fire_range <lastRange neq)
     SetLosRange(Self <fire_range)
@@ -14,8 +20,15 @@ endif
 
 SYS_Operable
 
-GetNearestCreeper(self false) ->nearestCreeper
-if (<-nearestCreeper.x gte0)
+if(<dump_mode)
+    true >canFire
+    Self GetPosition V2(0 1) add >nearestCreeper
+else
+    GetNearestCreeper(self false) ->nearestCreeper
+    <nearestCreeper.x gte0 >canFire
+endif
+
+if(<canFire)
 	<-nearestCreeper ->rotateTarget
 	SignedAngle(GetDirRight(self) <-rotateTarget GetPosition(self) -) ->rotationRemaining
 	if (abs(<-rotationRemaining) 0.001 <)
@@ -33,17 +46,16 @@ endif
 
 #---
 :TryFire
-	GetCreeperOnLine(self GetRotation(self) 100 <-hardTarget false) ->col
-	if (<-col.x gte0)
-        PlaySound("fire" 1.0)
+    if(<dump_mode)
+        true >canFire
+    else
+	    GetCreeperOnLine(self GetRotation(self) 100 <-hardTarget false) ->col
+        <-col.x gte0 >canFire
+    endif
+	if (<canFire)
+        PlaySound("acfire" 1.0)
         SendMsg("CreateShot" "maker" Self 2 ListN)
-        #CreateUnit("/ApexEvolution/Modules/Maker/makershot" Self GetPosition true) >shot
-        #<shotVars 0 do
-        #    <shotVars[i] >varName
-        #    <shot <varName dup <-! SetScript1Var
-        #loop
-        #<shot Self GetRotation SetRotation
-        <fire_delay SetTimer0
+        <fire_delay RandFloat add SetTimer0
         ConsumeAmmo(Self 0.5)
 	endif
 #---
