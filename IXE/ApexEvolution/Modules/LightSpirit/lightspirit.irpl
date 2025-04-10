@@ -5,7 +5,7 @@ $fire_cost:3
 $fire_range:45
 $fire_delay:200
 $shot_damage_count:10
-$shot_damage_distance:9
+$shot_damage_radius:9
 $shot_damage:0.35
 
 # Shot specific vars

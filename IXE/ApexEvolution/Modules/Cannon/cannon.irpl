@@ -1,5 +1,5 @@
 $shot_damage:2.0
-$shot_damage_distance:12
+$shot_damage_radius:12
 $shot_damage_count:18
 $fire_range:54
 $fire_delay:10

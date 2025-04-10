@@ -1,3 +1,42 @@
+# Version 1.2 changes
+
+# Fixes:
+# Fixed a bug where upgrades affecting multiple modules would not immediately update stats.
+# Fixed saving and loading on the upgrade screen
+# Fixed death on teleport bug
+# Possibly fixed occasional game crash on death
+# Heavyspirit mastery did not properly ban the numheavyspirit upgrade
+# Fixed game freeze when no upgrades are in the pool (if it happens, the choice is automatically skipped)
+# Fixed sprites breaking on reload (this was a one character typo)
+
+# Menu:
+# Remade the help menu into a full menu, with some more options
+
+# Misc. Changes
+# Added "ApplyEffect" RPL message channel, which can be used to manually apply any upgrade effect string
+# Each normal run now starts with 3 rerolls and 1 artifact reroll
+
+# Modules
+# Reduced heavyspirit damage from 20 to 15
+# Reduced lokispirit damage from  1 to 0.6
+# Reduced the effect of "AC Detonation" Lokispiri artifact from 10X base damage to 7X
+# Moved Odin Cannon to use the shot system (no effect on gameplay)
+
+# Artifacts
+# Added an upgrade ban artifact
+# Updated phase shifter description to mention AC flip on revive
+# Tripled the effect of the Cannon: Damage Aura weapon artifact
+
+# AEV 2.0 beta:
+
+# Mutators:
+# Added mutators in free build
+
+# Progression:
+# Added progression mode in free build
+
+# =====================================
+
 # Version 1.1 changes
 
 # Fixes:

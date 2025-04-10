@@ -5,8 +5,8 @@ $fire_cost:3
 $fire_range:120
 $fire_delay:600
 $shot_damage_count:9999
-$shot_damage_distance:8
-$shot_damage:20
+$shot_damage_radius:8
+$shot_damage:15
 
 # Shot specific vars
 $TARGET_RAND:10

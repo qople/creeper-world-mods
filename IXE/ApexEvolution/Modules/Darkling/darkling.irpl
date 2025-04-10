@@ -94,7 +94,10 @@ endif
 
         #<target trace
         # Damage the creeper
-        <creeper <target <shot_damage_distance <shot_damage if(<singleBeam) <NUM_BEAMS mul endif @DamageCreeperOnLine
+        RandFloat <-*criticalChance lt >crit
+        <creeper <target <shot_damage_distance <shot_damage if(<singleBeam) <NUM_BEAMS mul endif 
+        if(<crit) 1.5 mul swap 2 mul swap endif
+        @DamageCreeperOnLine
     endif
 
 

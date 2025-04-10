@@ -8,6 +8,14 @@ $module:"odincannon"
 # If the name does not end in ".irpl" and is not blank, it is interpreted as a controller name instead.
 $behavior:""
 
+:ShotRegistration
+    # Register for the shot type for the AEV shot system
+    "odincannon" "cannon" "/ApexEvolution/Sprites/Shots/odincannon.png" 
+    "basehit/hitcreeper/destroy"
+    "basedestroy/ondestroy/damage"
+    List
+    "RegisterShot" swap SendMsg
+
 #Defines all the default upgrades for each included module. 
 :AddUpgrades
     # Data is how many of this module are on the main ship to start
@@ -34,7 +42,7 @@ $behavior:""
 
     Table(
         "module"            "odincannon"
-        "attribute"         "shot_damage_distance"
+        "attribute"         "shot_damage_radius"
         #"attribute_name"    "damage radius"
     ) <upgrades swap AppendToList
 
@@ -51,16 +59,6 @@ $behavior:""
     #    "module"        "odincannon"
     #    "description"   "Odin Cannon fire delay X0.99 for each level."
     #    "effect"        "foreachlevel/mulattr/odincannon/fire_delay/0.99, foreachlevel/incmult/odincannon/rotate_speed/0.01"
-    #    "rarity"        6
-    #    "pickuplimit"   1
-    #) <upgrades swap AppendToList
-
-    #Table(
-    #    "id"            "odincannoncluster"
-    #    "title"         "Odin Cannon: Cluster Shot"
-    #    "module"        "odincannon"
-    #    "description"   "Odin Cannon damage X0.25, but shots split into 25 rockets on impact, dealing additional damage. You do not get experience from cluster rockets."
-    #    "effect"        "mulattr/odincannon/shot_damage/0.25, setattr/odincannon/shrapnel/25"
     #    "rarity"        6
     #    "pickuplimit"   1
     #) <upgrades swap AppendToList

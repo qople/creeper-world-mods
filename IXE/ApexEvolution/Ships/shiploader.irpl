@@ -7,6 +7,7 @@
     false ->*shipLoaded
     CreateTable ->*moduleBehaviors
     CreateTable ->*unlockedModules
+    "shot_damage" "shot_damage_count" "shot_damage_distance" "shot_damage_radius" "fire_delay" List >requiredModuleStats
 
 :LoadShip
     # Workaround for bug in version 39 that causes messages to be received more than once in certain situations.
@@ -82,8 +83,44 @@
         else if(<setupMode 1 eq)
             <moduleName @ManualSetup
         endif endif
+
+        # Make the table for the module if it doesn't exist
+        if(<-*moduleStats <moduleName TableContainsKey !)
+            CreateTable ->*moduleStats{<moduleName}
+        endif
+
+        <requiredModuleStats 0 do
+            <requiredModuleStats[i] >attribute
+            if(<-*moduleStats{<moduleName} <attribute TableContainsKey !)
+                <-*moduleStats{<moduleName} <attribute @GetStat(<moduleName <attribute) 0.0 1.0 1.0 4 ListN SetTableElement
+            endif
+        loop
     else
         <-*allModules <moduleName RemoveTableElement
+    endif
+
+# Gets the value of the given stat for a module
+:GetStat
+    >attribute >module
+
+    <-*moduleBehaviors{<module} >behavior
+    <behavior ".irpl" EndsWith  <behavior StringLength eq0 || >useScript
+
+    if(<useScript)
+        <-*mainShip <module "0" concat GetChild >moduleUnit
+        <moduleUnit <behavior <attribute GetScriptVar return
+    else
+        # Controller instead
+        # GetControllerArg is odd, so we'll do something weird
+        #StackSize >size
+        #<-*mainShip <behavior <attribute GetControllerArg TraceStack
+        #StackSize <size sub >numArgs
+        #<numArgs 1 sub 0 do
+        #    pop
+        #loop
+
+        <-*mainShip <module "0" concat GetChild 0 <attribute GetControllerArg2
+        return
     endif
 
 # Loads the default upgrades for the module 

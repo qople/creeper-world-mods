@@ -4,6 +4,11 @@ $allowWarp:1
 $allowFlip:0 # CURRENTLY BROKEN, DO NOT USE.
 $revives:0
 
+$deathPortion:0.5
+
+# Portion of the ship that must be intact for the ship to generate energy
+$energyRequirement:1.0
+
 # Measure the length between each update for interpolation reasons
 ElapsedTime dup <lastTime sub >lastUpdateLength >lastTime
 
@@ -65,8 +70,12 @@ endonce
 # Keep track of the total number of pixels in the ship
 <allPixels.1 <allPixels.2 add <maxPixels max >maxPixels
 <allPixels.1 <allPixels.2 add <maxPixels asfloat div >portion
-if(<portion 0.5 lt)
+if(<portion <deathPortion lt)
     2 SetTimer1
+endif
+
+if(<portion <energyRequirement gte)
+    Self dup GetMaxAmmo SetAmmo
 endif
 
 :Move
@@ -103,10 +112,10 @@ endif
     # Add rotation = counter clockwise
     
     180 180 <rot sub abs sub
-    if(Self GetUnitDirection)
+    #if(Self GetUnitDirection)
         #neg
         #90 add neg 90 sub
-    endif
+    #endif
     >dist
     
  
@@ -182,6 +191,10 @@ endif
 
 :Once
     Self GetPosition >pos
+    if(<-*AEV_ActiveMutators "antigravity" ListContains)
+        511 <pos.y sub >pos.y
+        Self <pos SetPosition
+    endif
     0 >maxPixels
     SetCameraZoom(<camZoom)
     RegisterForMsg("MSG_FrameAdvance" "FrameAdvance")
@@ -208,11 +221,13 @@ endif
 
 :Awake
     RegisterForMsg("ConfirmShipPlaced" dup)
+    RegisterScript("DefaultShip")
 
 :GameLoaded
     SetCameraZoom(<camZoom)
     SetMoveMapManualMode(true)
     SetCameraPosition(Self GetPosition)
+    RegisterScript("DefaultShip")
 
 
 :ConfirmShipPlaced

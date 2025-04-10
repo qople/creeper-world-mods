@@ -33,6 +33,18 @@ if(<upgradeOnScreen)
             break
         endif
     loop
+
+    <chosenUpgrades ! if
+        false SetPause
+        false >upgradeOnScreen
+        DeregisterForMsg("UPGRADE_CHOSEN")
+        
+        if(-?baseChoices)
+            <baseChoices ->*upgradeChoices
+            --baseChoices
+        endif
+    endif
+
 else if(<upgradeQueue)
     @ChooseUpgrades
 endif endif
@@ -55,16 +67,26 @@ if(GetKeyDown("U" 1) GetEditMode &&)
     endif
 endif
 
+SendMsg("MSG_PostUpdate" 0)
+
+:GameLoaded
+    RegisterScript("UpgradeChooser")
+    if(<upgradeOnScreen)
+        @BuildUpgradeUI
+    endif
 
 :Once
     ElapsedTime 1000 add AsInt List >upgradeSeed
     ElapsedTime AsInt List >artifactSeed
 
     0 ->upgradeSounds
+    0 >upgradeCount
     0 >upgradeSoundTime
     3 ->*upgradeChoices
     1.0 ->*xpMult
+    1.0 ->*xpMult2
     0 ->*shipLevel
+    0 >modulesEveryNLevels
     CreateList >upgradeQueue
     <baseUpgradeCost <-*shipLevel <scalingAdd add <upgradePower pow mul ->upgradeCost
     0 ->creeperDestroyed
@@ -73,10 +95,14 @@ endif
 
     RegisterForMsg("ShowArtifact" "ShowArtifact")
     RegisterForMsg("ShowWeaponArt" "ShowWeaponArt")
+    RegisterForMsg("ForceNextLevel" "ForceLevelUp")
+    RegisterForMsg("BAN_MODE" "ToggleBanMode")
     RegisterForMsg("GiveXp" dup)
+    RegisterForMsg("REROLL_UPGRADES" "Reroll")
+    RegisterScript("UpgradeChooser")
 
 :GiveXP
-    <creeperDestroyed <_DATA <-*xpMult mul add >creeperDestroyed
+    <creeperDestroyed <_DATA <-*xpMult mul <-*xpMult2 mul add >creeperDestroyed
     while <-creeperDestroyed <-upgradeCost gt repeat
         <-creeperDestroyed <-upgradeCost sub ->creeperDestroyed
         @LevelUp
@@ -94,6 +120,11 @@ endif
     @ShowUpgrade
     SendMsg("LevelUp" <-*shipLevel)
 
+:ForceLevelUp
+    0 >creeperDestroyed
+    @LevelUp
+    0 >upgradeSounds
+
 :UpgradeChosen
     if(ElapsedTime <upgradeLock lt)
         return
@@ -101,20 +132,43 @@ endif
     <-_DATA{"name"} asint >choice
     false >upgradeOnScreen
     <chosenUpgrades[<choice] >upgrade
-    <-*upgradeCollected{<upgrade{"id"}} 1 add ->*upgradeCollected{<upgrade{"id"}}
-    <-*upgradeChoices 0 do
-        SetUIActive("upgradeui" i false)
-    loop
-    #SetUIActive("upgradeui" <choice true)
 
-    SendMsg("ApplyUpgrade" <upgrade)
-
-    DeregisterForMsg("UPGRADE_CHOSEN")
-    false SetPause
+    if(<banMode)
+        "ApplyEffect" "banupgrade/" <upgrade{"id"} concat SendMsg
+        false >banMode
+        <-*upgradeBans 1 sub ->*upgradeBans
+        <chosenUpgrades <choice RemoveListElement
+        5 0 do
+            SetUIActive("upgradeui" i false)
+        loop
+        SetUIActive("upgradeui" "reroll" false)
+        SetUIActive("upgradeui" "rerollimg" false)
+        SetUIActive("upgradeui" "ban" false)
+        SetUIActive("upgradeui" "banimg" false)
+        @BuildUpgradeUI
+    else
+        <-*upgradeCollected{<upgrade{"id"}} 1 add ->*upgradeCollected{<upgrade{"id"}}
+        SendMsg("ApplyUpgrade" <upgrade)
+        5 0 do
+            SetUIActive("upgradeui" i false)
+        loop
+        SetUIActive("upgradeui" "reroll" false)
+        SetUIActive("upgradeui" "rerollimg" false)
+        SetUIActive("upgradeui" "ban" false)
+        SetUIActive("upgradeui" "banimg" false)
     
-    if(-?baseChoices)
-        <baseChoices ->*upgradeChoices
-        --baseChoices
+    
+        DeregisterForMsg("UPGRADE_CHOSEN")
+        false SetPause
+        
+        if(-?baseChoices)
+            <baseChoices ->*upgradeChoices
+            --baseChoices
+        endif
+    
+        if(<upgradeQueue)
+            @ChooseUpgrades
+        endif
     endif
 
 :ShowUpgrade
@@ -131,19 +185,54 @@ endif
         <upgradeQueue -1 0 0 0 0 0 10 Asint 7 ListN <data[1] AsInt 2 ListN AppendToList
     loop
 
+:Reroll
+    if(<artifactChoice <-*artifactRerolls &&)
+        <upgradeCount 1 sub >upgradeCount
+        <upgradeQueue <upgradeSettings PrependToList
+        <-*artifactRerolls 1 sub ->*artifactRerolls
+        5 0 do
+            SetUIActive("upgradeui" i false)
+        loop
+        SetUIActive("upgradeui" "reroll" false)
+        SetUIActive("upgradeui" "rerollimg" false)
+        SetUIActive("upgradeui" "ban" false)
+        SetUIActive("upgradeui" "banimg" false)
+        @ChooseUpgrades
+    else if(<artifactChoice ! <-*rerolls &&)
+        <upgradeCount 1 sub >upgradeCount
+        <upgradeQueue <upgradeSettings PrependToList
+        <-*rerolls 1 sub ->*rerolls
+        5 0 do
+            SetUIActive("upgradeui" i false)
+        loop
+        SetUIActive("upgradeui" "reroll" false)
+        SetUIActive("upgradeui" "rerollimg" false)
+        SetUIActive("upgradeui" "ban" false)
+        SetUIActive("upgradeui" "banimg" false)
+        @ChooseUpgrades
+    endif endif
+
+:ToggleBanMode
+    <banMode ! >banMode
+    @BuildUpgradeUI
+
 # Shows the UI buttons
 :ChooseUpgrades
     true SetPause
     ElapsedTime 515 add >upgradeLock
     30 SetTimer0
+    
     RegisterForMsg("UPGRADE_CHOSEN" "UpgradeChosen")
     <upgradeQueue PopList >upgradeSettings 
     <upgradeSettings[0] >rarityChances
 
     if(<rarityChances AsString <-*upgradeRarityChances AsString eq)
         <upgradeSeed >activeSeed
+        <upgradeCount 1 add >upgradeCount
+        false >artifactChoice
     else
         <artifactSeed >activeSeed
+        true >artifactChoice
     endif
 
     CreateList >chosenUpgrades
@@ -156,18 +245,68 @@ endif
         endif
     endif
 
-    <-*upgradeChoices 1 sub 0.5 mul 320 mul neg >uiX
+    if(<modulesEveryNLevels <artifactChoice ! &&)
+        if(<upgradeCount <modulesEveryNLevels mod eq0)
+            2
+        else
+            1
+        endif
+    else
+        0
+    endif
+    >unlockBehavior
     
-    <-*upgradeChoices 0 do
+    <-*upgradeChoices <activeSeed @SeedRandFloat add AsInt 0 do
+        <chosenUpgrades <unlockBehavior @RandomUpgrade 
+        if(dup IsNull <unlockBehavior 2 eq && i eq0 &&)
+            pop
+            0 >unlockBehavior
+            0 @RandomUpgrade
+        endif
+        AppendToList 
+    loop
+
+    @BuildUpgradeUI
+
+    if(<chosenUpgrades[0] IsNull)
+        # No upgrades in the pool
+        false >upgradeOnScreen
+        5 0 do
+            SetUIActive("upgradeui" i false)
+        loop
+        SetUIActive("upgradeui" "reroll" false)
+        SetUIActive("upgradeui" "rerollimg" false)
+        SetUIActive("upgradeui" "ban" false)
+        SetUIActive("upgradeui" "banimg" false)
+    
+    
+        DeregisterForMsg("UPGRADE_CHOSEN")
+        false SetPause
+        
+        if(-?baseChoices)
+            <baseChoices ->*upgradeChoices
+            --baseChoices
+        endif
+    
+        if(<upgradeQueue)
+            @ChooseUpgrades
+        endif
+    else
+        SendMsg("UpgradePicked" <upgradeCount)
+    endif
+
+    
+:BuildUpgradeUI    
+    <-chosenUpgrades GetListCount 1 sub 0.5 mul 320 mul neg >uiX
+    <-chosenUpgrades 0 do
+        <chosenUpgrades[i] >thisUpgrade
         i >uiName
         SetUIActive("upgradeui" <uiName true)
         SetUiPosition("upgradeui" <uiName <uiX)
         <uiX 320 add >uiX
-        @RandomUpgrade >thisUpgrade
+        
         if(<thisUpgrade IsNull !)
-            <chosenUpgrades <thisUpgrade AppendToList
             SetUIBackgroundColor("upgradeui" <uiName <rarityColors[<thisUpgrade{"rarity"}])
-            
             SetUiText("upgradeui" <uiName <thisUpgrade @ConstructText)
         else
             SetUIBackgroundColor("upgradeui" <uiName Vector0)
@@ -176,10 +315,60 @@ endif
         endif
     loop
     
+    if(<-*rerolls <artifactChoice ! && <-*artifactRerolls <artifactChoice && ||)
+        SetUIActive("upgradeui" "reroll" true)
+        SetUIActive("upgradeui" "rerollimg" true)
+        "upgradeui" "reroll" "<size=44>    "
+        if(<artifactChoice)
+            <-*artifactRerolls
+        else
+            <-*rerolls
+        endif
+        concat
+        SetUiText
+    else
+        SetUIActive("upgradeui" "reroll" false)
+        SetUIActive("upgradeui" "rerollimg" false)
+    endif
+    
+    if(<-*upgradeBans)
+        SetUIActive("upgradeui" "ban" true)
+        SetUIActive("upgradeui" "banimg" true)
+        "upgradeui" "ban" "<size=44>    " <-*upgradeBans concat SetUiText
 
+        if(<banMode)
+            "upgradeui" "ban" V4(1 0 0 1) SetUIBackgroundColor
+        else
+            "upgradeui" "ban" V4(1 0.6667 0.6667 1) SetUIBackgroundColor
+        endif
+    else
+        SetUIActive("upgradeui" "ban" false)
+        SetUIActive("upgradeui" "banimg" false)
+    endif
+    
+
+    
+    
+# Argument is behavior with regards to module unlocks for certain mutations
+# 0 is normal behavior
+# 1 means no module unlocks
+# 2 means only module unlocks
 :RandomUpgrade
+    >modulesOnly
     false >isValid
     <-rarityChances DeepCopy >chances
+    if(<-*luck)
+        <-chances 0 do
+            <chances[i] 100 mul
+            if(i 2 gte)
+                1 <-*luck 0.01 mul add mul
+            endif
+            AsInt
+            >chances[i]
+        loop
+    endif
+    <chances trace
+
     while <isValid ! repeat
 
         <chances @WeighedRand >rarity
@@ -262,6 +451,23 @@ endif
             # Can't have been picked up more than the max collect num
             if(<upgrade{"pickuplimit"} dup IsNull ! swap gte0 &&)
                 if(<-*upgradeCollected{<upgrade{"id"}} dup IsNull ! swap <upgrade{"pickuplimit"} gte &&)
+                    false >isValid
+                endif
+            endif
+
+            # Guaranteed Modules mutator
+            if(<modulesOnly)
+
+                # Pick only module unlock upgrades
+                false >isModuleUpgrade
+                <upgrade{"effect"} >effects
+                <effects 0 do
+                    if(<effects[i][0] "addmodule" eq)
+                        true >isModuleUpgrade
+                        break
+                    endif
+                loop
+                if(<isModuleUpgrade 1 add <modulesOnly neq)
                     false >isValid
                 endif
             endif

@@ -1,0 +1,801 @@
+
+if(<-*shipLoaded GetPause ! &&)
+    once
+		@GameStart
+    endonce
+endif
+
+if(GetMissionCompletionDialogOpen <-*mainShip GetDestroyed <-*shipLoaded && ||)
+	once
+		if(<-*AEV_ProgressionEnabled)
+			# Re-enable spending matrix points in the menu
+			RegisterForMsg("BOX_BOUGHT" "BuyBox")
+			RegisterForMsg("MATRIX_BOX" "BoxClicked")
+			RegisterForMsg("RESPEC_MATRIX" "Respec")
+			true >levelComplete
+
+			# This part shows the ui box
+			@GiveMatrixPoints
+		endif
+	endonce
+endif
+
+:GameLoaded
+    once
+		0 ->saveVersion
+		0 >spentPoints
+		false >levelComplete
+        RegisterForMsg("ImportSave" dup)
+        RegisterForMsg("ExportSave" dup)
+        RegisterForMsg("ENTER_CODE" "EnterCode")
+        RegisterForMsg("BOX_BOUGHT" "BuyBox")
+        RegisterForMsg("MATRIX_BOX" "BoxClicked")
+        RegisterForMsg("RESPEC_MATRIX" "Respec")
+        RegisterForMsg("CONFIRM_IMPORT" "ConfirmImport")
+        false ->*AEV_ProgressionEnabled
+		3 ->*AEV_MatrixCost
+		3 ->*rerolls
+		1 ->*artifactRerolls
+		0 ->*errorCode
+		0 ->*upgradeBans
+		0 ->*matrixPoints
+        "" ->*AEV_Save
+		"" >inputString
+		0 >cellsBought
+		false >blockRefresh
+        @InitKeys
+		@InitCodeChars
+
+		List(
+			"Damage"
+			"Fire Delay"
+			"Damage Area"
+			"Critical"
+			"Reroll"
+			"Experience"
+			"Luck"
+			"Speed"
+		) dup >statNames ->*AEV_PowerNames
+
+		@PowerDescriptions ->*AEV_PowerDescriptions
+		@PowerMilestones ->*AEV_PowerMilestones
+		
+		8 0 do
+			0
+		loop
+		8 ListN
+		8 0 do
+			dup Copy
+		loop
+		8 ListN ->*AEV_MatrixTable
+		->*AEV_MatrixStats
+    endonce
+
+:GiveMatrixPoints
+	<-*shipLevel 20 div AsInt 5 min >pointsFromLevel
+	if(GetMissionCompletionDialogOpen)
+		3 <-*mutatorPositiveModifier add >pointsFromCompletion
+	else
+		0 >pointsFromCompletion
+	endif
+	<pointsFromCompletion <pointsFromLevel add <-*mutatorNegativeModifier add 0 max >totalPoints
+	
+	# Generate the completion dialogue
+	@BeginConcatAll
+	"<size=33>LEVEL COMPLETE</size><br><br>"
+	"Level " <-*shipLevel " reached: +" <pointsFromLevel "<br>"
+	if(<pointsFromCompletion)
+		"Level complete: +3<br>"
+		if(<pointsFromCompletion 3 gt)
+			"Bonus from mutators: +" <-*mutatorPositiveModifier "<br>"
+		endif
+	endif
+	if(<-*mutatorNegativeModifier) "Mutator penalty: " <-*mutatorNegativeModifier "<br>" endif
+	"Total matrix points gained: " <totalPoints "<br>"
+	"<size=33><color=#ff0000>REMEMBER TO EXPORT YOUR NEW CODE!"
+	@ConcatAll >dialogue
+
+	<-*matrixPoints <totalPoints add ->*matrixPoints
+
+	CreateUI("MissionCompleteDialogue" @UIMissionComplete CreateTable) pop pop
+
+	RegisterForMsg("CLOSE_ENDMISSION_DIALOGUE" "Close")
+
+:Close
+	DestroyUI("MissionCompleteDialogue")
+
+:UIMissionComplete
+	"{
+		'anchor': [0.5, 0.5],
+		'pos': [465, 0],
+		'pivot': [0, 1],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#00000000',
+		'Components': 	[
+							{
+								'type':'button', 'name':'missioncomplete', 'anchor': [0.5, 0.5],'pivot': [0.5, 0.5], 'width': 300, 'height': 500, 
+								'pos': [0,0], 
+								'text': '" <dialogue "', 'tooltip': '', 'bgcolor': '#555555', 'color': '#FFFFFF', 'events': ['CLOSE_ENDMISSION_DIALOGUE']
+							},
+						]
+	}"
+	concat3
+
+
+# Marks this point in the stack as the start of the section for concatall to operate on.
+:BeginConcatAll
+	StackSize >startSize
+
+# Concats everything on the stack since when @BeginConcatAll was called.
+:ConcatAll
+	StackSize <startSize sub 1 sub 0 do
+		concat
+	loop
+	--startSize
+
+:EnterCode
+	if(<inputString StringLength eq0)
+		"" >inputString
+	endif
+	"MenuTab" "input" <inputString SetUIText
+	RegisterForMsg("MSG_PostUpdate" "GetInput")
+    RegisterForMsg("SET_MENU_TAB" "CancelInput")
+
+:ConfirmImport
+	SendMsg("ImportSave" <inputString)
+	#@CancelInput
+
+:GameStart
+	if(GetSlammer)
+		<-*mutatorPositiveModifier 2 add ->*mutatorPositiveModifier
+	endif
+    if(<-*AEV_ProgressionEnabled !)
+        # Not doing progression mode this run
+        DeregisterForMsg("ImportSave")
+        DeregisterForMsg("ExportSave")
+        DeregisterForMsg("ENTER_CODE")
+    endif
+	DeregisterForMsg("ENTER_CODE")
+	DeregisterForMsg("BOX_BOUGHT")
+	DeregisterForMsg("MATRIX_BOX")
+	DeregisterForMsg("RESPEC_MATRIX")
+
+	if(<-*AEV_ProgressionEnabled)
+		@ApplyProgressionEffects
+	endif
+
+:BoxClicked
+	# Find out the coords of the box
+	# Name is "x,y" where X and y are numbers 0 to 7
+	<_DATA{"name"} "," split >coords
+	# Convert to a vector
+	<coords 0 do
+		<coords[i] AsInt
+	loop
+	V2 >coords
+	if("LeftShift" 0 GetKey "RightShift" 0 GetKey ||)
+		@BuyBox
+	endif
+
+# Tries to buy the box at the V2 coords specified by <coords
+:BuyBox
+	<-*AEV_MatrixTable[<coords.x] >column 
+	<column[<coords.y] >boxChecked
+	if(<boxChecked)
+		# Remove this box's stats
+		<-*AEV_MatrixStats[<coords.x] 1 sub ->*AEV_MatrixStats[<coords.x]
+		<-*AEV_MatrixStats[<coords.y] 1 sub ->*AEV_MatrixStats[<coords.y]
+
+		# Check for bingos
+
+		# column
+		true
+		<column 0 do
+			<column[i] &&
+		loop
+		if
+			<-*AEV_MatrixStats[<coords.x] 2 sub ->*AEV_MatrixStats[<coords.x]
+		endif
+
+		# row
+		true
+		8 0 do
+			<-*AEV_MatrixTable[i][<coords.y] &&
+		loop
+		if
+			<-*AEV_MatrixStats[<coords.y] 2 sub ->*AEV_MatrixStats[<coords.y]
+		endif
+		
+		<-*AEV_MatrixCost 0.5 <cellsBought 16 div AsInt 1 add mul sub ->*AEV_MatrixCost
+		<cellsBought 1 sub >cellsBought
+		<-*matrixPoints <-*AEV_MatrixCost AsInt add ->*matrixPoints
+		<spentPoints <-*AEV_MatrixCost AsInt sub >spentPoints
+		<boxChecked ! >column[<coords.y]
+
+	else
+		if(<-*matrixPoints <-*AEV_MatrixCost AsInt gte <-*shipLoaded ! <levelComplete || &&)
+			<-*matrixPoints <-*AEV_MatrixCost AsInt sub ->*matrixPoints
+			<spentPoints <-*AEV_MatrixCost AsInt add >spentPoints
+			<cellsBought 1 add >cellsBought
+			
+			# Add this box's stats
+			<-*AEV_MatrixStats[<coords.x] 1 add ->*AEV_MatrixStats[<coords.x]
+			<-*AEV_MatrixStats[<coords.y] 1 add ->*AEV_MatrixStats[<coords.y]
+			
+			<-*AEV_MatrixCost 0.5 <cellsBought 16 div AsInt 1 add mul add ->*AEV_MatrixCost
+			<boxChecked ! >column[<coords.y]
+
+			# Check for bingos
+
+			# column
+			true
+			<column 0 do
+				<column[i] &&
+			loop
+			if
+				<-*AEV_MatrixStats[<coords.x] 2 add ->*AEV_MatrixStats[<coords.x]
+			endif
+
+			# row
+			true 
+			8 0 do
+				<-*AEV_MatrixTable[i][<coords.y] &&
+			loop
+			if
+				<-*AEV_MatrixStats[<coords.y] 2 add ->*AEV_MatrixStats[<coords.y]
+			endif
+		endif
+	endif
+	
+	if(<blockRefresh !)
+		SendMsg("SET_MENU_TAB" "name" "matrix" 1 TableN)
+	endif
+
+:Respec
+	true >blockRefresh
+	8 0 do
+		8 0 do
+			i j V2 >coords
+			if(<-*AEV_MatrixTable[<coords.x][<coords.y])
+				@BuyBox
+			endif
+		loop
+	loop
+	false >blockRefresh
+	if(<blockRespecRefresh !)
+		SendMsg("SET_MENU_TAB" "name" "matrix" 1 TableN)
+	endif
+
+:ImportSave
+	# Never allow loading a save when the game has started
+	if(<-*shipLoaded)
+		return
+	endif
+    <-_DATA @ParseSave
+	eq0 if
+		# Loaded successfully
+		true ->*AEV_ProgressionEnabled
+		@CancelInput
+		"" >inputString
+	endif
+
+	if(<inputString "" eq <-*AEV_ProgressionEnabled ! &&)
+		true ->*AEV_ProgressionEnabled
+		0 ->*errorCode
+		@CancelInput
+	endif
+	
+	
+
+	SendMsg("SET_MENU_TAB" "name" "export" 1 TableN)
+
+:ExportSave
+	if(GetEditMode)
+		"Edit mode enabled" ->*AEV_Save
+	else
+    	<_DATA @GenerateSaveCode ->*AEV_Save
+	endif
+
+# Parses the save data from the given save and changes matrix points, layout, etc. to match
+# Returns an error code, also stored to <-*errorCode
+# 0: success
+# 1: invalid save (checksum fail)
+# 2: Valid save, but using a future version (save version > current version)
+#	 Loads in contingency mode (just loads matrix points, ignores the rest)
+# 3: Valid save, but using a past version (save version < current version)
+#	 This code isn't possible for version 0, but will be added when the save version goes to 1
+#	 Intended treatment is to show a confirmation and still let the save be loaded
+#	 Unless I find a terrible bug in this version and everyone ends up with broken/cheated saves
+#	 In that case I'll disallow loading version 0 saves on version 1+
+#	 Hence the progression mode beta warning about wiping saves
+# 4: Unknown error 
+:ParseSave
+    dup >fullSave >saveCode
+
+	0 >codeIndex
+
+	# Check validity from the checksum
+	<saveCode dup StringLength 2 sub 0 swap Substring @GenerateCheckSum >checksum
+	if(<checksum <saveCode dup StringLength 2 sub 2 Substring neq)
+		"failure" trace
+		1 ->*errorCode
+		1 return
+	else
+		"success" trace
+	endif
+
+	# Check the version
+	1 @DecodeFromSave >version
+
+	if(<version <saveVersion gt)
+		# Using a future version
+		# Load in contingency mode (just load matrix points)
+		true ->blockRespecRefresh
+		@Respec
+		false ->blockRespecRefresh
+		0 ->spentPoints
+		3 @DecodeFromSave ->*matrixPoints
+		2 ->*errorCode
+		<fullSave ->*AEV_Save
+		0 return
+
+	endif
+
+
+	# Only valid version at this point is version 0, so we just load it normally
+	# Later this may use different functions to load for all the different past versions
+	if(<fullSave StringLength 6 eq)
+		# Short form save, just matrix points
+		true ->blockRespecRefresh
+		@Respec
+		false ->blockRespecRefresh
+		0 ->spentPoints
+		3 @DecodeFromSave ->*matrixPoints
+	else if(<fullSave StringLength 17 eq)
+		# Long form save, matrix points + matrix layout
+		true ->blockRespecRefresh
+		@Respec
+		false ->blockRespecRefresh
+		0 ->spentPoints
+		3 @DecodeFromSave ->*matrixPoints
+		# Decode the matrix layout portion
+		true >blockRefresh
+		0 >matrixPlace
+		2 0 do
+			5 @DecodeFromSave >value
+			30 0 do
+				<value 2 mod
+				<value 2 div >value
+			loop
+
+			List ReverseList >cells
+			<cells 0 do
+				<matrixPlace 8 div <matrixPlace 8 mod V2 >coords
+				<matrixPlace 1 add >matrixPlace
+				if(<cells[i])
+					@BuyBox
+				endif
+			loop
+		loop
+
+		1 @DecodeFromSave >value
+		4 0 do
+			<value 2 mod
+			<value 2 div >value
+		loop
+		List ReverseList >cells
+		<cells 0 do
+			<matrixPlace 8 div <matrixPlace 8 mod V2 >coords
+			<matrixPlace 1 add >matrixPlace
+			if(<cells[i])
+				@BuyBox
+			endif
+		loop
+
+		false >blockRefresh
+		0 ->*errorCode
+		"Loaded successfully" trace
+		0 return
+	else
+		"Unknown error" trace
+		4 ->*errorCode
+		4 return
+	endif endif
+
+	
+
+# Decodes the given number of characters from the save, and returns an integer value from them.
+# Accounts for encoding offset.
+# A max of 5 characters can be read at once due to the 32 bit int limit
+:DecodeFromSave
+	>numPlaces
+	<saveCode 0 <numPlaces Substring StringToList >decodeString
+	<saveCode <numPlaces <saveCode StringLength <numPlaces sub Substring >saveCode
+
+	0 >value
+	<numPlaces 0 do
+		<value <codeChars <decodeString[i] GetListIndex <codeOffsets[<codeIndex] sub 64 mod2 64 i pow AsInt mul add >value
+		<codeIndex 1 add >codeIndex
+	loop
+	<value return
+	
+
+:GenerateSaveCode
+	>longForm
+
+	0 >codeIndex
+	"" >saveCode
+    <saveVersion 1 @EncodeToSave
+
+	# 3 chars (18 bits unsigned) can store up to 262,143 matrix points
+	# Hopefully nobody gets that many, but if they do it'll just cap them
+	# 2 chars would be enough (4095) for all current uses of matrix points, 
+	# but I want to future proof it from the start
+	<-*matrixPoints <spentPoints add 262143 min 3 @EncodeToSave
+	
+	# Encode the matrix if we're doing long form code
+	if(<longForm)
+		0 >place
+		2 0 do
+			0 >value
+			# Encode 30 bits, since each character can encode up to 6 bytes so that's the max number of chars we can encode with 1 32 bit integer
+			30 0 do
+				<-*AEV_MatrixTable[<place 8 div][<place 8 mod2] >bool
+				<value 2 mul <bool add >value
+				<place 1 add >place
+			loop
+			<value 5 @EncodeToSave
+		loop
+
+		# We have 4 more boxes to encode in our last char
+		0 >value
+		4 0 do
+			<-*AEV_MatrixTable[<place 8 div][<place 8 mod2] >bool
+			<value 2 mul <bool add >value
+			<place 1 add >place
+		loop
+		<value 1 @EncodeToSave
+	endif
+	
+	<saveCode dup @GenerateCheckSum concat dup >saveCode
+	
+
+# Encodes a positive integer into a string and concatenates it to the current save being generated
+# Takes a fixed number of character space to encode into, do not exceed the amount of data that can be stored in those characters
+:EncodeToSave
+	>numPlaces
+	AsInt >number
+	<saveCode
+	<numPlaces 0 do
+		<codeChars[<number 64 mod2 <codeOffsets[<codeIndex 64 mod2] add 64 mod2] concat
+		<codeIndex 1 add >codeIndex
+		<number 64 div >number
+	loop
+	>saveCode
+
+# Simpler encode, no offset or auto-concat, used to encode the checksum
+:Encode
+	>numPlaces
+	AsInt >number
+	""
+	<numPlaces 0 do
+		<codeChars[<number 64 mod2] concat
+		<number 64 div >number
+	loop
+
+# Generates a checksum from a save code that has been stripped of its checksum (the last two characters)
+# This function should NEVER EVER EVER EVER EVER be changed!!!!!! Doing so will break EVERY SAVE FROM EVERY OTHER VERSION!!!!
+:GenerateCheckSum
+	RemoveWhiteSpace >sumlessCode
+	0 >rawSum
+	"" >checksum
+	<sumlessCode StringToList >list
+	<list 0 do
+		<list[i] >char
+		<codeChars <char GetListIndex >index
+		<rawSum 7103 mul <index add 4096 mod2 >rawSum  
+	loop
+	<rawSum 2 @Encode
+
+# ===================
+# Effects of all the powers and milestones
+
+:ApplyProgressionEffects
+	# Do some things to increase the difficulty
+	"GameManager" "creeperMultExponent" dup2 GetRegisteredScriptVar 0.5 add SetRegisteredScriptVar
+	"ApplyEffect" "mulattr/all/shot_damage/0.5" SendMsg
+	0 ->*rerolls
+	0 ->*artifactRerolls
+
+	8 0 do
+		<-*AEV_PowerNames[i] RemoveWhiteSpace >powerName
+		<powerName refcall
+		<-*AEV_PowerMilestones[i] 0 do
+			<-*AEV_PowerMilestones[j][i] >milestone
+			if(<-*AEV_MatrixStats[j] <milestone[0] gte)
+				<powerName "Milestone" <milestone[0] concat3 refcall
+			endif
+		loop
+	loop
+
+:Damage
+	<-*AEV_MatrixStats[0] 0.01 mul 1 add >multiplier
+	SendMsg("ApplyEffect" "mulattr/all/shot_damage/" <multiplier concat)
+	
+:FireDelay
+	<-*AEV_MatrixStats[1] 0.01 mul 1 add -1 pow >multiplier
+	SendMsg("ApplyEffect" "mulattr/all/fire_delay/" <multiplier concat)
+	
+:DamageArea
+	<-*AEV_MatrixStats[2] 0.01 mul 1 add >multiplier
+	SendMsg("ApplyEffect" "mulattr/all/shot_damage_distance/" <multiplier concat)
+	SendMsg("ApplyEffect" "mulattr/all/shot_damage_count/" <multiplier concat)
+	SendMsg("ApplyEffect" "mulattr/all/shot_damage_radius/" <multiplier 1 sub 0.5 mul 1 add concat)
+	
+:Critical
+	<-*AEV_MatrixStats[3] 0.005 mul ->*criticalChance	
+
+:Reroll
+	if(<-*AEV_MatrixStats[4])
+		30 <-*AEV_MatrixStats[4] sub >levelsPerReroll
+		RegisterForMsg("LevelUp" "RerollsOnLevelUp")
+	endif
+
+:RerollsOnLevelUp
+	if(<-*shipLevel dup <levelsPerReroll mod eq0 &&)
+		<-*rerolls 1 add ->*rerolls
+	endif
+
+:Experience
+	<-*AEV_MatrixStats[5] 0.01 mul 1 add >multiplier
+	<-*xpMult2 <multiplier mul ->*xpMult2
+
+:Luck
+	<-*luck <-*AEV_MatrixStats[6] 2 mul add ->*luck
+
+:Speed
+	<-*AEV_MatrixStats[7] 0.02 mul 1 add >multiplier
+	SendMsg("shipspeed" <multiplier)
+
+# ===============================
+# Milestones
+
+:RerollMilestone1
+	<-*rerolls 1 add ->*rerolls
+
+:RerollMilestone5
+	<-*artifactRerolls 1 add ->*artifactRerolls
+	
+:RerollMilestone10
+	<-*upgradeChoices 0.2 add ->*upgradeChoices
+	
+:RerollMilestone15
+	<-*artifactRerolls 1 add ->*artifactRerolls
+
+:RerollMilestone20
+	<-*upgradeBans 2 add ->*upgradeBans
+
+:ExperienceMilestone5
+	"UpgradeChooser" "levelSoftcap" dup2 GetRegisteredScriptVar 20 add SetRegisteredScriptVar
+	
+:ExperienceMilestone10
+	"UpgradeChooser" "upgradePower" dup2 GetRegisteredScriptVar 0.1 sub SetRegisteredScriptVar
+	
+:ExperienceMilestone15
+	"UpgradeChooser" "levelSoftcap" dup2 GetRegisteredScriptVar 20 add SetRegisteredScriptVar
+
+:ExperienceMilestone20
+	"UpgradeChooser" "upgradePower" dup2 GetRegisteredScriptVar 0.1 sub SetRegisteredScriptVar
+
+:SpeedMilestone5
+	"DefaultShip" "deathPortion" 0.25 SetRegisteredScriptVar
+
+:SpeedMilestone10
+	"DefaultShip" "energyRequirement" 0.9 SetRegisteredScriptVar
+
+:SpeedMilestone15
+	"DefaultShip" "deathPortion" 0.0001 SetRegisteredScriptVar
+
+:SpeedMilestone20
+	"DefaultShip" "revives" dup2 GetRegisteredScriptVar 1 add SetRegisteredScriptVar
+
+# ================================
+
+# Adapted from my 4RPL terminal
+:GetInput
+	false ->charPrinted
+	
+	<-allKeys 0 do
+		<-allKeys[i] ->keyData
+		if(GetKeyDown(<-keyData[0] 0))
+			true ->charPrinted
+			<-keyData[1 GetKey("LeftShift" 0) GetKey("RightShift" 0) || add] ->char
+			<-inputString <-char concat ->inputString
+		endif
+	loop
+	
+	if(GetKey("Backspace" 0))
+		<-backspaceTimer 1 add ->backspaceTimer
+		#Allow holding backspace to continuously delete characters
+		if(<-backspaceTimer 1 eq <-backspaceTimer 20 gt <-backspaceTimer 2 mod eq0 && ||)
+			true ->charPrinted
+			@Backspace
+		endif
+	else
+		0 ->backspaceTimer
+	endif
+	
+	if(GetKeyDown("Return" 0))
+		# Shortcut for hitting the confirm button
+        SendMsg("ImportSave" <inputString)
+		true ->charPrinted
+	endif
+
+    if(<charPrinted)
+        "MenuTab" "input" <inputString SetUIText
+    endif
+
+:CancelInput
+	if(<_DATA{"name"} "export" neq)
+		"" >inputString
+	endif
+	DeregisterForMsg("MSG_PostUpdate")
+	DeregisterForMsg("SET_MENU_TAB")
+
+:ParseAndProcess
+
+:Backspace
+	Substring(<-inputString dup StringLength 1 sub 0 swap) ->inputString
+	SendMsg("RL_PrintString" " ")
+
+:InitKeys
+	"abcdefghijklmnopqrstuvwxyz1234567890_<>-*^%/+!" StringToList ->wordChars
+	"1234567890.-" StringToList ->numChars
+	List(
+		ListN("A" "a" "A" 3)
+		ListN("B" "b" "B" 3)
+		ListN("C" "c" "C" 3)
+		ListN("D" "d" "D" 3)
+		ListN("E" "e" "E" 3)
+		ListN("F" "f" "F" 3)
+		ListN("G" "g" "G" 3)
+		ListN("H" "h" "H" 3)
+		ListN("I" "i" "I" 3)
+		ListN("J" "j" "J" 3)
+		ListN("K" "k" "K" 3)
+		ListN("L" "l" "L" 3)
+		ListN("M" "m" "M" 3)
+		ListN("N" "n" "N" 3)
+		ListN("O" "o" "O" 3)
+		ListN("P" "p" "P" 3)
+		ListN("Q" "q" "Q" 3)
+		ListN("R" "r" "R" 3)
+		ListN("S" "s" "S" 3)
+		ListN("T" "t" "T" 3)
+		ListN("U" "u" "U" 3)
+		ListN("V" "v" "V" 3)
+		ListN("W" "w" "W" 3)
+		ListN("X" "x" "X" 3)
+		ListN("Y" "y" "Y" 3)
+		ListN("Z" "z" "Z" 3)
+		
+		ListN("Space" " " " " 3)
+		ListN("Alpha1" "1" "!" 3)
+		ListN("Alpha2" "2" "@" 3)
+		ListN("Alpha3" "3" "#" 3)
+		ListN("Alpha4" "4" "$" 3)
+		ListN("Alpha5" "5" "%" 3)
+		ListN("Alpha6" "6" "^" 3)
+		ListN("Alpha7" "7" "&" 3)
+		ListN("Alpha8" "8" "*" 3)
+		ListN("Alpha9" "9" "(" 3)
+		ListN("Alpha0" "0" ")" 3)
+		
+		ListN("Quote" "'" DQ 3)
+		ListN("Comma" "," "<" 3)
+		ListN("Minus" "-" "_" 3)
+		ListN("Period" "." ">" 3)
+		ListN("Slash" "/" "?" 3)
+		ListN("Semicolon" ";" ":" 3)
+		ListN("Equals" "=" "+" 3)
+		ListN("LeftBracket" "[" "{" 3)
+		ListN("RightBracket" "]" "}" 3)
+		ListN("Backslash" "\" "|" 3)
+	) ->allKeys
+
+# This should NEVER EVER EVER EVER EVER EVER be changed!!!!!!! That would break EVERY SAVE!!!!!
+:InitCodeChars
+	# 64 characters. I hand-filtered out any characters that seemed close together, as well as P and N because those are pause and frame advance.
+	"QqWEeRrTtyUiAaSDdFGgHhJjKkLZzXCVBbMm<>?!1@2#3$4%5^6&78(9)0_-+=[]" StringToList ->codeChars	
+
+	# Offsets used for encoding/decoding
+	# Shuffled list of the numbers 0 to 63
+	# Makes all the codes look like random noise, and maybe makes it a little harder to type in a fake save
+	# Also largely prevents the issue of having 10 of the same character in a row and that makes it hard to type in correctly without losing track
+	2, 33, 16, 57, 30, 60, 18, 21, 9, 20, 41, 10, 6, 29, 28, 15, 23, 5, 35, 31, 36, 49, 40, 47, 27, 0, 22, 51, 25, 32, 48, 46, 42, 38, 43, 14, 26, 54, 39, 44, 55, 52, 13, 53, 56, 3, 1, 34, 50, 11, 59, 45, 8, 61, 58, 7, 17, 19, 63, 4, 12, 62, 24, 37
+	List >codeOffsets
+
+:PowerDescriptions
+"<size=33>DAMAGE</size>
+
+<align=`left`>  Increases the damage of all weapons by +1% per level. Has no milestones<br>  currently.
+<br><br><br><br><br><br><br><br>" # Padding at the end to make it line up right, since text on buttons is always centered vertically
+
+"<size=33>FIRE DELAY</size>
+
+<align=`left`>  Increases the fire rate of all weapons by +1% per level. Has no milestones<br>  currently.
+<br><br><br><br><br><br><br><br>" # Padding at the end to make it line up right, since text on buttons is always centered vertically
+
+"<size=33>DAMAGE AREA</size>
+
+<align=`left`>  Increases damage area/beam width by +1% per level. Effect applies at<br>  half strength to radius-based stats. Has no milestones currently.
+<br><br><br><br><br><br><br><br>" # Padding at the end to make it line up right, since text on buttons is always centered vertically
+
+"<size=33>CRITICAL</size>
+
+<align=`left`>  Increases critical chance by +0.5% per level. Every time damage is dealt<br>  or AC is deposited, the critical power has a chance to multiply damage by<br>  1.5, and damage area/width by 2. Has no milestones currently.
+<br><br><br><br><br><br><br>" # Padding at the end to make it line up right, since text on buttons is always centered vertically
+
+"<size=33>REROLL</size>
+
+<align=`left`>  Gain a reroll every 30 levels on getting this power. -1 level per reroll for<br>  each level. Milestones give bonuses that enhance your ability to control<br>  what upgrades you get. 
+<br><br><br><br><br><br><br>" # Padding at the end to make it line up right, since text on buttons is always centered vertically
+
+"<size=33>EXPERIENCE</size>
+
+<align=`left`>  Experience gain +1% per level. Milestones provide bonuses that let you get<br>  more upgrade choices. 
+<br><br><br><br><br><br><br><br>" # Padding at the end to make it line up right, since text on buttons is always centered vertically
+
+"<size=33>LUCK</size>
+
+<align=`left`>  +2 luck per level. Luck increases the chance of getting rare and above<br>  upgrades. Has no milestones currently.
+<br><br><br><br><br><br><br><br>" # Padding at the end to make it line up right, since text on buttons is always centered vertically
+
+"<size=33>SPEED</size>
+
+<align=`left`>  Ship speed +2% per level. Milestones give various bonuses to your ship.
+<br><br><br><br><br><br><br><br><br>" # Padding at the end to make it line up right, since text on buttons is always centered vertically
+
+List
+
+
+:PowerMilestones
+# Damage
+CreateList
+
+# Fire delay
+CreateList
+
+# Damage area
+CreateList
+
+# Critical
+CreateList
+
+# Reroll
+ListN(1 "Starting Reroll" "Start each run with a reroll." 3)
+ListN(5 "Artifact Reroll" "Start each run with an artifact reroll." 3)
+ListN(10 "Extra choice chance" "You have a 20% chance with each upgrade or artifact choice to get an extra option to choose from." 3)
+ListN(15 "Artifact Reroll 2" "Start each run with a second artifact reroll." 3)
+ListN(20 "Upgrade Bans" "Start each run with 2 upgrade bans you can use to permanently remove an upgrade from the pool. If an upgrade comes in several rarities, banning one will ban them all." 3)
+5 ListN
+
+# Experience
+ListN(5 "Softcap Increase" "The level softcap starts at level 120 instead of 100." 3)
+ListN(10 "Level Scaling Reduction" "Level cost scaling is slightly reduced." 3)
+ListN(15 "Softcap Increase 2" "The level softcap starts at level 140 instead of 120." 3)
+ListN(20 "Level Scaling Reduction 2" "Level cost scaling is further reduced." 3)
+4 ListN
+
+# Luck
+CreateList
+
+# Speed
+ListN(5 "Ship Resilience" "Your ship can survive having 75% of its pixels damaged instead of 50%." 3)
+ListN(10 "Reinforced Generators" "Your ship will still produce energy if it is less than 10% damaged." 3)
+ListN(15 "Ship resilience 2" "Your ship will only die if every single pixel is destroyed." 3)
+ListN(20 "Starting Revive" "Start each run with one revive." 3)
+4 ListN
+
+List

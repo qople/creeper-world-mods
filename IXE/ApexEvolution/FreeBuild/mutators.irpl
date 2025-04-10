@@ -1,0 +1,183 @@
+# Manages mutators and their effects. Attempts to be expandable.
+
+if(<-*shipLoaded)
+    once
+        @StartMutators
+    endonce
+
+    <runningMutators 0 do
+        <runningMutators[i] refcall
+    loop
+endif
+
+:GameLoaded
+    # Each mutator declaration consists of:
+    #   - a string ID
+    #   - name
+    #   - description
+    #   - button color
+    #   - a bool for whether the mutator must run logic after game start.
+    #   - effect on matrix points (positive or negative). -100 or below disables point gain completely.
+    # Most are used by the menu to show the button.
+    # ID must be one word, and is used as the prefix for several functions:
+    # @[ID]Start runs once when the game starts with the mutator enabled, and is used for setup.
+    # If the mutator is set to run while the game is ongoing, @[ID] will run once per frame while the game is going on, in the pre update.
+    
+    # As an example declaration,
+    # List("glasship" "Glass Ship" "Your ship dies if you lose even one pixel." V4(0.6 0 0.4 1) false 2)
+    # Declares the Glass Ship mutator.
+
+    # Mutators are initialized and run in the order they are declared here. 
+    # If several mutators have overlapping effects, the declaration order determines which takes precedence.
+    once
+        @MutatorDeclarations dup >mutators "InitMutators" swap SendMsg
+
+        0 ->*mutatorPositiveModifier
+        0 ->*mutatorNegativeModifier
+        
+        # List of IDs of mutators that must run during each frame
+        CreateList >runningMutators
+    endonce
+
+:StartMutators
+    # Inefficient, but goes in initialization order, not selection order.
+    # This only happens once, so I don't care if it's inefficient.
+    -1 <mutators 1 sub do
+        <mutators[i] >mutator
+        <mutator[0] >mutatorID
+        if(<-*AEV_ActiveMutators <mutatorID ListContains)
+            <mutatorID trace
+            <mutator[4] >runDuringGame
+            <mutator[5] >matrixMod
+            
+            if(<matrixMod gt0)
+                <-*mutatorPositiveModifier <matrixMod add ->*mutatorPositiveModifier
+            else if(<matrixMod lt0)
+                <-*mutatorNegativeModifier <matrixMod add ->*mutatorNegativeModifier
+            endif endif
+
+            <mutatorID "Start" concat dup trace refcall
+            if(<runDuringGame)
+                <runningMutators <mutatorID AppendToList
+            endif
+        endif
+    loop
+
+:MutatorDeclarations
+    # More Creeper
+    ListN("morecreeper" "Creeper+" "Enemy time scaling exponent +0.25." "#450065" false 1 6)
+
+    # Even more creeper
+    ListN("evenmorecreeper" "Creeper++" "Enemy time scaling exponent +0.5." "#450065" false 2 6)
+    
+    # Glass Ship
+    ListN("glassship" "Glass Ship" "Your ship dies if it loses even one pixel." "#450065" false 2 6)
+
+    # Extra Life
+    ListN("extralife" "Extra Life" "You start with one extra revive." "#450065" false -1 6)
+
+    # Draft
+    ListN("draft" "Draft" "Start at level 50. Enemy scaling starts as if 30 minutes have passed." "#450065" false -100 6)
+
+    # Upgrade Rush
+    ListN("upgraderush" "Upgrade Rush" "Get 4X the experience, but deal half damage." "#450065" false -1 6)
+
+    # Guaranteed Modules
+    ListN("guaranteedmodules" "Guaranteed Modules" "New modules show up guaranteed once every 5 levels instead of randomly." "#450065" false 0 6)
+
+    # Anti Gravity
+    ListN("antigravity" "Antigravity" "Flip the entire level upside down. May break some maps." "#450065" false 0 6)
+    
+    # Shuffle
+    ListN("shuffle" "Shuffle" "Swap the positions of all units randomly on map start." "#450065" false 0 6)
+
+    List return
+
+:GlassShipStart
+    "DefaultShip" "deathportion" 1 SetRegisteredScriptVar
+
+:UpgradeRushStart
+    <-*xpMult2 4 mul ->*xpMult2
+    SendMsg("ApplyEffect" "mulattr/all/shot_damage/0.5") 
+
+:DraftStart
+    50 0 do
+        SendMsg("ForceNextLevel" 0)
+    loop
+
+    "GameManager" "creeperScalingStart" 1800 30 mul SetRegisteredScriptVar
+    
+:MoreCreeperStart
+    "GameManager" "creeperMultExponent" dup2 GetRegisteredScriptVar 0.25 add SetRegisteredScriptVar
+    
+:EvenMoreCreeperStart
+    "GameManager" "creeperMultExponent" dup2 GetRegisteredScriptVar 0.5 add SetRegisteredScriptVar
+    
+:GuaranteedModulesStart
+    # This one just sets a flag in UpgradeChooser, not everything has to be super overcomplicated and reusable
+    "UpgradeChooser" "modulesEveryNLevels" 5 SetRegisteredScriptVar
+
+:ExtraLifeStart
+    "DefaultShip" "revives" dup2 GetRegisteredScriptVar 1 add SetRegisteredScriptVar
+
+:AntigravityStart
+    # Flip all the sand and creeper
+    256 0 do
+        512 0 do
+            i j dup2 GetSand if(i j IsSandEmpty) pop -1 endif >sand 
+            dup2 dup2 GetCreeper >creeper
+            i 511 j sub GetSand if(i 511 j sub IsSandEmpty) pop -1 endif CreateSand
+            i 511 j sub GetCreeper SetCreeper
+            i 511 j sub dup2 <sand CreateSand <creeper SetCreeper
+        loop
+    loop
+
+    # Flip all the units' positions
+    GetUnitsInRange(0 0 999 CreateList) >allUnits
+    <allUnits 0 do
+        <allUnits[i] >unit
+        <unit GetPosition >pos
+        511 <pos.y sub >pos.y
+        <unit <pos SetPosition
+    loop
+
+:ShuffleStart
+    GetUnitsInRange(0 0 999 CreateList) >allUnits
+    <allUnits 0 do
+        if(<allUnits[i] "/ApexEvolution/Ships/ship.irpl" "camZoom" GetScriptVar IsNull !)
+            <allUnits[i] " is removed" trace2
+            <allUnits i RemoveListElement
+            break
+        endif
+    loop
+    <allUnits copy >originalUnits
+    CreateList >shuffledList
+    CreateList >positions
+    ElapsedTime AsInt List >seed
+
+    # Simple shuffle, make a new list and move a random element in one at a time
+    <allUnits 0 do
+        <positions <originalUnits[i] GetPosition AppendToList
+        <allUnits dup GetListCount 0 swap <seed @SeedRandInt >index
+        <shuffledList <allUnits[<index] AppendToList 
+        <allUnits <index RemoveListElement
+    loop
+
+    <originalUnits LF <shuffledList LF <positions TraceAll
+
+    # Move their positions based on the shuffled list
+    <shuffledList 0 do
+        <shuffledList[i] <positions[i] SetPosition
+    loop
+
+# Thank you to Grabz for showing me this rand function
+# This one uses a list with one element as the seed, 
+# so that it can update the seed without returning anything
+:SeedRandFloat
+    >seed
+	<seed[0] 1 add dup >seed[0] sin 10000 mul dup floor sub
+
+#Args: min, max, seed
+:SeedRandInt
+    >seed >max >min
+    <seed @SeedRandFloat <max <min sub mul <min add AsInt

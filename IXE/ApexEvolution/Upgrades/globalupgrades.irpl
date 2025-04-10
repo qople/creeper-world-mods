@@ -33,6 +33,7 @@ endif
     RegisterForMsg("addupgradechoices" dup)
     RegisterForMsg("removecommons" dup)
     RegisterForMsg("shipspeed" dup)
+    RegisterForMsg("giveban" dup)
 
 :AddUpgrades
     # List of upgrade data. Each is a table.
@@ -179,8 +180,17 @@ endif
         Table(
             "id"            "revive"
             "title"         "Phase Shifter"
-            "description"   "Right before your ship dies, can teleport you into a pocket dimension, letting you repair. Single-use."
+            "description"   "Right before your ship dies, teleports you into a pocket dimension, letting you repair. Converts creeper to AC around you when returning. Single-use."
             "effect"        "sendmsg/addrevive/1"
+            "rarity"        5
+            "pickuplimit"   1
+        ) <_upgrades swap AppendToList
+
+        Table(
+            "id"            "addban"
+            "title"         "Upgrade Ban"
+            "description"   "Get two upgrade bans, which can be used to remove an upgrade or artifact from the pool."
+            "effect"        "sendmsg/giveban/2"
             "rarity"        5
             "pickuplimit"   1
         ) <_upgrades swap AppendToList
@@ -204,7 +214,7 @@ endif
     <shipAC <_DATA add >shipAC
 
 :addupgradechoices
-    <-*upgradeChoices <_DATA AsInt add ->*upgradeChoices
+    <-*upgradeChoices <_DATA AsFloat add ->*upgradeChoices
 
 :multiplyammo
     <-*mainShip dup GetMaxAmmo <_DATA mul SetMaxAmmo
@@ -223,3 +233,6 @@ endif
     
 :shipspeed
     <-*mainShip "/ApexEvolution/Ships/ship.irpl" dup2 "moveSpeed" GetScriptvar <_DATA AsFloat mul "moveSpeed" swap SetScriptVar
+
+:GiveBan
+    <-*upgradeBans <-_DATA AsInt add ->*upgradeBans

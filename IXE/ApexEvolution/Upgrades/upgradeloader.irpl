@@ -9,6 +9,7 @@
         CreateList
     loop
     List ->*upgradePool
+    0 ->*mainShip
 
     # Table where each key is an upgrade ID, and each item is 
     # a list of upgrades that are unlocked when that upgrade is picked.
@@ -43,6 +44,7 @@
     # Artifact and weapon art rarity is 0, they only show up in specific rolls.
     List(50 33 17 7 3 0 0) ->*upgradeRarityChances
 
+
     "id title description effect rarity pickuplimit" " " Split >requiredData
 
     # All stat effects that can modify attributes.
@@ -66,6 +68,8 @@
             <upgrades[i] @InterpretUpgradeTable @AddUpgrade
         endif
     loop
+
+
 
 :AddUpgrade
     <upgrade{"rarity"} >rarity

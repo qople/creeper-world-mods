@@ -113,11 +113,13 @@ endif
     
     Self <beam <color SetBeamColor
     
-
-    <col <target <shot_damage_distance <shot_damage @DamageCreeperOnLine
+    RandFloat <-*criticalChance lt >crit
+    <col <target <shot_damage_distance <shot_damage if(<crit) 1.5 mul swap 2 mul swap endif @DamageCreeperOnLine
 
     if(<cavitation)
-        <target EV2 9999 <shot_damage_distance <shot_penetration mul 3 div <shot_damage 0.1 mul -1000000 mul DamageCreeper
+        <target EV2 9999 <shot_damage_distance <shot_penetration mul 3 div <shot_damage 0.1 mul -1000000 mul 
+        if(<crit) 1.5 mul swap 1.414 mul swap endif
+        DamageCreeper
     endif
     
     <beams <beam AppendToList

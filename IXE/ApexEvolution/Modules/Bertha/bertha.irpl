@@ -2,7 +2,7 @@
 
 $shot_damage:25.0
 $shot_damage_count:99999
-$shot_damage_distance:14
+$SHOT_DAMAGE_RADIUS:14
 $fire_delay:300  # 10 seconds
 $FIRE_RANGE:100
 $FIRE_COST:3
@@ -48,10 +48,6 @@ endif
     else
         false return
     endif
-
-:Once
-    #Vars in this list get copied to the bullet when we make it
-    List("pathList" "shot_damage_count" "shot_damage_distance" "shot_damage") >shotVars
     
 :Awake
     Self true EnableRa

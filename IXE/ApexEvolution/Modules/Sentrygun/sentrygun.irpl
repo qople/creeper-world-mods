@@ -4,7 +4,7 @@
 $fire_delay:15
 $shot_speed:2
 $shot_damage_count:50
-$shot_damage_distance:18
+$shot_damage_radius:18
 $shot_damage:3.0
 $shot_digitalis_damage:15000
 $rotate_speed:3.0
@@ -33,5 +33,4 @@ if(GetTimer0 eq0)
 endif
 
 :Once
-    List("shot_damage_distance" "shot_damage" "shot_damage_count" "shot_gravity") >shotVars
     <fire_delay SetTimer0

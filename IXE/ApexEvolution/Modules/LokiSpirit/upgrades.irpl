@@ -43,7 +43,7 @@ $behavior:""
     ) <upgrades swap AppendToList
 
     Table(
-        "attribute"         "shot_damage_distance"
+        "attribute"         "shot_damage_radius"
         "attribute_name"    "damage radius"
         "module"            "lokispirit"
         "title"             "Bigger Boom"
@@ -76,7 +76,7 @@ $behavior:""
         "title"         "Lokispirit: Overburdened"
         "module"        "lokispirit"
         "description"   "Lokispirit damage radius X1.1. Loki spirits move at 1/4 the speed."
-        "effect"        "mulattr/lokispirit/shot_damage_distance/1.1, mulattr/lokispirit/shot_speed/0.25"
+        "effect"        "mulattr/lokispirit/shot_damage_radius/1.1, mulattr/lokispirit/shot_speed/0.25"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -106,7 +106,7 @@ $behavior:""
         "title"         "Lokispirit: Concentrated Fire"
         "module"        "lokispirit"
         "description"   "Lokispirit damage X5, but damage radius is halved."
-        "effect"        "mulattr/lokispirit/shot_damage/5, mulattr/lokispirit/shot_damage_distance/0.5"
+        "effect"        "mulattr/lokispirit/shot_damage/5, mulattr/lokispirit/shot_damage_radius/0.5"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -146,7 +146,7 @@ $behavior:""
         "title"         "Lokispirit: The Big One"
         "module"        "lokispirit"
         "description"   "Lokispirit damage radius X2.5, but fire delay X5."
-        "effect"        "mulattr/lokispirit/shot_damage_distance/2.5, mulattr/lokispirit/fire_delay/5"
+        "effect"        "mulattr/lokispirit/shot_damage_radius/2.5, mulattr/lokispirit/fire_delay/5"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -156,7 +156,7 @@ $behavior:""
         "title"         "Lokispirit: Synergy Boost"
         "module"        "lokispirit"
         "description"   "Lokispirit damage radius X1.025 for each weapon artifact on OTHER modules."
-        "effect"        "foreachartifact/not_lokispirit/mulattr/lokispirit/shot_damage_distance/1.025"
+        "effect"        "foreachartifact/not_lokispirit/mulattr/lokispirit/shot_damage_radius/1.025"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList

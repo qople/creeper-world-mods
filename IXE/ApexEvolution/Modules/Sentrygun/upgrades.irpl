@@ -149,7 +149,7 @@ $behavior:""
         "title"         "Sentrygun: Synergy Boost"
         "module"        "sentrygun"
         "description"   "Sentrygun damage area X1.05 for each weapon artifact on OTHER modules."
-        "effect"        "foreachartifact/not_sentrygun/mulattr/sentrygun/shot_damage_count/1.05, foreachartifact/not_sentrygun/mulattr/sentrygun/shot_damage_distance/1.05"
+        "effect"        "foreachartifact/not_sentrygun/mulattr/sentrygun/shot_damage_count/1.05, foreachartifact/not_sentrygun/mulattr/sentrygun/shot_damage_radius/1.05"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList

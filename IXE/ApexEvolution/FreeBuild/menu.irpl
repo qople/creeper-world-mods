@@ -1,0 +1,1396 @@
+# All the UI JSON for the revamped AEV menu, since there's a lot.
+# Uses a semi-modular framework to manage switching tabs, but each tab is largely hardcoded
+
+:GameLoaded
+    once
+        RegisterForMsg("ShowMainMenu" dup)
+        RegisterForMsg("CloseMainMenu" dup)
+        RegisterForMsg("SET_MENU_TAB" "SetMenuTab")
+        RegisterForMsg("SET_HELP" "SetHelp")
+        RegisterForMsg("InitMutators" dup)
+        RegisterForMsg("SET_OPEN_POWER" "SetOpenPower")
+        "help" >currentTab
+
+        true ->*AEV_EnableAutosave
+        CreateList ->*AEV_ActiveMutators
+    endonce
+
+:CloseMainMenu
+    DestroyUI(<currentTab "Tab" concat)
+    "SET_MENU_TAB" TableN("name" "_CLOSE" 1) SendMsg
+    DestroyUI("MainMenu")
+
+:ShowMainMenu
+	CreateUI("MainMenu" @UIMain CreateTable)
+	"help" >currentTab
+	"MainMenu" <currentTab V4(0.416 0.416 0.416 1) SetUiBackgroundColor
+	CreateUI("MenuTab" "UI" <currentTab concat refcall CreateTable) pop pop
+	<currentTab "TabCreated" concat refcall
+
+:SetMenuTab
+    <currentTab "TabDestroyed" concat refcall
+    "MainMenu" <currentTab V4(0.625 dup dup 1) SetUiBackgroundColor
+    DestroyUI("MenuTab")
+    <_DATA{"name"} >currentTab
+    if(<currentTab "_CLOSE" neq)
+        "MainMenu" <currentTab V4(0.416 0.416 0.416 1) SetUiBackgroundColor
+        CreateUI("MenuTab" "UI" <currentTab concat refcall CreateTable) pop pop
+        <currentTab "TabCreated" concat refcall
+    endif
+
+# ====================
+
+# Marks this point in the stack as the start of the section for concatall to operate on.
+:BeginConcatAll
+	StackSize >startSize
+
+# Concats everything on the stack since when @BeginConcatAll was called.
+:ConcatAll
+	StackSize <startSize sub 1 sub 0 do
+		concat
+	loop
+	--startSize
+
+# Base of the menu, always visible. Contains the background, top tabs, and close button.
+:UIMain
+    @BeginConcatAll
+	"{
+		'anchor': [0.5, 0.5],
+		'pos': [0, 0],
+		'pivot': [0, 1],
+		'width': 1,
+		'height': 1,
+		'bgcolor': '#00000000',
+		'Components': 	[
+							{
+								'type':'text', 'name':'bg', 'anchor': [0.5, 0.5],'pivot': [0.5, 0.5], 'width': 1000, 'height': 750, 
+								'pos': [0,0], 
+								'text': '', 'tooltip': '', 'bgcolor': '#555555', 'color': '#FFFFFF'
+							},
+							{
+								'type':'text', 'name':'line', 'anchor': [0.5, 0],'pivot': [0.5, 0.5], 'width': 1000, 'height': 3, 
+								'pos': [0, 324], 
+								'sortinglayer': 10, 'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF'
+							},
+							{
+								'type':'button', 'name':'close', 'anchor': [0.5, 0.5],'pivot': [0.5, 0.5], 'width': 50, 'height': 50, 
+								'pos': [475, 350], 
+								'text': '<size=44>X', 'tooltip': 'close', 'bgcolor': '#ff0000', 'color': '#FFFFFF', 'events': ['SHOW_AEV_MENU']
+							},
+
+							{
+								'type':'button', 'name':'help', 'anchor': [0.5, 0.5],'pivot': [0, 0.5], 'width': 100, 'height': 50, 
+								'pos': [-500, 350], 
+								'text': '<size=33>HELP', 'tooltip': 'Find information on the mode', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_MENU_TAB']
+							},"
+                            
+                            if(GetFreeBuild)
+                                "{
+                                    'type':'button', 'name':'mutators', 'anchor': [0, 0.5],'pivot': [0, 0.5], 'width': 180, 'height': 50, 
+                                    'pos': [-400, 350], 
+                                    'text': '<size=33>MUTATORS', 'tooltip': 'Add optional modifiers to your game', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_MENU_TAB']
+                                },
+                                {
+                                    'type':'button', 'name':'export', 'anchor': [0, 0.5],'pivot': [0, 0.5], 'width': 250, 'height': 50, 
+                                    'pos': [-220, 350], 
+                                    'text': '<size=33>IMPORT/EXPORT', 'tooltip': 'Make a code to bring your save to other levels', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_MENU_TAB']
+                                },
+                                {
+                                    'type':'button', 'name':'matrix', 'anchor': [0, 0.5],'pivot': [0, 0.5], 'width': 130, 'height': 50, 
+                                    'pos': [30, 350], 
+                                    'text': '<size=33>MATRIX', 'tooltip': 'View or reassign your matrix points', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_MENU_TAB']
+                                },
+                                {
+                                    'type':'button', 'name':'powers', 'anchor': [0, 0.5],'pivot': [0, 0.5], 'width': 131, 'height': 50, 
+                                    'pos': [160, 350], 
+                                    'text': '<size=33>POWERS', 'tooltip': 'See your progression bonuses', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_MENU_TAB']
+                                },"
+                            endif       
+                        "]
+	}"
+    @ConcatAll
+
+
+# =============================
+# HELP TAB
+
+:SetHelp
+    <_DATA{"name"} # Put on the stack since this can get called recursively due to spaghetti
+    if(<currentTab "help" neq)
+        "SET_MENU_TAB" TableN("name" "help" 1) SendMsg
+    endif
+
+    "MenuTab" <currentHelp V4(0.625 dup dup 1) SetUiBackgroundColor
+    DestroyUI("HelpInfo")
+    >currentHelp
+    "MenuTab" <currentHelp V4(0.416 0.416 0.416 1) SetUiBackgroundColor
+    CreateUI("HelpInfo" <currentHelp "HelpUI" concat refcall CreateTable) pop pop
+
+:HelpTabCreated
+    "overview" >currentHelp
+    "MenuTab" <currentHelp V4(0.416 0.416 0.416 1) SetUiBackgroundColor
+    CreateUI("HelpInfo" <currentHelp "HelpUI" concat refcall CreateTable) pop pop
+
+:HelpTabDestroyed
+    DestroyUI("HelpInfo")
+    --currentHelp
+
+:UIHelp
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+							{
+								'type':'text', 'name':'line', 'anchor': [0, 1],'pivot': [0, 0], 'width': 3, 'height': 700, 
+								'pos': [-240,-375], 
+								'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF', 'events': [],
+							},
+							{
+								'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,322], 
+								'text': '<size=33>OVERVIEW', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'button', 'name':'controls', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,272], 
+								'text': '<size=33>CONTROLS', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'button', 'name':'upgrades', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,222], 
+								'text': '<size=33>UPGRADES', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'button', 'name':'stats', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,172], 
+								'text': '<size=33>STATS', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'button', 'name':'endless', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,122], 
+								'text': '<size=33>ENDLESS', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'button', 'name':'freebuild', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,72], 
+								'text': '<size=33>FREE BUILD', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'button', 'name':'mutators', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,22], 
+								'text': '<size=33>MUTATORS', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'button', 'name':'progression', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,-28], 
+								'text': '<size=33>PROGRESSION', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'button', 'name':'matrix', 'anchor': [0, 1],'pivot': [0, 1], 'width': 260, 'height': 50, 
+								'pos': [-500,-78], 
+								'text': '<size=33>MATRIX', 'tooltip': 'The basics on AEV', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+
+                        ]
+    }"
+
+:OverviewHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 188], 
+                                'text': '
+<align=`center`><size=33>WELCOME TO APEX EVOLUTION!</size>
+Made by qople</size></align><line-height=125%>
+
+
+<align=`left`>Apex Evolution, or AEV for short, is a gamemode inspired by the likes of Vampire Survivors. Control a ship and collect upgrades that add or improve weapons, until you become unstoppable!
+
+
+This menu serves as a source of basic information, as well as a place you can access some additional features when playing on freebuild mode. 
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+:ControlsHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 238], 
+                                'text': '
+<align=`center`><size=33>CONTROLS</size></align><line-height=125%>
+
+
+<align=`left`>Start by picking and placing a ship. You can move it with your map movement hotkeys. Pressing Custom1, which can be bound in the controls menu, will break your ship into pixels and move it to where your mouse is. You can also use the map zoom hotkeys (Q and Z by default) to zoom in and out.
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+:UpgradesHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 193], 
+                                'text': '
+<align=`center`><size=33>UPGRADES</size></align><line-height=125%>
+
+
+<align=`left`>You gain experience based on how much creeper you destroy. Your current level and experience can be seen at the bar on the top of the screen. When it fills up, you can pick from a selection of upgrades.
+
+
+Getting and staying close to an enemy unit will nullify it, and give you a special upgrade choice.
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+:StatsHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 98], 
+                                'text': '
+<align=`center`><size=33>STATS</size></align><line-height=125%>
+
+
+<align=`left`>Upgrades can affect stats in several ways:
+
+
+1) add a flat bonus, `+1`. This increases the base of the stat.
+
+2) Increment an additive multiplier, `+20%`. Two `+20%`s will increase a stat by 40%.
+
+3) Multiply a stat, `X2`. This stacks exponentially, and is usually seen on artifacts.
+
+
+All of these effects can stack, and apply in the order listed. A summary of the effects affecting a stat can be seen on the `STATS` dropdown menu in the top left.
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+:EndlessHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 248], 
+                                'text': '
+<align=`center`><size=33>ENDLESS</size></align><line-height=125%>
+
+
+<align=`left`>Destroy all creeper on the map to unlock endless mode. Endless mode will constantly spawn creeper on the map in increasing quantities until you die. You receive a brief summary of your performance after you die in endless.
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+:FreebuildHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 98], 
+                                'text': '
+<align=`center`><size=33>FREE BUILD</size></align><line-height=125%>
+
+
+<align=`left`>Everything below this section relates to Free Build mode, and is not necessary to know if you are playing without it. Free Build content is never required to beat any level.
+
+
+When Free Build mode is enabled, you gain access to some additional ways to play AEV to spice up the experience: Mutators, optional modifiers that can be added to your run; and Progression Mode, a meta progression-based mode that drastically increases the difficulty, but allows you to gain persistent upgrades that carry across playthroughs and levels.
+
+
+Free Build mode can be enabled on the top right of the screen, on the bottom button in the dropdown menus.
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+:ProgressionHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 17], 
+                                'text': '
+<align=`center`><size=33>PROGRESSION MODE</size></align><line-height=125%>
+
+
+<align=`left`>Progression mode can be accesed by enabling Free Build mode, then going to the new `IMPORT/EXPORT` tab in this menu. If you have a code exported from a previous run, you can type it in there. If not, you can simply hit the `IMPORT` button without entering a code to start from a blank save.
+
+
+Progression mode is a gamemode for AEV that adds in a meta progression system. The difficulty will be greatly increased, and some levels may even be impossible at first. At the end of your run, though, you receive matrix points based on your performance. These can be used to upgrade your ship permanently in the `MATRIX` tab. A more detailed description of this can be found in the next help tab.
+
+
+Once your run ends in progression mode, DO NOT leave the level. First, spend any matrix points you have earned. Then, go back to the `IMPORT/EXPORT` tab. It will now have a new code that you can write down and put in next time to keep your matrix points and upgrades, even on a different level!
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+:MutatorsHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 125], 
+                                'text': '
+<align=`center`><size=33>MUTATORS</size></align><line-height=125%>
+
+
+<align=`left`>Mutators are a Free Build-only feature that allows you to add modifiers to your runs. Some make the game harder, some easier, and some may do both. As many mutators can be added to your run as you like.
+
+
+In progression mode, mutators can affect how many matrix points are gained at the end of your run. You cannot gain negative matrix points from a run, if you have modifiers that reduce point gain. Any bonuses to point gain are only received if you beat the level. Mutators\' modifiers to point gain can be seen on the mutators screen when progression mode is enabled. Slammer mode counts as a +2 matrix point mutator.
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+:MatrixHelpUI
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'overview', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 700, 'height': 50, 
+                                'pos': [135, 17], 
+                                'text': '
+<align=`center`><size=33>POWER MATRIX</size></align><line-height=125%>
+
+
+<align=`left`>The power matrix is how meta progression is earned in progression mode. Any matrix points you earn at the end of your runs can be spent in the `MATRIX` tab to gain upgrades that persist across runs. Matrix points can be redistributed at will, although they cannot be spent during a run.
+
+
+The power matrix is an 8x8 grid, where each row and column corresponds to one of 8 stats, called `powers`. Each cell in the grid adds 1 to the power of its row and column when purchased. When a row or column is completed, you gain an additional 2 to its power. This amounts to a maximum value of 20 for each of the 8 powers.
+
+
+Each power has an effect with every level: for instance, the Experience power gives +1% XP for each level. However, powers also give additional bonuses on certain milestones: upon reaching 10 Experience, for instance, level cost scaling is slightly reduced. The primary and milestone effects of each power can be seen in the `POWERS` tab of this menu.
+', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+
+                        ]
+    }"
+    "`" DQ StringReplace
+
+# ==========================
+# SETTINGS TAB
+
+:SettingsTabCreated
+	RegisterForMsg("TOGGLE_AUTOSAVE" "ToggleAutosave")
+    "overview" >currentHelp
+
+:SettingsTabDestroyed
+	DeregisterForMsg("TOGGLE_AUTOSAVE")
+    DestroyUI("HelpInfo")
+    --currentHelp
+
+# Settings callback messages
+:ToggleAutosave
+	<-*AEV_EnableAutosave ! ->*AEV_EnableAutosave
+    "SET_MENU_TAB" TableN("name" "settings" 1) SendMsg
+
+:UISettings
+	@BeginConcatAll
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+							{
+								'type':'button', 'name':'enableautosave', 'anchor': [0, 1],'pivot': [0, 1], 'width': 20, 'height': 20, 
+								'pos': [-495,300], 
+								'text': '', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['TOGGLE_AUTOSAVE'],
+								"
+								if(<-*AEV_EnableAutosave)
+									"'image': '/ApexEvolution/Sprites/UI/check.png',
+									'imageSize': [13,13], 'imagePos':[4,4],"
+								endif
+"							},
+							{
+								'type':'text', 'name':'autosavelabel', 'anchor': [0, 1],'pivot': [0, 1], 'width': 20, 'height': 20, 
+								'pos': [-465,300], 
+								'text': 'Autosave to slot 1 every 10 minutes', 'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': ['TOGGLE_AUTOSAVE'],
+							},
+
+                        ]
+    }"
+
+	@ConcatAll
+
+
+# ==========================
+# MUTATORS TAB
+
+
+:InitMutators
+    <_DATA >mutators
+
+:MutatorsTabCreated
+	RegisterForMsg("SET_OPEN_MUTATOR" "SetOpenMutator")
+	RegisterForMsg("TOGGLE_MUTATOR" "ToggleMutator")
+    #"overview" >currentHelp
+
+:MutatorsTabDestroyed
+	DeregisterForMsg("SET_OPEN_MUTATOR")
+    DestroyUI("OpenMutator")
+    --openMutator
+
+:SetOpenMutator
+    <mutators 0 do
+        if(<mutators[i][0] <openMutator eq)
+            <mutators[i] >mutator
+            "MenuTab" <mutator[0] V4(0.243 0 0.336 1) SetUIBackgroundColor
+            break
+        endif
+    loop
+
+
+    "OpenMutator" DestroyUI
+    <_DATA{"name"} >openMutator
+    <mutators 0 do
+        if(<mutators[i][0] <openMutator eq)
+            <mutators[i] >mutator
+            "MenuTab" <mutator[0] V4(0.8 0.8 0 1) SetUIBackgroundColor
+            "OpenMutator" @OpenMutatorUI CreateTable CreateUI pop pop
+            break
+        endif
+    loop
+
+
+:ToggleMutator
+    if(<-*AEV_ActiveMutators <openMutator GetListIndex dup >index gte0)
+        # In the list, remove it
+        <-*AEV_ActiveMutators <index RemoveListElement
+        "MenuTab" <openMutator V4(1 1 1 1) SetUiColor
+        "OpenMutator" "toggle" "<size=33>ENABLE" SetUIText
+    else
+        <-*AEV_ActiveMutators <openMutator AppendToList
+        
+        "MenuTab" <openMutator V4(0 1 0 1) SetUiColor
+        "OpenMutator" "toggle" "<size=33>DISABLE" SetUIText
+    endif
+
+:UIMutators
+	@BeginConcatAll
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'text', 'name':'', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 200, 'height': 20, 
+                                'pos': [-177.5,300], 
+                                'text': '<size=33><align=`center`>MUTATORS', 'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+							{
+								'type':'button', 'name':'mutators', 'anchor': [0, 1],'pivot': [0, 1], 'width': 25, 'height': 25, 
+								'pos': [-112.5,302], 
+								'text': '<size=22>?', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+							{
+								'type':'text', 'name':'line', 'anchor': [0, 1],'pivot': [0, 0], 'width': 3, 'height': 700, 
+								'pos': [115,-375], 
+								'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF', 'events': [],
+							},
+                            
+                            "
+
+
+                            
+
+                            # Show the buttons for each mutator
+                            -495 >x
+                            230 >y
+
+                            <mutators 0 do
+                                <mutators[i] >mutator
+                                <mutator[0] >id
+                                <mutator[1] >name
+                                <mutator[2] >description
+                                <mutator[3] >color
+                                #<mutator[5] >matrixPointChange
+                                "
+                                {
+                                    'type':'button', 'name':'" <id "', 'anchor': [0, 1],'pivot': [0, 1], 'width': 300, 'height': 30, 
+                                    'pos': [" <x ", " <y "], 
+                                    'text': '" <name ToUpper "', 'tooltip': '" <description "'" "\'" StringReplace "', 'bgcolor': '#3E0056', 'color': '"
+                                    if(<-*AEV_ActiveMutators <id ListContains)
+                                        "#00FF00"
+                                    else
+                                        "#FFFFFF"
+                                    endif 
+                                    "', 'events': ['SET_OPEN_MUTATOR'],
+                                },"
+
+                                <x 305 add >x
+                                if(<x 0 gt)
+                                    -495 >x
+                                    <y 35 sub >y
+                                endif
+                            loop
+                            "
+
+                        ]
+    }"
+
+	@ConcatAll
+    "`" DQ StringReplace 
+
+:OpenMutatorUI
+    <mutator[0] >id
+    <mutator[1] >name
+    <mutator[2] >description
+    <mutator[3] >color
+    <mutator[5] >matrixPointChange
+
+    @BeginConcatAll
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'title', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 30, 
+                                'pos': [120,300], 
+                                'text': '<size=33><align=`center`>" <name ToUpper "', 'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+                                'type':'text', 'name':'description', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 30, 
+                                'pos': [120," 230 <description StringLength 34 div 14 mul sub "], 
+                                'text': '<line-height=125%><width=375>" <description "'" "\'" StringReplace "', 'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+                                'type':'button', 'name':'toggle', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 80, 
+                                'pos': [120,-290], 
+                                'text': '<size=33>" if(<-*AEV_ActiveMutators <id ListContains) "DISABLE" else "ENABLE" endif 
+                                "', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['TOGGLE_MUTATOR'],
+                            },"
+                            
+                            if(<-*AEV_ProgressionEnabled)
+                                "{
+                                    'type':'button', 'name':'toggle', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 80, 
+                                    'pos': [120, -150], 
+                                    'text': '"
+                                    if(<matrixPointChange)
+                                        if(<matrixPointChange gt0)
+                                            "+" <matrixPointChange " matrix points on successful level completion."
+                                        else if(<matrixPointChange lt0)
+                                            if(<matrixPointChange -100 lte)
+                                                "Disables matrix point gain."
+                                            else
+                                                <matrixPointChange " matrix points gained on runs with this mutator."
+                                            endif
+                                        endif endif
+                                    else
+                                        "No effect on matrix point gain."
+                                    endif
+                                    "', 'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                                },"
+                            endif
+                            "
+                        ]
+    }"
+
+    @ConcatAll
+    "`" DQ StringReplace 
+
+# =================================
+
+
+:UiExport
+    @BeginConcatAll
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'input', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 900, 'height': 50, 
+                                'pos': [0, 300], 
+                                'text': '<size=33>Click here to enter save code', 'tooltip': '', 'bgcolor': '#333333', 'color': '#FFFFFF', 'events': ['ENTER_CODE'],
+                            },
+                            {
+                                'type':'button', 'name':'input', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 120, 'height': 50, 
+                                'pos': [0, 240], 
+                                'text': '<size=33>IMPORT', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['CONFIRM_IMPORT'],
+                            },
+                            {
+                                'type':'button', 'name':'status', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 900, 'height': 50, 
+                                'pos': [0, 190], 
+                                'text': 'Progression mode is currently: " if(<-*AEV_ProgressionEnabled) "ENABLED" else "DISABLED. Type in a save if you have one, or just hit IMPORT to start a new one." endif "', 'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },"
+
+                            # 1: invalid save (checksum fail)
+                            # 2: Valid save, but using a future version (save version > current version)
+                            #	 Confirms load in contingency mode (just loads matrix points, ignores the rest)
+                            # 3: Valid save, but using a past version (save version < current version)
+                            #	 This code isn't possible for version 0, but will be added when the save version goes to 1
+                            #	 Intended treatment is to show a confirmation and still let the save be loaded
+                            #	 Unless I find a terrible bug in this version and everyone ends up with broken/cheated saves
+                            #	 In that case I'll disallow loading version 0 saves on version 1+
+                            #	 Hence the progression mode beta warning
+                            # 4: Unknown error 
+                            if(<-*errorCode 1 eq <-*errorCode 4 eq ||)
+                                "{
+                                    'type':'button', 'name':'error', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 900, 'height': 50, 
+                                    'pos': [0, 120], 
+                                    'text': '"
+                                    "Please enter a valid save. Did you get the capitalization right? (Error code: " <-*errorCode ")"
+                                    "', 'tooltip': '', 'bgcolor': '#aa3344', 'color': '#FFFFFF', 'events': [],
+                                },"
+                            endif
+
+                            if(<-*errorCode 2 eq)
+                                "{
+                                    'type':'button', 'name':'longcode', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 900, 'height': 50, 
+                                    'pos': [0, 120], 
+                                    'text': '"
+                                    "Your save is from a future AEV version. Loaded in contingency mode (Matrix points only) (Warning code: " <-*errorCode ")"
+                                    "', 'tooltip': '', 'bgcolor': '#888222', 'color': '#FFFFFF', 'events': [],
+                                },"
+                            endif
+
+                            
+                            
+                            if(<-*AEV_ProgressionEnabled)
+                                "{
+                                    'type':'button', 'name':'longcode', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 900, 'height': 50, 
+                                    'pos': [0, 50], 
+                                    'text': '<align=`left`>  Your save code:\t\t\t\t\t\t" SendMsg("ExportSave" 1) <-*AEV_Save "', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': [],
+                                },"
+                                "{
+                                    'type':'button', 'name':'shortcode', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 900, 'height': 50, 
+                                    'pos': [0, -20], 
+                                    'text': '<align=`left`>  Short code (doesn\'t save matrix layout): \t" SendMsg("ExportSave" 0) <-*AEV_Save "', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': [],
+                                },"
+
+                            
+                            endif
+                            "{
+                                'type':'button', 'name':'notice', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 900, 'height': 250, 
+                                'pos': [0, -80], 
+                                'text': 'Due to game limitations, you must write down and type back in your code yourself. Codes are case sensitive.<br><br><br><br><br>IMPORTANT NOTE: Progression mode is still in testing. There may be issues or imbalance, and your save code may stop working on later versions. If you have a save from a future version, your save will still probably work, but any code exported from this level will likely be invalid on newer maps.', 'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },"
+                            
+                            "
+
+
+                        ]
+    }"
+
+    @ConcatAll
+    "`" DQ StringReplace 
+
+# ===========================
+
+
+:MatrixTabCreated
+    "" >openBox
+    false >respecOpen
+	RegisterForMsg("MATRIX_BOX" "BoxClicked")
+	RegisterForMsg("SHOW_RESPEC" "ShowRespec")
+
+:MatrixTabDestroyed
+    DestroyUI("BoxInfo")
+    DestroyUI("RespecPrompt")
+	DeregisterForMsg("MATRIX_BOX")
+	DeregisterForMsg("SHOW_RESPEC")
+    --coords
+    --respecOpen
+
+:BoxClicked
+    if(<openBox StringLength)
+        "MenuTab" <openBox 
+        if(<-*AEV_MatrixTable[<coords.x][<coords.y])
+            V4(0.4 0.6 0.73333 1)
+        else
+            V4(0.625 dup dup 1)
+        endif
+        SetUIBackgroundColor
+    endif
+    <_DATA{"name"} dup >openBox
+    "," split >coords
+	# Convert to a vector
+	<coords 0 do
+		<coords[i] AsInt
+	loop
+	V2 >coords
+
+    "MenuTab" <openBox V4(0.416 0.416 0.416 1) SetUIBackgroundColor
+
+    DestroyUI("BoxInfo")
+    CreateUI("BoxInfo" @BoxInfoUI CreateTable) pop pop
+
+:ShowRespec
+    if(<respecOpen)
+        false >respecOpen
+        DestroyUI("RespecPrompt")
+    else
+        true >respecOpen
+        CreateUI("RespecPrompt" @RespecUI CreateTable) pop pop
+    endif
+
+:UiMatrix
+    @BeginConcatAll
+
+    # STATS
+    # 1. Damage
+    # 2. Fire delay
+    # 3. Damage area/radius
+    # 4. Critical
+    # 5. Rerolls/choice
+    # 6. Experience
+    # 7. Luck?
+    # 8. Move speed
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'title', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 500, 'height': 20, 
+                                'pos': [-192.5, 300], 
+                                'text': '<size=33>POWER MATRIX', 'tooltip': '', 'bgcolor': '#33333300', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+								'type':'button', 'name':'matrix', 'anchor': [0, 1],'pivot': [0, 1], 'width': 25, 'height': 25, 
+								'pos': [-77.5,302], 
+								'text': '<size=22>?', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SET_HELP'],
+							},
+                            {
+                                'type':'button', 'name':'pointdisplay', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 20, 
+                                'pos': [120,300], 
+                                'text': '<size=33>MATRIX POINTS: " <-*matrixPoints "', 'tooltip': '', 'bgcolor': '#33333300', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+								'type':'text', 'name':'line', 'anchor': [0, 1],'pivot': [0, 0], 'width': 382, 'height': 3, 
+								'pos': [118, 260], 
+								'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF', 'events': [],
+							},
+                            {
+                                'type':'button', 'name':'respec', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 50, 'height': 50, 
+                                'pos': [-455, -290], 
+                                'text': '', 'tooltip': '', 'bgcolor': '#450000', 'color': '#FFFFFF', 'events': ['SHOW_RESPEC'],
+                                'image': '/ApexEvolution/Sprites/UI/respec.png',
+                            },"
+
+
+                            # The actual grid
+
+                            # Columns go in first
+                            8 0 do
+                                "{
+                                    'type':'button', 'name':'column" 7 i sub "', 'anchor': [0, 1],'pivot': [0, 0.5], 'width': 30, 'height': 500, 
+                                    'pos': [" -400 i 60 mul add ", -10], 
+                                    'text': '', 'tooltip': '', 'bgcolor': '"
+                                    true
+                                    8 0 do
+                                        <-*AEV_MatrixTable[j][i] &&
+                                    loop
+                                    if
+                                        "#00aaff"
+                                    else
+                                        "#333333"
+                                    endif
+                                    "', 'color': '#FFFFFF', 'events': [],
+                                },"
+
+                                # Images too
+
+                                # For the column
+                                "{
+                                    'type':'button', 'name':'" <-*AEV_PowerNames[i] "', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 30, 'height': 30, 
+                                    'pos': [" -385 i 60 mul add ", -290], 
+                                    'text': '', 'tooltip': '" <-*AEV_PowerNames[i] "', 'bgcolor': '#33333300', 'color': '#FFFFFF', 'events': ['SET_OPEN_POWER'],
+                                    'image': '/ApexEvolution/Sprites/UI/statIcon_" i ".png',
+                                    'imageSize': [15,15],
+                                },"
+
+                                # For the row
+                                "{
+                                    'type':'button', 'name':'" <-*AEV_PowerNames[i] "', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 30, 'height': 30, 
+                                    'pos': [ -455, " 200 7 i sub 60 mul sub "], 
+                                    'text': '', 'tooltip': '" <-*AEV_PowerNames[i] "', 'bgcolor': '#33333300', 'color': '#FFFFFF', 'events': ['SET_OPEN_POWER'],
+                                    'image': '/ApexEvolution/Sprites/UI/statIcon_" i ".png',
+                                    'imageSize': [15,15],
+                                },"
+                            loop
+
+
+
+                            8 0 do
+                                # Row lines go in behind each row
+                                "{
+                                    'type':'button', 'name':'row" i "', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 500, 'height': 30, 
+                                    'pos': [ -175," 200 i 60 mul sub "], 
+                                    'text': '', 'tooltip': '', 'bgcolor': '"
+                                    true
+                                    8 0 do
+                                        <-*AEV_MatrixTable[i][7 j sub] &&
+                                    loop
+                                    if
+                                        "#00aaff"
+                                    else
+                                        "#333333"
+                                    endif
+                                    
+                                    "', 'color': '#FFFFFF', 'events': [],
+                                },"
+                                8 0 do
+                                    # Then the boxes fill in the row
+                                    "{
+                                        'type':'button', 'name':'" i "," 7 j sub "', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 50, 'height': 50, 
+                                        'pos': [" -385 i 60 mul add "," 200 j 60 mul sub "], 
+                                        'text': '', 'tooltip': '', 'bgcolor': '"
+                                        if(<-*AEV_MatrixTable[i][7 j sub])
+                                            "#6699BB"
+                                        else
+                                            "#AAAAAA"
+                                        endif
+                                        "', 'color': '#FFFFFF', 'events': ['MATRIX_BOX'],"
+                                        # Put an image down if this box has been bought
+                                        if(<-*AEV_MatrixTable[i][7 j sub])
+                                            "'image': '/ApexEvolution/Sprites/UI/matrixbought.png',
+                                            "
+                                        endif
+                                        
+                                    "},"
+                                loop
+                            loop
+                            
+                            "
+                            {
+								'type':'text', 'name':'line2', 'anchor': [0, 1],'pivot': [0, 0], 'width': 3, 'height': 700, 
+								'pos': [115,-375], 
+								'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF', 'events': [],
+							},
+
+                        ]
+    }"
+
+    @ConcatAll
+    "`" DQ StringReplace 
+
+:BoxInfoUI
+    @BeginConcatAll
+    
+    0 >rowTotal
+    0 >columnTotal
+    8 0 do
+        <rowTotal <-*AEV_MatrixTable[i][<coords.y] add >rowTotal
+        <columnTotal <-*AEV_MatrixTable[<coords.x][i] add >columnTotal
+    loop
+
+    <-*AEV_MatrixTable[<coords.x][<coords.y] >alreadyBought
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'heading', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 80, 
+                                'pos': [120, 270], 
+                                'text': 'Effects of this cell:',
+                                'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+                                'type':'button', 'name':'heading', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 80, 
+                                'pos': [120, 245], 
+                                'text': '" <-*AEV_PowerNames[<coords.x] " + 1',
+                                'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+                                'type':'button', 'name':'heading', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 80, 
+                                'pos': [120, 220], 
+                                'text': '" <-*AEV_PowerNames[<coords.y] " + 1',
+                                'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },"
+
+                            if(<alreadyBought !)
+                                if(<rowTotal 7 eq)
+                                    "{
+                                        'type':'button', 'name':'rowbingo', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 80, 
+                                        'pos': [120, 195], 
+                                        'text': 'Bingo bonus: " <-*AEV_PowerNames[<coords.y] " + 2',
+                                        'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                                    },"
+                                endif
+
+                                if(<columnTotal 7 eq)
+                                    "{
+                                        'type':'button', 'name':'rowbingo', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 80, 
+                                        'pos': [120, 170], 
+                                        'text': 'Bingo bonus: " <-*AEV_PowerNames[<coords.x] " + 2',
+                                        'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                                    },"
+                                endif
+                            endif
+                            
+                            "{
+                                'type':'button', 'name':'" <openBox "', 'anchor': [0, 1],'pivot': [0, 1], 'width': 375, 'height': 80, 
+                                'pos': [120,-290], 
+                                'text': '<size=33>"
+                                if(<alreadyBought)
+                                    "REFUND UPGRADE"
+                                else                                    
+                                    "BUY FOR " <-*AEV_MatrixCost AsInt " POINTS<br><size=22>Or shift-click to buy instantly"
+                                endif
+                                "', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['BOX_BOUGHT'],
+                            },
+                        ]
+    }"
+    @ConcatAll
+
+:RespecUI
+    @BeginConcatAll
+
+
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'heading', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 500, 'height': 150, 
+                                'pos': [-185, 0], 
+                                'text': 'Respec your power matrix? This will refund<br>and remove all purchased matrix upgrades.<br><br><br><br>',
+                                'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+                                'type':'button', 'name':'yes', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 100, 'height': 30, 
+                                'pos': [-250, -30], 
+                                'text': 'YES',
+                                'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['RESPEC_MATRIX'],
+                            },
+                            {
+                                'type':'button', 'name':'no', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 100, 'height': 30, 
+                                'pos': [-120, -30], 
+                                'text': 'NO',
+                                'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SHOW_RESPEC'],
+                            },
+                        ]
+    }"
+    @ConcatAll
+
+
+# =====================
+# Powers Tab
+:PowersTabCreated
+	RegisterForMsg("SHOW_POWER_INFO" "ShowPowerInfo")
+	RegisterForMsg("SHOW_MILESTONE" "SetOpenMilestone")
+    "" >openPower
+    -1 >openMilestone
+
+:PowersTabDestroyed
+    DestroyUI("OpenPower")
+    DestroyUI("PowerInfo")
+    DestroyUI("MilestoneInfo")
+    --openPower
+    --openMilestone
+    --powerNumber
+    --powerHelpOpen
+
+:SetOpenPower
+    <_DATA{"name"} >nextPower
+
+    if(<currentTab "powers" neq)
+        "SET_MENU_TAB" TableN("name" "powers" 1) SendMsg
+    endif
+
+    # Close power help if it's open
+    if(<powerHelpOpen)
+        @ShowPowerInfo
+    endif
+    DestroyUI("MilestoneInfo")
+
+    if(<openPower StringLength)
+        "MenuTab" <openPower V4(0.625 dup dup 1) SetUIBackgroundColor
+    endif
+
+    "OpenPower" DestroyUI
+    <nextPower dup trace >openPower
+
+    # Find the numeric ID of the selected power
+    # Inefficient, but idc it only happens when the UI loads, I'm not spending time setting up an efficient data structure or something
+    <-*AEV_PowerNames 0 do
+        if(<-*AEV_PowerNames[i] ToLower <openPower ToLower eq)
+            i >powerNumber
+            break
+        endif
+    loop
+
+    "MenuTab" <openPower V4(0.416 0.416 0.416 1) SetUIBackgroundColor
+    
+    "OpenPower" @PowerInfoUI CreateTable CreateUI pop pop
+
+:ShowPowerInfo
+    if(<powerHelpOpen)
+        # Close it
+        DestroyUI("PowerInfo")
+        false >powerHelpOpen
+    else
+        # Show the popup window with the power's description
+        true >powerHelpOpen
+        CreateUI("PowerInfo" @PowerHelpUI CreateTable) pop pop
+    endif
+
+:SetOpenMilestone
+    if(<openMilestone gte0)
+        # Reset milestone button color
+        "OpenPower" <openMilestone 
+        if(<-*AEV_MatrixStats[<powerNumber] <milestone[0] gte)
+            V4(0.2 0.8 0.2 1)
+        else
+            V4(0.625 dup dup 1)
+        endif
+        SetUIBackgroundColor
+        DestroyUI("MilestoneInfo")
+    endif
+    
+    <_DATA{"name"} AsInt >openMilestone
+    
+    if(<openMilestone gte0)
+        <-*AEV_PowerMilestones[<powerNumber][<openMilestone] >milestone
+        "OpenPower" <openMilestone V4(0.416 0.416 0.416 1) SetUIBackgroundColor
+        <openMilestone <milestone Trace2
+        CreateUI("MilestoneInfo" @MilestoneHelpUI CreateTable) pop pop
+    endif
+
+:UIPowers
+
+    # Widths of each button
+    ListN(
+        105
+        125
+        155
+        110
+        95
+        140
+        75
+        80
+    8) >widths
+
+	@BeginConcatAll
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'text', 'name':'', 'anchor': [0, 1],'pivot': [0.5, 1], 'width': 200, 'height': 20, 
+                                'pos': [40,300], 
+                                'text': '<size=33><align=`center`>POWERS', 'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+							{
+								'type':'text', 'name':'line', 'anchor': [0, 1],'pivot': [0, 0], 'width': 1000, 'height': 3, 
+								'pos': [-500, 230], 
+								'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF', 'events': [],
+							},
+							{
+								'type':'text', 'name':'line2', 'anchor': [0, 1],'pivot': [0, 0], 'width': 1000, 'height': 3, 
+								'pos': [-500, -75], 
+								'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF', 'events': [],
+							},
+
+                            
+                            "
+
+                            # Show the buttons for each power
+                            270 >y
+                            -463 >x
+
+                            8 0 do
+                                <-*AEV_PowerNames[i] >name
+                                <widths[i] >width
+                                "
+                                {
+                                    'type':'button', 'name':'" <name "', 'anchor': [0, 1],'pivot': [0, 1], 'width': " <width ", 'height': 30, 
+                                    'pos': [" <x ", " <y "], 
+                                    'text': '" <name ToUpper "', 'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF',
+                                    'events': ['SET_OPEN_POWER'],
+                                },"
+                                <x <width 5 add add >x
+
+                                #<x 305 add >x
+                                #if(<x 0 gt)
+                                #    -495 >x
+                                #endif
+                            loop
+                            "
+
+                        ]
+    }"
+
+	@ConcatAll
+    "`" DQ StringReplace
+
+:PowerInfoUI
+    @BeginConcatAll
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'title', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 1000, 'height': 20, 
+                                'pos': [0, 190], 
+                                'text': '<size=33>" <openPower ToUpper "', 'tooltip': '', 'bgcolor': '#00000000', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+                                'type':'button', 'name':'image', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 30, 'height': 30, 
+                                'pos': [-" <widths[<powerNumber] 0.75 mul 15 add ", 190], 
+                                'text': '', 'tooltip': '', 'bgcolor': '#00000000', 'color': '#FFFFFF', 'events': [],
+                                'image': '/ApexEvolution/Sprites/UI/statIcon_" <powerNumber ".png',
+                                'imageSize': [15,15],
+                            },
+                            {
+								'type':'button', 'name':'help', 'anchor': [0, 1],'pivot': [0, 1], 'width': 25, 'height': 25, 
+								'pos': [" <widths[<powerNumber] 0.75 mul 5 sub ", 203], 
+								'text': '<size=22>?', 'tooltip': 'Power description', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SHOW_POWER_INFO'],
+							},
+                            "
+
+                            # The filled in portion goes in first, so it's under everything else
+                            "{
+                                'type':'text', 'name':'filledportion', 'anchor': [0, 1],'pivot': [0, 0.5], 'width': "
+                                <-*AEV_MatrixStats[<powerNumber] 45 mul
+                                ", 'height': 20, 
+                                'pos': [-450, 0], 
+                                'text': '', 'tooltip': '', 'bgcolor': '#00cc00', 'color': '#FFFFFF', 'events': [],
+                            },"
+                            
+                            # Then the bar
+                            "
+                            {
+                                'type':'text', 'name':'barmiddle', 'anchor': [0, 1],'pivot': [0, 0.5], 'width': 900, 'height': 5, 
+                                'pos': [-450, 0], 
+                                'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF', 'events': [],
+                            },"
+
+                            # And the ticks on the bar
+                            21 0 do
+                                -450 i 45 mul add >x
+                                "{
+                                    'type':'text', 'name':'bartick " i "', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 5, 'height': "
+                                    if(i 5 mod eq0)
+                                        26
+                                    else
+                                        10
+                                    endif
+                                    ", 
+                                    'pos': [" <x ", 0], 
+                                    'text': '', 'tooltip': '', 'bgcolor': '#000000', 'color': '#FFFFFF', 'events': [],
+                                },"
+
+                                if(i 5 mod eq0)
+                                    "{
+                                        'type':'button', 'name':'barlabel " i "', 'anchor': [0, 1],'pivot': [0.5 , 0.5], 'width': 50, 'height':25, 
+                                        'pos': [" <x ", -25], 
+                                        'text': '" i "', 'tooltip': '', 'bgcolor': '#00000000', 'color': '#FFFFFF', 'events': [],
+                                    },"
+                                endif
+                            loop
+
+                            # Add a clickable button to show info on each milestone, if any
+                            <-*AEV_PowerMilestones[<powerNumber] >milestones
+                            <milestones 0 do
+                                <milestones[i] >milestone
+                                <milestone[0] >level
+                                -450 <level 45 mul add >x
+                                "{
+                                    'type':'button', 'name':'" i "', 'anchor': [0, 1],'pivot': [0.5 , 0], 'width': 50, 'height':50, 
+                                    'pos': [" <x ", 25], 
+                                    'text': '<size=33>M', 'tooltip': '', 'bgcolor': '"
+                                    if(<-*AEV_MatrixStats[<powerNumber] <level gte)
+                                        # We have this milestone
+                                        "#33cc33"
+                                    else
+                                        "#AAAAAA"
+                                    endif
+                                    "', 'color': '#FFFFFF', 'events': ['SHOW_MILESTONE'],
+                                },"
+                            loop
+
+                        "
+
+                        ]
+    }"
+
+    @ConcatAll
+    "`" DQ StringReplace
+
+:PowerHelpUI
+    @BeginConcatAll
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 149],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'background', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 800, 'height': 300, 
+                                'pos': [0, -80], 
+                                'text': '" <-*AEV_PowerDescriptions[<powerNumber] "',
+                                'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+                                'type':'button', 'name':'close', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 100, 'height': 30, 
+                                'pos': [0, -200], 
+                                'text': 'CLOSE',
+                                'tooltip': '', 'bgcolor': '#AAAAAA', 'color': '#FFFFFF', 'events': ['SHOW_POWER_INFO'],
+                            }
+
+                        ]
+    }"
+
+    @ConcatAll
+    "`" DQ StringReplace
+
+:MilestoneHelpUI
+    @BeginConcatAll
+
+    "{
+        'anchor': [0.5, 0.5],
+        'pos': [0, 0],
+        'pivot': [0, 1],
+        'width': 1,
+        'height': 1,
+        'bgcolor': '#00000000',
+        'Components': 	[
+                            {
+                                'type':'button', 'name':'title', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 800, 'height': 50, 
+                                'pos': [0, -120], 
+                                'text': '<size=33>" <milestone[1] ToUpper "',
+                                'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            },
+                            {
+                                'type':'button', 'name':'description', 'anchor': [0, 1],'pivot': [0.5, 0.5], 'width': 980, 'height': 250, 
+                                'pos': [0, -200], 
+                                'text': '<align=`left`>" <milestone[2] "'" "\'" StringReplace "',
+                                'tooltip': '', 'bgcolor': '#AAAAAA00', 'color': '#FFFFFF', 'events': [],
+                            }
+
+                        ]
+    }"
+
+    @ConcatAll
+    "`" DQ StringReplace

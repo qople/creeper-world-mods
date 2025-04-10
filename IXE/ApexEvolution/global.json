@@ -10,11 +10,10 @@
         { "name": "/ApexEvolution/Managers/gamemanager.irpl", "run_when_paused": false },
         { "name": "/ApexEvolution/Managers/menumanager.irpl", "run_when_paused": true },
         { "name": "/ApexEvolution/Managers/shotmanager.irpl", "run_when_paused": false, "execute_post": true },
-        { "name": "/ApexEvolution/Ships/shipselector.irpl", "run_when_paused": true }
-
-
-
-
+        { "name": "/ApexEvolution/Ships/shipselector.irpl", "run_when_paused": true },
+        { "name": "/ApexEvolution/FreeBuild/menu.irpl", "run_when_paused": false },
+        { "name": "/ApexEvolution/FreeBuild/progression.irpl", "run_when_paused": true },
+        { "name": "/ApexEvolution/FreeBuild/mutators.irpl", "run_when_paused": false, "execute_post": true },
 
     ]
 }

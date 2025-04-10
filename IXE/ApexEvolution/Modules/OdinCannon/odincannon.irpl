@@ -1,7 +1,7 @@
 # The first Legendary-class weapon in AEV. Really just a bigger cannon.
 $fire_range:80
 $shot_damage:500.0
-$shot_damage_distance:25
+$shot_damage_radius:25
 $shot_damage_count:99999
 $fire_delay:300
 
@@ -65,7 +65,7 @@ endif
 #---
 
 :Once
-    List("parent", "shot_damage_distance" "shot_damage", "shot_damage_count", "shot_speed", "shrapnel") >shotVars
+    List("parent", "shot_damage_radius" "shot_damage", "shot_damage_count", "shot_speed", "shrapnel") >shotVars
     <fire_delay SetTimer0
     Self >parent
 

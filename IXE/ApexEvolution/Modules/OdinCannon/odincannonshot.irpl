@@ -41,12 +41,12 @@ Self <pos SetPosition
 
 :Detonate
 
-    <pos.x 0 round <shot_damage_distance sub 
-    <pos.y 0 round <shot_damage_distance sub 
-    <pos.x 0 round <shot_damage_distance add 1 add 
-    <pos.y 0 round <shot_damage_distance add 1 add 
+    <pos.x 0 round <shot_damage_radius sub 
+    <pos.y 0 round <shot_damage_radius sub 
+    <pos.x 0 round <shot_damage_radius add 1 add 
+    <pos.y 0 round <shot_damage_radius add 1 add 
     V4 dup false false GetCreeperInArea >preCreeper
-    <pos EV2 <shot_damage_count <shot_damage_distance <shot_damage -1000000 mul DamageCreeper
+    <pos EV2 <shot_damage_count <shot_damage_radius <shot_damage -1000000 mul DamageCreeper
     false false GetCreeperInArea <preCreeper swap sub "GiveXp" swap SendMsg
 
     if(<shrapnel)

@@ -38,7 +38,7 @@ $behavior:""
     #    "title"         "this is not in the pool actually"
     #    "description"   "just lets the auto stat tracker know to track this stat"
     #    "module"        "cannon"
-    #    "effect"        "incattr/cannon/shot_damage_distance/1"
+    #    "effect"        "incattr/cannon/shot_damage_radius/1"
     #    "rarity"        0
     #    "pickuplimit"   1
     #) <upgrades swap AppendToList
@@ -140,7 +140,7 @@ $behavior:""
         "title"         "Cannon: Damage Aura"
         "module"        "cannon"
         "description"   "Cannon shots deal damage with reduced area around them as they travel, piercing though shallow creeper."
-        "effect"        "addbehavior/cannon/dmgaura/frametravel/damage/1.0/1/0.1"
+        "effect"        "addbehavior/cannon/dmgaura/frametravel/damage/3.0/1/0.1"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -160,7 +160,7 @@ $behavior:""
         "title"         "Cannon: Wide-Area Explosives"
         "module"        "cannon"
         "description"   "Cannon fire delay X3, but damage area X4."
-        "effect"        "mulattr/cannon/fire_delay/3, mulattr/cannon/shot_damage_count/4, mulattr/cannon/shot_damage_distance/3"
+        "effect"        "mulattr/cannon/fire_delay/3, mulattr/cannon/shot_damage_count/4, mulattr/cannon/shot_damage_radius/3"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList

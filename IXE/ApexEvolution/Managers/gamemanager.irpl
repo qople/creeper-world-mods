@@ -1,6 +1,12 @@
 # Controls what game logic doesn't make sense to attach to the ship.
 $creeperDoubleTime:18000 # Base creeper production scales by +100% every this many frames
 $creeperMultExponent:1 # Base multiplier is raised to this power.
+$creeperScalingStart:0 # Frames added to the scaling time
+
+# Autosave (deprecated because quicksave doesn't work)
+#if(<-*AEV_EnableAutosave GetGameUpdateCount 30 mod eq0 &&)
+#    QuickSave
+#endif
 
 if(GetCreeperTotal eq0 GetGameUpdateCount 30 gte &&)
     once
@@ -10,7 +16,7 @@ if(GetCreeperTotal eq0 GetGameUpdateCount 30 gte &&)
     endonce
 endif
 
-if(GetGameUpdateCount dup 300 mod eq0 &&)
+if(GetGameUpdateCount dup 300 mod 5 eq &&)
     once
         @GetBaseProduction
     endonce
@@ -65,7 +71,7 @@ endif
 
 #Scales production of sand emitters over time
 :ScaleEmitters
-    GetGameUpdateCount <creeperDoubleTime AsFloat div 1 add <creeperMultExponent pow >productionMult
+    GetGameUpdateCount <creeperScalingStart add <creeperDoubleTime AsFloat div 1 add <creeperMultExponent pow >productionMult
     <emitters 0 do
         <emitters[i] "emitter" "makerParticleEmitCount" <emitterBaseProduction[i] <productionMult mul AsInt SetControllerArg
     loop
@@ -83,6 +89,7 @@ endif
     @UpdateEndlessText
 
 :GameLoaded
+    RegisterScript("GameManager")
     if(<endlessStart gte0 <waiting || GetGameUpdateCount gt0 &&)
         SendMsg("ShowEndlessButton" 0)
     endif
@@ -91,12 +98,8 @@ endif
     endif
 
 :Once
-    RegisterScript("game")
+    RegisterScript("GameManager")
 
-    # Change the 
-    if(GetSlammer)
-        1.3 >creeperMultExponent
-    endif
     -1 >endlessStart
 
 # Marks this point in the stack as the start of the section for concatall to operate on.

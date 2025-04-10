@@ -134,7 +134,7 @@ $behavior:""
         "title"         "Lightspirit: Ultra-Wide Effects"
         "module"        "lightspirit"
         "description"   "Light spirits deal damage over 5X the area, but with 1/4 the damage."
-        "effect"        "mulattr/lightspirit/shot_damage/0.25, mulattr/lightspirit/shot_damage_distance/2, mulattr/lightspirit/shot_damage_count/5"
+        "effect"        "mulattr/lightspirit/shot_damage/0.25, mulattr/lightspirit/shot_damage_radius/2, mulattr/lightspirit/shot_damage_count/5"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList

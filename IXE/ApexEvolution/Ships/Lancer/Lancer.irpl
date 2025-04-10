@@ -11,8 +11,8 @@
 # Names supported by default are cannon, sentrygun, rocket, lathe, cryon, particlegun, and maker.
 # For other modules, the name is defined in the custom_modules list below, and part names should match.
 
-$ship_name:"The Soulkeeper"
-$ship_description:"A ship that uses various types of spirits to seek out and destroy creeper. Comes equipped with a phantom coil."
+$ship_name:"The Lancer"
+$ship_description:"A ship focusing on pure offensive power and maneuverability. Equipped with blasters, rockets, and a darkling.<br>Ship by Cornucanis."
 
 # -------------------------
 
@@ -33,7 +33,7 @@ $custom_modules:""
 # Any other cannon modules defined above will start inactive and can be picked up by upgrades at game time.
 # If a variable is not defined, it is assumed to be 0.
 
-$start_unlocked_lightspirit:1
+$start_unlocked_blaster:1
 $start_unlocked_lathe:1
 
 # ---------------------------
@@ -56,28 +56,18 @@ $start_unlocked_lathe:1
 
 # ===============================
 
-if(<revivechanceactive <-*mainShip "/ApexEvolution/Ships/ship.irpl" "portion" GetScriptVar <-*mainShip "/ApexEvolution/Ships/ship.irpl" "deathportion" GetScriptVar lte && GetTimer0 eq0 &&)
-    690 SetTimer0
-    # About to die! Roll if we need to
-    <reviveSeed @SeedRandFloat 0.5 lte <count 5 lt && if
-        <count 1 add >count
-        SendMsg("addrevive" 1)
-    endif
-endif
+#:turbomode
+    #Self "/ApexEvolution/Ships/ship.irpl" "moveSpeed" 4.5 SetScriptVar
 
-:revivechance
-    true >revivechanceactive
 
 # Define upgrades associated with this ship. These will be added to the pool if the ship is picked for the level.
 :DefineUpgrades
-
     CreateList >_upgrades
-
     Table(
-        "id"            "chancerevive"
-        "title"         "Soulkeeper Special Upgrade: Quantum Soul"
-        "description"   "Whenever you would die, you have a 50% chance to be moved to a pocket dimension for repairs. Has a short cooldown after activation."
-        "effect"        "sendmsg/revivechance/0"
+        "id"            "speedup"
+        "title"         "Lancer Special Upgrade: Turbo Mode"
+        "description"   "Increase movement speed of Lancer and most of its weaponry."
+        "effect"        "sendmsg/shipspeed/1.3, mulattr/darkling/spin_time/0.5, mulattr/heavyspirit/shot_speed/1.6"
         "rarity"        5
         "pickuplimit"   1
     ) <_upgrades swap AppendToList
@@ -87,14 +77,17 @@ endif
     RegisterScript("ship")
 
 :Once
-    # I don't want floating point precision to mess up chances, so I'm gonna use a slightly different RNG method:
-    ElapsedTime AsInt 1024 sub List >reviveSeed
-
-    RegisterForMsg("revivechance" dup)
+    #RegisterForMsg("turbomode" dup)
     # Defines the "_upgrades" variable containing all this ship's upgrades
     @DefineUpgrades
 
     Self >mainShip #So the loader script knows who we are
+    Self "/ApexEvolution/Ships/ship.irpl" "moveSpeed" 3.2 SetScriptVar #speedier than the average ship
+	
+	#reducing darkling width slightly while increasing length to accommodate the size of the ship
+	Self "darkling0" getChild ->darkID
+	<-darkID "/ApexEvolution/Modules/Darkling/darkling.irpl" "fire_range" <-darkID "/ApexEvolution/Modules/Darkling/darkling.irpl" "fire_range" GetScriptVar 1.2 mul SetScriptVar
+	<-darkID "/ApexEvolution/Modules/Darkling/darkling.irpl" "shot_damage_distance" <-darkID "/ApexEvolution/Modules/Darkling/darkling.irpl" "shot_damage_distance" GetScriptVar 0.9 mul SetScriptVar
     @LoadShip
 
 # Detects how many modules of the given type are attached to this ship
@@ -107,13 +100,9 @@ endif
     loop
     999 return
 
-:SeedRandFloat
-    dup trace >seed
-	<seed[0] 1 add dup >seed[0] sin 10000 mul dup floor sub
-    dup trace
-
 
 # Sends a message telling the ship loader to initialize the ship and its upgrades, and scrape this script for information about it.
 # THIS MUST BE CALLED FOR THIS TO WORK PROPERLY! 
 :LoadShip
+    RegisterScript("ship")
     SendMsg("LoadShip" 0)

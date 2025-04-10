@@ -1,5 +1,5 @@
 $shot_damage:1.5
-$shot_damage_distance:1.75
+$shot_damage_radius:1.75
 $fire_range:45
 $fire_delay:10
 $ROTATE_SPEED:4.0
@@ -61,7 +61,6 @@ endif
 #---
 
 :Once
-    List("shot_damage_distance" "shot_damage" "actrail") >shotVars
     <fire_delay SetTimer0
 
 :Awake

@@ -95,6 +95,7 @@
     if(<NO !)
         true >NO
         RegisterForMsg("ApplyUpgrade" dup)
+        RegisterForMsg("ApplyEffect" "EffectMsgCallback")
         RegisterForMsg("LevelUp" dup)
         RegisterScript("effects")
 
@@ -107,6 +108,15 @@
 :LevelUp
     <levelEffects 0 do
         <levelEffects[i] >effectList
+        @ApplyEffect
+    loop
+
+:EffectMsgCallback
+    <_DATA @ParseEffect >allEffects
+
+    <allEffects 0 do
+        <allEffects[i] >effectList
+
         @ApplyEffect
     loop
 
@@ -279,7 +289,7 @@
 
     #<moduleName @ParseModuleList >modules
 
-    <modules 0 do
+    <modules dup trace 0 do
         <modules[i] >module
         <-*moduleBehaviors{<module} >behavior
         <behavior ".irpl" EndsWith  <behavior StringLength eq0 || >useScript
@@ -291,8 +301,8 @@
 
         if(<useScript)
             <numModules 0 do
-                <-*mainShip <moduleName i concat GetChild >moduleUnit
-                <moduleUnit <behavior <varName <attributeValue SetScriptVar
+                <-*mainShip <module i concat GetChild >moduleUnit
+                <moduleUnit <behavior <varName <attributeValue dup trace SetScriptVar
             loop
         else
             <-*mainShip <behavior <varName <attributeValue SetControllerArg
@@ -447,3 +457,10 @@
         <allEffects[i] >effectList
         @ApplyEffect
     loop
+
+:ParseEffect
+    ", " "," StringReplace "," Split >effects
+    <effects 0 do
+        <effects[i] "/" Split >effects[i]
+    loop
+    <effects

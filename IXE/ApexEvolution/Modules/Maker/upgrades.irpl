@@ -53,7 +53,7 @@ $behavior:""
     ) <upgrades swap AppendToList
     
     Table(
-        "attribute"         "shot_damage_distance"
+        "attribute"         "shot_damage_radius"
         "attribute_name"    "damage radius"
         "module"            "maker"
         "title"             "Huge Shells"
@@ -98,7 +98,7 @@ $behavior:""
         "title"         "Maker: Dump Mode"
         "module"        "maker"
         "description"   "Makers are always on, and dump many small shots with gravity down around you."
-        "effect"        "mulattr/maker/shot_damage/0.4, mulattr/maker/shot_damage_distance/0.8, mulattr/maker/num_shots/5, incattr/maker/shot_gravity/0.3, mulattr/maker/spread/360, setattr/maker/spread_rand_mode/1, setattr/maker/dump_mode/1, banupgrade/fire_rangemaker"
+        "effect"        "mulattr/maker/shot_damage/0.4, mulattr/maker/shot_damage_radius/0.8, mulattr/maker/num_shots/5, incattr/maker/shot_gravity/0.3, mulattr/maker/spread/360, setattr/maker/spread_rand_mode/1, setattr/maker/dump_mode/1, banupgrade/fire_rangemaker"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -108,7 +108,7 @@ $behavior:""
         "title"         "Maker: Double Shot"
         "module"        "maker"
         "description"   "The maker fires two shots, but each one is weaker."
-        "effect"        "mulattr/maker/num_shots/2, mulattr/maker/shot_damage/0.85, mulattr/maker/shot_damage_distance/0.85"
+        "effect"        "mulattr/maker/num_shots/2, mulattr/maker/shot_damage/0.85, mulattr/maker/shot_damage_radius/0.85"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -118,7 +118,7 @@ $behavior:""
         "title"         "Maker: Wide-Area Shots"
         "module"        "maker"
         "description"   "Maker AC radius X1.5, but damage is halved."
-        "effect"        "mulattr/maker/shot_damage/0.5, mulattr/maker/shot_damage_distance/2"
+        "effect"        "mulattr/maker/shot_damage/0.5, mulattr/maker/shot_damage_radius/2"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -138,7 +138,7 @@ $behavior:""
         "title"         "Maker: Bigger Globs"
         "module"        "maker"
         "description"   "Maker radius X2, but they fire 3X slower."
-        "effect"        "mulattr/maker/shot_damage_distance/2, mulattr/maker/fire_delay/3"
+        "effect"        "mulattr/maker/shot_damage_radius/2, mulattr/maker/fire_delay/3"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -148,7 +148,7 @@ $behavior:""
         "title"         "Maker: Gatling"
         "module"        "maker"
         "description"   "Double maker fire rate, but AC depth X0.75 and radius X0.9."
-        "effect"        "mulattr/maker/shot_damage/0.75, mulattr/maker/shot_damage_distance/0.9, mulattr/maker/fire_delay/0.5"
+        "effect"        "mulattr/maker/shot_damage/0.75, mulattr/maker/shot_damage_radius/0.9, mulattr/maker/fire_delay/0.5"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -159,7 +159,7 @@ $behavior:""
         "title"         "Maker: Synergy Boost"
         "module"        "maker"
         "description"   "Maker fire radius X1.025 for each weapon artifact on OTHER modules."
-        "effect"        "foreachartifact/not_maker/mulattr/maker/shot_damage_distance/1.025"
+        "effect"        "foreachartifact/not_maker/mulattr/maker/shot_damage_radius/1.025"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList

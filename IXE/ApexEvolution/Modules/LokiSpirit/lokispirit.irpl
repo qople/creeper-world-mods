@@ -5,8 +5,8 @@ $fire_cost:3
 $fire_range:300
 $fire_delay:300
 $shot_damage_count:9999
-$shot_damage_distance:6
-$shot_damage:1.0
+$shot_damage_radius:6
+$shot_damage:0.6
 
 $allowProtection:1
 

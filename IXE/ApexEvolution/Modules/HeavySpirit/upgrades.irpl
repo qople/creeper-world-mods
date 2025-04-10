@@ -75,7 +75,7 @@ $behavior:""
         "title"         "Heavyspirit: Quantity over Quality"
         "module"        "Heavyspirit"
         "description"   "Heavyspirit fire delay X0.2, but damage radius is halved."
-        "effect"        "mulattr/heavyspirit/fire_delay/0.2, mulattr/heavyspirit/shot_damage_distance/0.5"
+        "effect"        "mulattr/heavyspirit/fire_delay/0.2, mulattr/heavyspirit/shot_damage_radius/0.5"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -85,7 +85,7 @@ $behavior:""
         "title"         "Heavyspirit Mastery"
         "module"        "heavyspirit"
         "description"   "Heavyspirit damage X1.75. Removes all future heavyspirit upgrades."
-        "effect"        "mulattr/heavyspirit/shot_damage/1.75, banmodule/heavyspirit, banupgrade/heavyspirit"
+        "effect"        "mulattr/heavyspirit/shot_damage/1.75, banmodule/heavyspirit, banupgrade/numheavyspirit"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList

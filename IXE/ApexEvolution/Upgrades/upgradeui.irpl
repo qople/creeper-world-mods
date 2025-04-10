@@ -7,7 +7,6 @@
 		0 ->*upgradeCost
 		0 ->*shipLevel
 		-1 >lastLevel
-		RegisterForMsg("ShowHelpMenu" dup)
 		RegisterForMsg("ShowStatsMenu" dup)
 		RegisterForMsg("ShowModuleUi" dup)
 		RegisterForMsg("ShowEndlessButton" dup)
@@ -26,8 +25,6 @@
 	DestroyUI("levelbar")
 	CreateUI("levelbar" @UILevelBar CreateTable) >result >resultString
 
-:ShowHelpMenu
-	CreateUI("HelpMenu" @UIHelp CreateTable)
 
 :ShowStatsMenu
 	CreateUI("StatsMenu" @UIStats CreateTable)
@@ -106,7 +103,79 @@
 								'color':'#FFFFFF',
 								'active':false,
                                 'events': ['UPGRADE_CHOSEN']
-							}
+							},
+							{
+								'type':  'button', 
+								'text': 'upgrade here',
+								'pivot': [0.5, 0.5],
+								'pos': [320, 0], 
+								'width': 300, 
+								'height': 400,
+								'name':'4',
+								'color':'#FFFFFF',
+								'active':false,
+                                'events': ['UPGRADE_CHOSEN']
+							},
+							{
+								'type':  'button', 
+								'text': '',
+								'tooltip': 'REROLL',
+								'pivot': [0.5, 0.5],
+								'pos': [-120, -250], 
+								'width': 150, 
+								'height': 60,
+								'name':'reroll',
+								'bgcolor': '#CCFFCC',
+								'color':'#FFFFFF',
+								'active':false,
+                                'events': ['REROLL_UPGRADES']
+							},
+							{
+								'type':  'button', 
+								'text': '',
+								'tooltip': 'REROLL',
+								'pivot': [0.5, 0.5],
+								'pos': [-160, -250], 
+								'width': 30, 
+								'height': 30,
+								'name':'rerollimg',
+								'color':'#FFFFFF',
+								'bgcolor': '#CCFFCC00',
+								'active':false,
+								'image': '/ApexEvolution/Sprites/UI/statIcon_4.png',
+								'imageSize': [15, 15],
+                                'events': ['REROLL_UPGRADES']
+							},
+							{
+								'type':  'button', 
+								'text': '',
+								'tooltip': 'BAN',
+								'pivot': [0.5, 0.5],
+								'pos': [120, -250], 
+								'width': 150, 
+								'height': 60,
+								'name':'ban',
+								'bgcolor': '#FFAAAA',
+								'color':'#FFFFFF',
+								'active':false,
+                                'events': ['BAN_MODE']
+							},
+							{
+								'type':  'button', 
+								'text': '',
+								'tooltip': 'BAN',
+								'pivot': [0.5, 0.5],
+								'pos': [80, -250], 
+								'width': 30, 
+								'height': 30,
+								'name':'banimg',
+								'color':'#FFFFFF',
+								'bgcolor': '#FFAAAA00',
+								'active':false,
+								'image': '/ApexEvolution/Sprites/UI/ban.png',
+								'imageSize': [15, 15],
+                                'events': ['BAN_MODE']
+							},
         ]
     }"
 
@@ -175,51 +244,14 @@
 		'bgcolor': '#00000000',
 		'Components': 	[
 							{
-								'type':'button', 'name':'help', 'anchor': [0, 1],'pivot': [0, 1], 'width': 93, 'height': 30, 
+								'type':'button', 'name':'main', 'anchor': [0, 1],'pivot': [0, 1], 'width': 93, 'height': 30, 
 								'pos': [0,0], 
-								'text': 'HELP', 'tooltip': 'Information on this mode', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_AEV_HELP'],
+								'text': 'MENU', 'tooltip': 'Information on this mode', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_AEV_MENU'],
 							},
 							{
 								'type':'button', 'name':'stats', 'anchor': [0, 1],'pivot': [0, 1], 'width': 93, 'height': 30, 
 								'pos': [93,0], 
 								'text': 'STATS', 'tooltip': 'Detailed information about your ship', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_AEV_STATS'],
-							},
-						]
-	}"
-
-:UIHelp
-	"{
-		'anchor': [0, 1],
-		'pos': [0, -72],
-		'pivot': [0, 1],
-		'width': 1,
-		'height': 1,
-		'bgcolor': '#00000000',
-		'Components': 	[
-							{
-								'type':'button', 'name':'', 'anchor': [0, 1],'pivot': [0, 1], 'width': 186, 'height': 30, 
-								'pos': [0,0], 
-								'text': 'OVERVIEW', 'tooltip': 'The basics on AEV', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_AEV_OVERVIEW'],
-							},
-							{
-								'type':'button', 'name':'', 'anchor': [0, 1],'pivot': [0, 1], 'width': 186, 'height': 30, 
-								'pos': [0,-30], 
-								'text': 'CONTROLS', 'tooltip': 'Help on controls', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_AEV_CONTROLS'],
-							},
-							{
-								'type':'button', 'name':'', 'anchor': [0, 1],'pivot': [0, 1], 'width': 186, 'height': 30, 
-								'pos': [0,-60], 
-								'text': 'UPGRADES', 'tooltip': 'How to get upgrades', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_AEV_UPGRADE_HELP'],
-							},
-							{
-								'type':'button', 'name':'', 'anchor': [0, 1],'pivot': [0, 1], 'width': 186, 'height': 30, 
-								'pos': [0,-90], 
-								'text': 'STATS', 'tooltip': 'How stats work in AEV', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_AEV_STAT_HELP'],
-							},
-							{
-								'type':'button', 'name':'', 'anchor': [0, 1],'pivot': [0, 1], 'width': 186, 'height': 30, 
-								'pos': [0,-120], 
-								'text': 'ENDLESS', 'tooltip': 'How to start endless mode', 'bgcolor': '#003444', 'color': '#FFFFFF', 'events': ['SHOW_AEV_ENDLESS_HELP'],
 							},
 						]
 	}"
@@ -405,7 +437,6 @@
 						]
 	}"
 	@ConcatAll
-	dup trace
 
 # Calculates the current UI scale
 :GetUiScale

@@ -166,11 +166,11 @@ endif
     # Behaviors are (not case sensitive):
     
     # Damage: runs a DamageCreeper function at the shot's position
-    #   Uses the module's "shot_damage", "shot_damage_distance", and "shot_damage_count" vars
+    #   Uses the module's "shot_damage", "shot_damage_radius", and "shot_damage_count" vars
     #   Optional arguments are: multiplier to damage, multiplier to distance, multiplier to count, in order.
 
     # AC: Adds anticreeper in range at the shot's position
-    #   Uses the module's "shot_damage" and "shot_damage_distance" vars
+    #   Uses the module's "shot_damage" and "shot_damage_radius" vars
     #   Optional arguments are: multiplier to damage, multiplier to distance
 
     # Destroy: destroys the shot, and triggers any behaviors attached to the "ondestroy" trigger
@@ -194,7 +194,7 @@ endif
         "spread_rand_mode"      "spreadRand"
         "shot_speed"            "shotSpeed"
         "shot_damage"           "damage"
-        "shot_damage_distance"  "dmgDist"
+        "shot_damage_radius"    "dmgDist"
         "shot_damage_count"     "dmgCount"
         "shot_gravity"          "gravity"
         "shot_digitalis_damage" "digiDamage"
@@ -205,7 +205,7 @@ endif
         "num_shots"             "numShots"
         "shot_speed"            "shotSpeed"
         "shot_damage"           "damage"
-        "shot_damage_distance"  "dmgDist"
+        "shot_damage_radius"    "dmgDist"
         "shot_damage_count"     "dmgCount"
         "target_rand"           "targetRand"
         "shot_digitalis_damage" "digiDamage"
@@ -215,7 +215,7 @@ endif
     Table(
         "shot_speed"            "shotSpeed"
         "shot_damage"           "damage"
-        "shot_damage_distance"  "dmgDist"
+        "shot_damage_radius"    "dmgDist"
         "shot_damage_count"     "dmgCount"
         "shot_lifetime"         "lifetime"
         "target_rand"           "targetRand"
@@ -720,6 +720,13 @@ endif
 
     <dmgDist <dmgDistMult mul dup >d dup mul >dsqr
 
+    
+    if(RandFloat <-*criticalChance lt)
+        <d 1.414 mul dup >d dup mul >dsqr
+        <dmg 1.5 mul >dmg
+    endif
+        
+
     0 >count
     <xp
     # This works with a decimal radius, on average
@@ -844,14 +851,23 @@ endif
     <args[2] AsFloat >dmgMult
     <args[3] AsFloat >dmgDistMult
     <args[4] AsFloat >dmgCellsMult
+    <damage AsFloat <dmgMult mul >dmg
+    <dmgCount <dmgCellsMult mul >dCt
     <dmgDist <dmgDistMult mul RandFloat add AsInt >d
+
+    if(RandFloat <-*criticalChance lt)
+        <d 1.414 mul >d
+        <dCt 2 mul >dCt
+        <dmg 1.5 mul >dmg
+    endif
+
     <pos
     <pos.x 0 round <d sub 
     <pos.y 0 round <d sub 
     <pos.x 0 round <d add 1 add 
     <pos.y 0 round <d add 1 add 
     V4 dup false false GetCreeperInArea >preCreeper
-    swap EV2 <dmgCount <dmgCellsMult mul <d <damage AsFloat <dmgMult mul -1000000 mul DamageCreeper
+    swap EV2 <dCt <d <dmg -1000000 mul DamageCreeper
     false false GetCreeperInArea <preCreeper swap sub <xp add >xp    
 
 # Pulls a sprite from the pool of existing unused sprites for shots, or makes one if none are free.
@@ -903,8 +919,11 @@ endif
 
 :GameLoaded
     RegisterScript("shots")
+    @ReloadSprites
+
+:ReloadSprites
     <shotTypes 0 do
-        <shotType[i] >type
+        <shotTypes[i] >type
         
         # Remove all sprites
         <type "Sprites_" concat <-! >sprites
@@ -913,7 +932,7 @@ endif
         loop
         CreateList <type "Sprites_" concat ->!
 
-        # Replace sprites in shots with new ones
+        # Replace sprites in active shots with new ones
         <type "Shots_" concat <-! >shots
         <shots 0 do
             <shots[i] >shot

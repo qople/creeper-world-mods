@@ -45,7 +45,7 @@ $behavior:""
     ) <upgrades swap AppendToList
     
     Table(
-        "attribute"         "shot_damage_distance"
+        "attribute"         "shot_damage_radius"
         "attribute_name"    "damage radius"
         "module"            "bertha"
         "title"             "Powerful Powder"
@@ -71,7 +71,7 @@ $behavior:""
         "title"         "Bigger Bertha"
         "module"        "bertha"
         "description"   "Bertha radius X1.5, but double its fire delay."
-        "effect"        "mulattr/bertha/shot_damage_distance/1.5, mulattr/bertha/fire_delay/2"
+        "effect"        "mulattr/bertha/shot_damage_radius/1.5, mulattr/bertha/fire_delay/2"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -91,7 +91,7 @@ $behavior:""
         "title"         "Bertha: Suppressing Fire"
         "module"        "bertha"
         "description"   "Bertha shoots 5X faster, and shots move faster as well, but deal damage over half the radius."
-        "effect"        "mulattr/bertha/fire_delay/0.2, mulattr/bertha/shot_speed/2, mulattr/bertha/shot_damage_distance/0.5"
+        "effect"        "mulattr/bertha/fire_delay/0.2, mulattr/bertha/shot_speed/2, mulattr/bertha/shot_damage_radius/0.5"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
@@ -131,7 +131,7 @@ $behavior:""
         "title"         "Bertha: Concentrated Shots"
         "module"        "bertha"
         "description"   "Bertha damage X2, but radius X0.8."
-        "effect"        "mulattr/bertha/shot_damage/2, mulattr/bertha/shot_damage_distance/0.8"
+        "effect"        "mulattr/bertha/shot_damage/2, mulattr/bertha/shot_damage_radius/0.8"
         "rarity"        6
         "pickuplimit"   1
     ) <upgrades swap AppendToList
